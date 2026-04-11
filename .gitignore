@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Experiment artifacts
+mlruns/
+outputs/
+.cache/
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Claude Code — personal layer (gitignored per best practice)
+.claude/settings.local.json
+.claude/CLAUDE.local.md
+.claude/projects/
+.claude/shell-snapshots/
+.claude/todos/
+
+# The upstream clone used only as reference
+LLMCouncil/
