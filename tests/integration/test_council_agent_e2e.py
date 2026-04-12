@@ -72,8 +72,13 @@ async def test_council_agent_complete_simple_math(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.timeout(180)
 async def test_council_agent_complete_with_policy(client: LiteLLMClient) -> None:
-    """CouncilPolicy.plan() + CouncilAgent.complete() returns a confident answer."""
+    """CouncilPolicy.plan() + CouncilAgent.complete() returns a confident answer.
+
+    Uses standard_deliberation tier (PeerReviewProtocol, up to 6 free-model calls).
+    Free models can take 20-60s each — allowed up to 180s total.
+    """
     task_profile = TaskProfile(
         name="factual",
         normalizer=StructuredOutputNormalizer(),

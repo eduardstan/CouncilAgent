@@ -1,0 +1,19 @@
+# Fast benchmark config — single round, 10 GSM8K problems, free models.
+# Runs in ~2-5 minutes depending on free-tier model latency.
+
+name: fast
+
+dataset: gsm8k
+task_limit: 10
+
+council:
+  models:
+    - "openrouter/google/gemma-3-27b-it:free"
+    - "openrouter/openai/gpt-oss-20b:free"
+    - "openrouter/minimax/minimax-m2.5:free"
+  max_rounds: 1
+  budget_usd: 0.10
+
+mlflow:
+  tracking_uri: "mlruns"
+  # experiment_name is auto-generated as council/{name}/{git_sha} if omitted
