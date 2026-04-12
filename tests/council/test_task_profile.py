@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from council.normalizer import IdentityNormalizer, StructuredOutputNormalizer
 from council.task_profile import TaskProfile
 
@@ -22,8 +24,6 @@ class TestTaskProfileDefaults:
         assert profile.output_schema == schema
 
     def test_is_frozen(self) -> None:
-        import pytest
-
         normalizer = IdentityNormalizer()
         profile = TaskProfile(name="x", normalizer=normalizer)
         with pytest.raises((AttributeError, TypeError)):
@@ -31,33 +31,54 @@ class TestTaskProfileDefaults:
 
 
 class TestTaskProfilePresets:
-    def test_factual_uses_structured_normalizer(self) -> None:
-        profile = TaskProfile.factual()
+    """Verify that canonical preset configurations can be constructed correctly.
+
+    Presets are caller-constructed; TaskProfile is a pure data container.
+    These tests pin the expected shape of each preset so CouncilPolicy (Phase 3)
+    can rely on the same conventions.
+    """
+
+    def test_factual_preset(self) -> None:
+        profile = TaskProfile(
+            name="factual",
+            normalizer=StructuredOutputNormalizer(),
+            recommended_aggregation="majority_vote",
+        )
         assert profile.name == "factual"
         assert isinstance(profile.normalizer, StructuredOutputNormalizer)
         assert profile.recommended_aggregation == "majority_vote"
 
-    def test_math_uses_structured_normalizer(self) -> None:
-        profile = TaskProfile.math()
+    def test_math_preset(self) -> None:
+        profile = TaskProfile(
+            name="math",
+            normalizer=StructuredOutputNormalizer(),
+            recommended_aggregation="majority_vote",
+        )
         assert profile.name == "math"
         assert isinstance(profile.normalizer, StructuredOutputNormalizer)
-        assert profile.recommended_aggregation == "majority_vote"
 
-    def test_open_ended_uses_identity_normalizer(self) -> None:
-        profile = TaskProfile.open_ended()
+    def test_open_ended_preset(self) -> None:
+        profile = TaskProfile(
+            name="open_ended",
+            normalizer=IdentityNormalizer(),
+            recommended_aggregation="meta_judge",
+        )
         assert profile.name == "open_ended"
         assert isinstance(profile.normalizer, IdentityNormalizer)
         assert profile.recommended_aggregation == "meta_judge"
 
-    def test_code_uses_identity_normalizer(self) -> None:
-        profile = TaskProfile.code()
+    def test_code_preset(self) -> None:
+        profile = TaskProfile(
+            name="code",
+            normalizer=IdentityNormalizer(),
+            recommended_aggregation="meta_judge",
+        )
         assert profile.name == "code"
         assert isinstance(profile.normalizer, IdentityNormalizer)
         assert profile.recommended_aggregation == "meta_judge"
 
-    def test_presets_return_distinct_instances(self) -> None:
-        a = TaskProfile.factual()
-        b = TaskProfile.factual()
-        # Each call returns a new instance (normalizers don't share identity)
+    def test_two_factual_profiles_are_distinct_instances(self) -> None:
+        a = TaskProfile(name="factual", normalizer=StructuredOutputNormalizer())
+        b = TaskProfile(name="factual", normalizer=StructuredOutputNormalizer())
         assert a is not b
         assert type(a.normalizer) is type(b.normalizer)
