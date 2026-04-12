@@ -7,7 +7,7 @@ Per testing.md §core pipeline requirements:
 (d) State token counts are non-zero.
 
 Plus: anonymization end-to-end, ModelFailure partial-result handling,
-and zero framework imports.
+AgreementThreshold early exit, and zero framework imports.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from council.core import AgentConfig, run_council
 from council.models import FakeModelClient
 from council.normalizer import IdentityNormalizer
 from council.protocol import DirectAnswerProtocol, PeerReviewProtocol
+from council.termination import AgreementThreshold, CompositeTermination, FixedRounds
 from council.topology import CompleteGraphTopology, RingTopology
 
 # ---------------------------------------------------------------------------
@@ -53,7 +54,7 @@ async def test_all_agents_generate_in_round_0() -> None:
         topology=CompleteGraphTopology(3),
         protocol=DirectAnswerProtocol(),
         aggregation=MajorityVote(normalizer=IdentityNormalizer()),
-        max_rounds=1,
+        termination=FixedRounds(1),
     )
     round_0_ids = {r.agent_id for r in result.round_history if r.round_index == 0}
     # All 3 agent IDs appear in round 0 (may be real or anonymized — check count).
@@ -88,7 +89,7 @@ async def test_ring_topology_visibility_in_round_1() -> None:
         topology=RingTopology(n),
         protocol=SpyProtocol(),
         aggregation=MajorityVote(normalizer=IdentityNormalizer()),
-        max_rounds=2,
+        termination=FixedRounds(2),
     )
     # Check round-1 contexts: each agent should see exactly 1 visible response.
     round1 = [(aid, visible) for aid, rnd, visible in captured_contexts if rnd == 1]
@@ -114,7 +115,7 @@ async def test_aggregation_produces_non_null_result() -> None:
         topology=CompleteGraphTopology(3),
         protocol=DirectAnswerProtocol(),
         aggregation=MajorityVote(normalizer=IdentityNormalizer()),
-        max_rounds=1,
+        termination=FixedRounds(1),
     )
     assert isinstance(result, CouncilResult)
     assert result.final_answer != ""
@@ -137,7 +138,7 @@ async def test_token_counts_are_non_zero() -> None:
         topology=CompleteGraphTopology(2),
         protocol=DirectAnswerProtocol(),
         aggregation=MajorityVote(normalizer=IdentityNormalizer()),
-        max_rounds=1,
+        termination=FixedRounds(1),
     )
     assert result.tokens_in > 0
     assert result.tokens_out > 0
@@ -169,7 +170,7 @@ async def test_anonymization_hides_real_agent_ids_in_prompts() -> None:
         topology=CompleteGraphTopology(3),
         protocol=CapturingProtocol(),
         aggregation=MajorityVote(normalizer=IdentityNormalizer()),
-        max_rounds=2,
+        termination=FixedRounds(2),
         anonymize=True,
     )
     assert prompt_contents, "Expected at least one prompt to be captured"
@@ -199,7 +200,7 @@ async def test_anonymize_false_preserves_real_ids() -> None:
         topology=CompleteGraphTopology(3),
         protocol=CapturingProtocol(),
         aggregation=MajorityVote(normalizer=IdentityNormalizer()),
-        max_rounds=2,
+        termination=FixedRounds(2),
         anonymize=False,
     )
     if captured_visible:
@@ -229,7 +230,7 @@ async def test_pipeline_continues_with_partial_results_on_failure() -> None:
         topology=CompleteGraphTopology(3),
         protocol=DirectAnswerProtocol(),
         aggregation=MajorityVote(normalizer=IdentityNormalizer()),
-        max_rounds=1,
+        termination=FixedRounds(1),
     )
     assert isinstance(result, CouncilResult)
     assert result.final_answer != ""
@@ -239,11 +240,11 @@ async def test_pipeline_continues_with_partial_results_on_failure() -> None:
 
 
 # ---------------------------------------------------------------------------
-# run_council rounds_used
+# rounds_used reflects actual rounds completed
 # ---------------------------------------------------------------------------
 
 
-async def test_rounds_used_matches_max_rounds() -> None:
+async def test_rounds_used_equals_fixed_rounds() -> None:
     agents = _agents(2)
     client = _fake(2, "x")
     result = await run_council(
@@ -253,9 +254,37 @@ async def test_rounds_used_matches_max_rounds() -> None:
         topology=CompleteGraphTopology(2),
         protocol=DirectAnswerProtocol(),
         aggregation=MajorityVote(normalizer=IdentityNormalizer()),
-        max_rounds=3,
+        termination=FixedRounds(3),
     )
     assert result.rounds_used == 3
+
+
+# ---------------------------------------------------------------------------
+# AgreementThreshold early exit
+# ---------------------------------------------------------------------------
+
+
+async def test_agreement_threshold_stops_early_on_consensus() -> None:
+    """AgreementThreshold should terminate after round 0 when all agents agree."""
+    agents = _agents(3)
+    client = _fake(3, "42")  # all agents always return "42"
+
+    result = await run_council(
+        prompt="What is 6x7?",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=CompositeTermination(
+            AgreementThreshold(0.8, normalizer=IdentityNormalizer()),
+            FixedRounds(5),  # safety cap
+        ),
+    )
+    # All three agents return "42" → 100% agreement → stops after round 0
+    assert result.rounds_used == 1
+    assert result.final_answer == "42"
+    assert "agreement" in result.termination_reason
 
 
 # ---------------------------------------------------------------------------

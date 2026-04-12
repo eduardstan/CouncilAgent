@@ -17,6 +17,7 @@ from council.models import FakeModelClient
 from council.normalizer import StructuredOutputNormalizer
 from council.protocol import DirectAnswerProtocol, PeerReviewProtocol
 from council.ranking import StructuredRanking
+from council.termination import FixedRounds
 from council.topology import CompleteGraphTopology, RingTopology
 
 # ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ async def test_peer_review_two_rounds_structured_output() -> None:
         topology=CompleteGraphTopology(n),
         protocol=PeerReviewProtocol(output_schema={"answer": {"type": "number"}}),
         aggregation=MajorityVote(normalizer=StructuredOutputNormalizer()),
-        max_rounds=2,
+        termination=FixedRounds(2),
     )
     # Round 0 answers all normalize to "72"; round 1 critique responses are also
     # aggregated (they don't normalize to "72"), so confidence < 1.0 over all rounds.
@@ -84,7 +85,7 @@ async def test_ring_topology_4_agents_adjacency_enforcement() -> None:
         topology=RingTopology(n),
         protocol=SpyProtocol(),
         aggregation=MajorityVote(normalizer=StructuredOutputNormalizer()),
-        max_rounds=2,
+        termination=FixedRounds(2),
         anonymize=False,
     )
 
@@ -134,7 +135,7 @@ async def test_anonymization_real_ids_absent_from_all_prompts() -> None:
         topology=CompleteGraphTopology(n),
         protocol=CapturingProtocol(),
         aggregation=MajorityVote(normalizer=StructuredOutputNormalizer()),
-        max_rounds=2,
+        termination=FixedRounds(2),
         anonymize=True,
     )
 
@@ -177,7 +178,7 @@ async def test_structured_ranking_round_trip() -> None:
         protocol=PeerReviewProtocol(output_schema=StructuredRanking.SCHEMA),
         aggregation=MajorityVote(normalizer=StructuredOutputNormalizer()),
         ranking=StructuredRanking(),
-        max_rounds=2,
+        termination=FixedRounds(2),
     )
     # Round 0 answers are "paris"; round 1 outputs are ranking JSON.
     # "paris" is the plurality winner across all rounds.

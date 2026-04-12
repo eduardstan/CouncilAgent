@@ -1,7 +1,7 @@
 """Pure async pipeline — the compositional heart of CouncilAgent.
 
-run_council() composes Topology, Protocol, ModelClient, Ranking, and Aggregation
-without knowing how any of them work internally.
+run_council() composes Topology, Protocol, ModelClient, Ranking, Aggregation,
+and TerminationStrategy without knowing how any of them work internally.
 
 Constitution §8: zero framework imports. This module uses only stdlib + asyncio
 and the other council layer modules. LangGraph, Hydra, MLflow, OpenTelemetry are
@@ -9,9 +9,6 @@ strictly excluded — they live at the edges (adapters/, experiments/).
 
 Constitution §10: anonymize=True is the default. _build_visibility_context() is
 the ONLY place in the entire codebase that performs anonymization.
-
-Termination in Phase 1: fixed max_rounds integer. Phase 2 replaces this with a
-pluggable TerminationStrategy.
 """
 
 from __future__ import annotations
@@ -31,6 +28,7 @@ from council.context import (
 from council.models import ModelClient, ModelFailure, ModelRequest
 from council.protocol import Protocol
 from council.ranking import NullRanking, PreferenceData, Ranking
+from council.termination import TerminationStrategy
 from council.topology import Topology
 
 logger = logging.getLogger(__name__)
@@ -61,14 +59,15 @@ async def run_council(
     topology: Topology,
     protocol: Protocol,
     aggregation: Aggregation,
+    termination: TerminationStrategy,
     ranking: Ranking | None = None,
-    max_rounds: int = 1,
     anonymize: bool = True,
 ) -> CouncilResult:
     """Run the full council pipeline and return a final answer with confidence.
 
-    Phase 1 termination: exits after max_rounds rounds (fixed).
-    Phase 2 will replace max_rounds with a TerminationStrategy parameter.
+    The pipeline runs at least one round (round 0 — initial generation). After
+    each round, termination.should_stop() is checked. Deliberation continues
+    until the strategy signals True.
     """
     if ranking is None:
         ranking = NullRanking()
@@ -77,25 +76,28 @@ async def run_council(
 
     # Round 0 — initial generation (no visibility, no adjacency filtering needed).
     state = await _generate(state, agents, protocol, model_client)
+    stop, reason = await termination.should_stop(state)
 
-    # Deliberation rounds 1 … max_rounds-1.
-    for _round in range(1, max_rounds):
+    # Deliberation rounds 1+ — loop until termination strategy halts.
+    while not stop:
         state = await _deliberate(state, agents, topology, protocol, model_client, anonymize)
+        stop, reason = await termination.should_stop(state)
+
+    state.termination_reason = reason
 
     # Rank (no-op for NullRanking).
     preferences = await _rank(state, ranking, [a.id for a in agents])
 
-    # Aggregate.
+    # Aggregate across all rounds that ran.
     round_responses = [r for r in state.round_history if not isinstance(r, ModelFailure)]
     agg_result = await aggregation.aggregate(round_responses, preferences)
     state.final_result = agg_result
-    state.termination_reason = "max_rounds"
 
     return CouncilResult(
         final_answer=agg_result.final_answer,
         confidence=agg_result.confidence,
         method=agg_result.method,
-        rounds_used=max_rounds,
+        rounds_used=state.current_round,
         total_cost=state.total_cost,
         tokens_in=state.tokens_in,
         tokens_out=state.tokens_out,
