@@ -133,15 +133,49 @@ class TestBordaCount:
 
 
 # ---------------------------------------------------------------------------
-# MetaJudge stub
+# MetaJudge
 # ---------------------------------------------------------------------------
 
 
-class TestMetaJudgeStub:
-    async def test_raises_not_implemented(self) -> None:
-        agg = MetaJudge()
-        with pytest.raises(NotImplementedError):
-            await agg.aggregate([_resp("x")])
+class TestMetaJudge:
+    def _make_judge(self, synthesis: str) -> MetaJudge:
+        from council.models import FakeModelClient
+        client = FakeModelClient({("meta-judge", 0): synthesis})
+        return MetaJudge(model="fake/synth", model_client=client)
+
+    async def test_returns_synthesis_model_output(self) -> None:
+        agg = self._make_judge("The synthesized answer is 4.")
+        result = await agg.aggregate([_resp("four"), _resp("4")])
+        assert result.final_answer == "The synthesized answer is 4."
+        assert result.method == "MetaJudge"
+
+    async def test_prompt_contains_all_responses(self) -> None:
+        captured: list[str] = []
+
+        def factory(req, agent_id, round_index):  # type: ignore[return]
+            captured.append(req.prompt)
+            return "synthesized"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient(factory))
+        await agg.aggregate([_resp("alpha", "agent-0"), _resp("beta", "agent-1")])
+        assert captured, "model was never called"
+        assert "alpha" in captured[0]
+        assert "beta" in captured[0]
+
+    async def test_empty_responses_returns_empty(self) -> None:
+        agg = self._make_judge("irrelevant")
+        result = await agg.aggregate([])
+        assert result.final_answer == ""
+        assert result.confidence == pytest.approx(0.0)
+
+    async def test_model_failure_returns_empty(self) -> None:
+        from council.models import FakeModelClient
+        # Empty dict → FakeModelClient returns ModelFailure for unknown key
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}))
+        result = await agg.aggregate([_resp("x")])
+        assert result.final_answer == ""
+        assert result.confidence == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +183,22 @@ class TestMetaJudgeStub:
 # ---------------------------------------------------------------------------
 
 
-def test_aggregation_only_imports_context_and_normalizer() -> None:
+def test_aggregation_imports_only_context_and_models() -> None:
+    """aggregation.py may import from council.context and council.models only.
+
+    council.models is permitted because MetaJudge injects a ModelClient to call
+    the synthesis model — this is an aggregation-internal operation, not a
+    protocol/deliberation concern (Constitution §3, accepted exception).
+    All other layer imports (topology, protocol, ranking, normalizer, termination,
+    core) remain forbidden.
+    """
     import importlib.util
 
     spec = importlib.util.find_spec("council.aggregation")
     assert spec is not None and spec.origin is not None
     with open(spec.origin) as f:
         source = f.read()
-    allowed = {"council.context"}
+    allowed = {"council.context", "council.models"}
     bad = [
         line
         for line in source.splitlines()

@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 
 from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData, RichPreference
+from council.models import ModelClient, ModelFailure, ModelRequest
 
 logger = logging.getLogger(__name__)
 
@@ -111,15 +112,48 @@ class BordaCount(Aggregation):
 
 
 class MetaJudge(Aggregation):
-    """LLM-based synthesis aggregation. Phase 3 implementation.
+    """LLM-based synthesis aggregation.
 
-    Stub raises NotImplementedError. Implementing here would require a ModelClient
-    call inside aggregation, which is architecturally allowed but deferred (§9).
+    Sends all agent responses to a synthesis model and returns its output as the
+    final answer. The synthesis model and ModelClient are injected at construction
+    — never hardcoded (Constitution §3).
+
+    Confidence is fixed at 1.0 because MetaJudge produces one synthesized answer;
+    agreement-based confidence lives at the CouncilAgent layer above.
     """
+
+    def __init__(self, model: str, model_client: ModelClient) -> None:
+        self._model = model
+        self._model_client = model_client
 
     async def aggregate(
         self,
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
     ) -> AggregationResult:
-        raise NotImplementedError("MetaJudge is implemented in Phase 3")
+        if not responses:
+            return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
+
+        formatted = "\n\n".join(
+            f"[{r.agent_id}]:\n{r.content}" for r in responses
+        )
+        prompt = (
+            "You are a synthesis judge. Below are responses from multiple agents "
+            "to a question. Synthesize them into a single best answer.\n\n"
+            f"Responses:\n{formatted}\n\n"
+            "Provide your synthesized answer:"
+        )
+        outcome = await self._model_client.complete(
+            ModelRequest(model=self._model, prompt=prompt),
+            agent_id="meta-judge",
+            round_index=0,
+        )
+        if isinstance(outcome, ModelFailure):
+            logger.warning("MetaJudge model call failed: %s", outcome.error)
+            return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
+
+        return AggregationResult(
+            final_answer=outcome.content,
+            confidence=1.0,
+            method="MetaJudge",
+        )
