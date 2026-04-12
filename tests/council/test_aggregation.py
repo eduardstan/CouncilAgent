@@ -163,6 +163,24 @@ class TestMetaJudge:
         assert "alpha" in captured[0]
         assert "beta" in captured[0]
 
+    async def test_synthesis_prompt_does_not_contain_real_agent_ids(self) -> None:
+        """Constitution §10: MetaJudge must not expose real agent_id in synthesis prompt."""
+        captured: list[str] = []
+
+        def factory(req, agent_id, round_index):  # type: ignore[return]
+            captured.append(req.prompt)
+            return "ok"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient(factory))
+        await agg.aggregate([_resp("answer-A", "agent-0"), _resp("answer-B", "agent-1")])
+        assert captured
+        assert "agent-0" not in captured[0]
+        assert "agent-1" not in captured[0]
+        # Positional labels should be present instead
+        assert "Response A" in captured[0]
+        assert "Response B" in captured[0]
+
     async def test_empty_responses_returns_empty(self) -> None:
         agg = self._make_judge("irrelevant")
         result = await agg.aggregate([])

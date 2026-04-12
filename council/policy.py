@@ -10,11 +10,10 @@ prototyping and integration testing without API cost.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from council.aggregation import Aggregation, MajorityVote, MetaJudge
-from council.context import AgentResponse, PreferenceData
-from council.core import AgentConfig, run_council
+from council.core import AgentConfig
 from council.models import ModelClient
 from council.protocol import DirectAnswerProtocol, PeerReviewProtocol, Protocol
 from council.ranking import NullRanking, Ranking

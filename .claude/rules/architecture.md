@@ -22,6 +22,13 @@ These rules encode Constitution §3 and §8 at file-and-symbol granularity. A PR
 - Any `council/*.py` MUST NOT import from `evaluation/` or `experiments/`.
 - Any layer module (topology, protocol, ranking, aggregation, normalizer, termination) MUST NOT import another layer module. They communicate only through dataclasses defined in `council/context.py`.
 
+### Approved exception — `council/aggregation.py` may import `council/models.py`
+`MetaJudge` (an `Aggregation` subclass) calls an LLM to synthesize a final answer. It receives a `ModelClient` at construction time — the model is injected, never hardcoded. This is an aggregation-internal operation, distinct from deliberation-phase prompt construction. The import is approved and permanent:
+```python
+from council.models import ModelClient, ModelFailure, ModelRequest
+```
+No other layer module may import from `council/models.py`.
+
 ## Required contracts
 - `Protocol.build_prompt(ctx: VisibilityContext) -> str` — single method, no state.
 - `Topology.get_adjacency_matrix(round_index: int) -> list[list[bool]]` — pure function of round.

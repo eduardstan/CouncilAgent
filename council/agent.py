@@ -189,6 +189,12 @@ def _result_to_response(
     last_round = result.rounds_used - 1
     last_responses = [r for r in result.round_history if r.round_index == last_round]
     winner = result.final_answer
+    # NOTE: winner is already a canonical form (lowercased, stripped) produced by
+    # the aggregation normalizer. Comparing via strip().lower() is approximate —
+    # responses like "The answer is 72." won't match canonical "72" even though they
+    # normalize to the same answer. This is informational metadata only; the final
+    # answer and confidence are unaffected. A normalizer-aware comparison would
+    # require async and access to the aggregation's normalizer (Phase 4 cleanup).
     dissenting = [r.content for r in last_responses if r.content.strip().lower() != winner]
 
     return AgentResponse(
