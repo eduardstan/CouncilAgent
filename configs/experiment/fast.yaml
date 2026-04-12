@@ -9,10 +9,11 @@ task_limit: 10
 council:
   models:
     - "openrouter/google/gemma-3-27b-it:free"
-    - "openrouter/google/gemma-3-27b-it:free"
-    - "openrouter/google/gemma-3-27b-it:free"
+    - "openrouter/nvidia/nemotron-3-nano-30b-a3b:free"
+    - "openrouter/z-ai/glm-4.5-air:free"
   max_rounds: 1
   budget_usd: 0.10
+  task_delay_seconds: 3.0  # seconds between tasks to reduce rate-limit pressure
 
 mlflow:
   tracking_uri: "mlruns"

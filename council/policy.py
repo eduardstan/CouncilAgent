@@ -27,13 +27,10 @@ from council.termination import (
 from council.topology import CompleteGraphTopology, Topology
 
 # Free-tier OpenRouter models — zero cost, usable without budget constraints.
-# Using the same model three times provides diversity via temperature sampling
-# when peer alternatives are unavailable or rate-limited. Replace with
-# three distinct working models as availability stabilises.
 _FREE_MODELS: list[str] = [
     "openrouter/google/gemma-3-27b-it:free",
-    "openrouter/google/gemma-3-27b-it:free",
-    "openrouter/google/gemma-3-27b-it:free",
+    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+    "openrouter/z-ai/glm-4.5-air:free",
 ]
 
 

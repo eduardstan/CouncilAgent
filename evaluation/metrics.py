@@ -12,8 +12,8 @@ from __future__ import annotations
 import re
 from typing import Protocol
 
-from council.context import CouncilState
-from council.normalizer import AnswerNormalizer, IdentityNormalizer
+from council.context import AnswerNormalizer, CouncilState
+from council.normalizer import IdentityNormalizer
 
 
 # ---------------------------------------------------------------------------

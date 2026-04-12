@@ -13,8 +13,7 @@ import random
 from collections import Counter
 from dataclasses import dataclass
 
-from council.context import AgentResponse
-from council.normalizer import AnswerNormalizer
+from council.context import AgentResponse, AnswerNormalizer
 
 
 @dataclass(frozen=True, slots=True)

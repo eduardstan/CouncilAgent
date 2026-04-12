@@ -98,11 +98,12 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     # --- Build council config from YAML --------------------------------
     models: list[str] = council_cfg.get("models", [
         "openrouter/google/gemma-3-27b-it:free",
-        "openrouter/openai/gpt-oss-20b:free",
-        "openrouter/minimax/minimax-m2.5:free",
+        "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
+        "openrouter/z-ai/glm-4.5-air:free",
     ])
     max_rounds: int = council_cfg.get("max_rounds", 1)
     budget_usd: float = council_cfg.get("budget_usd", 0.10)
+    task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
 
     agents = [AgentConfig(id=f"agent-{i}", model=m) for i, m in enumerate(models)]
     normalizer = StructuredOutputNormalizer()
@@ -142,7 +143,9 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     baseline_accuracies: list[float] = []
     errors: list[str] = []
 
-    for task in tasks:
+    for task_idx, task in enumerate(tasks):
+        if task_idx > 0 and task_delay > 0:
+            await asyncio.sleep(task_delay)
         try:
             response = await agent.complete(task.question)
             acc = await task_accuracy(response.content, task.ground_truth, method="smart", normalizer=normalizer)

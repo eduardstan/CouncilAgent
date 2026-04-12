@@ -170,8 +170,8 @@ class LiteLLMClient(ModelClient):
             import litellm as _litellm  # type: ignore[import-untyped]
             _litellm.suppress_debug_info = True
             _litellm.set_verbose = False
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("litellm debug-suppression setup skipped: %s", exc)
 
     async def complete(
         self,
@@ -199,7 +199,15 @@ class LiteLLMClient(ModelClient):
                     litellm.acompletion(**kwargs),
                     timeout=self._timeout,
                 )
-                content: str = response.choices[0].message.content or ""
+                msg = response.choices[0].message
+                # Some thinking models (e.g. lfm-2.5-1.2b-thinking) return
+                # content=None with the answer only in reasoning_content.
+                # Fall back to reasoning_content when content is absent.
+                content: str = (
+                    msg.content
+                    or getattr(msg, "reasoning_content", None)
+                    or ""
+                )
                 tokens_in: int = response.usage.prompt_tokens or 0
                 tokens_out: int = response.usage.completion_tokens or 0
 
@@ -251,5 +259,6 @@ class LiteLLMClient(ModelClient):
             entry = table.get(bare, {})
             per_token: float = entry.get("input_cost_per_token", 0.0)
             return per_token * prompt_tokens
-        except Exception:
+        except Exception as exc:
+            logger.debug("estimate_cost failed for %s: %s", model, exc)
             return 0.0
