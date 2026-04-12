@@ -6,4 +6,6 @@ once Task 1.8 lands. The `CouncilAgent.complete()` user-facing interface is Phas
 
 __version__ = "0.1.0dev0"
 
-__all__: list[str] = []
+from council.core import AgentConfig, run_council
+
+__all__ = ["AgentConfig", "run_council"]
