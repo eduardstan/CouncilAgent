@@ -29,6 +29,13 @@ from council.models import ModelClient, ModelFailure, ModelRequest
 ```
 No other layer module may import from `council/models.py`.
 
+### Approved exception — `evaluation/` may import from `council/`
+`evaluation/` is downstream of the pipeline (benchmark mode only, never imported by `council/`).
+It is not a peer layer and is explicitly excluded from the peer-layer mutual-import prohibition.
+`evaluation/metrics.py` imports `council.context.CouncilState` (to read round_history) and
+`council.normalizer.AnswerNormalizer` (for smart task_accuracy matching). This is approved and permanent.
+No `council/` module may import from `evaluation/` — the direction is one-way.
+
 ## Required contracts
 - `Protocol.build_prompt(ctx: VisibilityContext) -> str` — single method, no state.
 - `Topology.get_adjacency_matrix(round_index: int) -> list[list[bool]]` — pure function of round.
