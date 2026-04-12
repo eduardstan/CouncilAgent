@@ -1,0 +1,35 @@
+# Hydra sweep config — topology × protocol × aggregation × dataset
+# Defines the default values; use --multirun with overrides for the full sweep.
+#
+# Full 4x4x5x3 sweep:
+#   uv run python -m experiments.sweep --multirun \
+#       council.topology=complete,star \
+#       council.protocol=direct_answer,peer_review \
+#       council.aggregation=majority_vote,meta_judge \
+#       council.max_rounds=1,2 \
+#       dataset=gsm8k
+#
+# Requires: uv pip install 'council-agent[benchmark]'
+
+defaults:
+  - _self_
+
+name: sweep
+
+dataset: gsm8k
+task_limit: 50  # per sweep point — reduce to 10 for quick smoke tests
+
+council:
+  models:
+    - "openrouter/google/gemma-3-27b-it:free"
+    - "openrouter/openai/gpt-oss-20b:free"
+    - "openrouter/minimax/minimax-m2.5:free"
+  topology: complete       # complete | star
+  protocol: peer_review    # direct_answer | peer_review
+  aggregation: majority_vote  # majority_vote | meta_judge | condorcet
+  max_rounds: 2
+  budget_usd: 1.00
+
+mlflow:
+  tracking_uri: "mlruns"
+  # experiment_name auto-generated as council/{name}/{git_sha}
