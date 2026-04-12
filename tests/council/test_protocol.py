@@ -254,7 +254,7 @@ def test_protocol_has_no_non_context_council_imports() -> None:
     assert spec is not None and spec.origin is not None
     with open(spec.origin) as f:
         source = f.read()
-    allowed = {"council.context", "council.ranking"}
+    allowed = {"council.context"}
     bad = [
         line
         for line in source.splitlines()

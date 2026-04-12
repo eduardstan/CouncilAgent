@@ -9,6 +9,7 @@ Zero imports from the rest of the council package — this module is the base.
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -53,6 +54,39 @@ class VisibilityContext:
     total_agents: int
     communication_mode: CommunicationMode
     original_prompt: str
+
+
+class AnswerNormalizer(ABC):
+    """Convert a raw LLM response string to a canonical, comparable form.
+
+    Defined here (not in normalizer.py) so that aggregation.py can depend on this
+    ABC without importing a peer layer module (Constitution §3, architecture.md).
+    Concrete implementations live in council/normalizer.py.
+    """
+
+    @abstractmethod
+    async def normalize(self, response: str) -> str: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PreferenceData:
+    """Base preference record returned by a Ranking — always produced, even on parse failure.
+
+    Defined here (not in ranking.py) so that aggregation.py can reference it without
+    importing a peer layer module (Constitution §3).
+    Concrete subclasses live in council/ranking.py.
+    """
+
+    raw_text: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RichPreference(PreferenceData):
+    """Fully parsed preference with ordering, scores, and optional reasoning."""
+
+    ordered_ids: list[str] = field(default_factory=list)
+    scores: dict[str, float] = field(default_factory=dict)
+    reasoning: str = ""
 
 
 @dataclass(frozen=True, slots=True)

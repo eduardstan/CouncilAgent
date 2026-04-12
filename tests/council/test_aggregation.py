@@ -74,8 +74,8 @@ class TestMajorityVote:
         result = await agg.aggregate([_resp("x")])
         assert result.method == "MajorityVote"
 
-    async def test_default_normalizer_is_structured_output(self) -> None:
-        agg = MajorityVote()  # default normalizer
+    async def test_structured_output_normalizer_extracts_answer_field(self) -> None:
+        agg = MajorityVote(normalizer=StructuredOutputNormalizer())
         result = await agg.aggregate([_resp('{"answer": "hello"}')])
         assert result.final_answer == "hello"
 
@@ -123,7 +123,7 @@ def test_aggregation_only_imports_context_and_normalizer() -> None:
     assert spec is not None and spec.origin is not None
     with open(spec.origin) as f:
         source = f.read()
-    allowed = {"council.context", "council.normalizer", "council.ranking"}
+    allowed = {"council.context"}
     bad = [
         line
         for line in source.splitlines()

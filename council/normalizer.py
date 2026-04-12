@@ -11,7 +11,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from abc import ABC, abstractmethod
+
+from council.context import AnswerNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +23,6 @@ _FALLBACK_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bthe answer is\s+([^\n,\.]+)", re.IGNORECASE),
     re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*$"),  # bare numeric
 ]
-
-
-class AnswerNormalizer(ABC):
-    """Convert a raw LLM response string to a canonical, comparable form."""
-
-    @abstractmethod
-    async def normalize(self, response: str) -> str: ...
 
 
 class StructuredOutputNormalizer(AnswerNormalizer):

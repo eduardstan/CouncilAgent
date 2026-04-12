@@ -12,9 +12,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections import Counter
 
-from council.context import AgentResponse, AggregationResult
-from council.normalizer import AnswerNormalizer, StructuredOutputNormalizer
-from council.ranking import PreferenceData
+from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +32,14 @@ class MajorityVote(Aggregation):
     """Normalise all responses, count canonical forms, return the plurality winner.
 
     Confidence = winner_count / total_responses.
-    Returns the *original* content of the first response that mapped to the
-    winning canonical form (not the canonical form itself).
+    final_answer is the winning canonical form (Issue 3 ground truth).
 
     Constitution §4: normalisation is delegated to AnswerNormalizer —
     never raw Counter on LLM output.
     """
 
-    def __init__(self, normalizer: AnswerNormalizer | None = None) -> None:
-        self._normalizer = normalizer or StructuredOutputNormalizer()
+    def __init__(self, normalizer: AnswerNormalizer) -> None:
+        self._normalizer = normalizer
 
     async def aggregate(
         self,

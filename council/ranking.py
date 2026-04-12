@@ -11,31 +11,11 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import ClassVar
 
+from council.context import PreferenceData, RichPreference
+
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Value objects
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class PreferenceData:
-    """Base preference record — always returned, even on parsing failure."""
-
-    raw_text: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class RichPreference(PreferenceData):
-    """Fully parsed preference with ordering, scores, and optional reasoning."""
-
-    ordered_ids: list[str] = field(default_factory=list)
-    scores: dict[str, float] = field(default_factory=dict)
-    reasoning: str = ""
 
 
 # ---------------------------------------------------------------------------
