@@ -15,9 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
-import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -283,13 +281,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
             # in the MLflow UI under Artifacts → debate_transcript.txt
             if all_transcripts:
                 full_transcript = "\n".join(all_transcripts)
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".txt", delete=False, prefix="debate_"
-                ) as f:
-                    f.write(full_transcript)
-                    tmp_path = f.name
-                mlflow.log_artifact(tmp_path, artifact_path="")
-                Path(tmp_path).unlink(missing_ok=True)
+                mlflow.log_text(full_transcript, "debate_transcript.txt")
 
         summary.mlflow_run_id = run_id
         logger.info("MLflow run logged: %s (experiment: %s)", run_id, experiment_name)
