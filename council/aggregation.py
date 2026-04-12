@@ -12,7 +12,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections import Counter
 
-from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData
+from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData, RichPreference
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +69,45 @@ class MajorityVote(Aggregation):
 
 
 class BordaCount(Aggregation):
-    """Phase 3 implementation. Stub raises NotImplementedError."""
+    """Ordinal aggregation via Borda count.
+
+    Each RichPreference.ordered_ids list contributes N-1 points to rank-1,
+    N-2 to rank-2, …, 0 to rank-N (N = number of responses).
+    Winner = agent with the highest total points.
+    Confidence = winner_score / max_possible_score (bounded [0, 1]).
+    """
 
     async def aggregate(
         self,
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
     ) -> AggregationResult:
-        raise NotImplementedError("BordaCount is implemented in Phase 3")
+        if not responses or not preferences:
+            return AggregationResult(final_answer="", confidence=0.0, method="BordaCount")
+
+        rich = [p for p in preferences if isinstance(p, RichPreference) and p.ordered_ids]
+        if not rich:
+            return AggregationResult(final_answer="", confidence=0.0, method="BordaCount")
+
+        n = len(responses)
+        scores: dict[str, float] = {r.agent_id: 0.0 for r in responses}
+
+        for pref in rich:
+            for rank, agent_id in enumerate(pref.ordered_ids):
+                if agent_id in scores:
+                    scores[agent_id] += n - 1 - rank
+
+        winner_id = max(scores, key=lambda k: scores[k])
+        winner_score = scores[winner_id]
+        max_possible = len(rich) * (n - 1)
+        confidence = winner_score / max_possible if max_possible > 0 else 0.0
+
+        content_map = {r.agent_id: r.content for r in responses}
+        return AggregationResult(
+            final_answer=content_map.get(winner_id, ""),
+            confidence=confidence,
+            method="BordaCount",
+        )
 
 
 class MetaJudge(Aggregation):

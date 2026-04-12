@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from council.aggregation import BordaCount, MajorityVote, MetaJudge
-from council.context import AgentResponse, AggregationResult
+from council.context import AgentResponse, AggregationResult, RichPreference
 from council.normalizer import IdentityNormalizer, StructuredOutputNormalizer
 
 
@@ -88,15 +88,48 @@ class TestMajorityVote:
 
 
 # ---------------------------------------------------------------------------
-# BordaCount stub
+# BordaCount
 # ---------------------------------------------------------------------------
 
 
-class TestBordaCountStub:
-    async def test_raises_not_implemented(self) -> None:
-        agg = BordaCount()
-        with pytest.raises(NotImplementedError):
-            await agg.aggregate([_resp("x")])
+def _pref(ordered_ids: list[str]) -> RichPreference:
+    return RichPreference(raw_text="", ordered_ids=ordered_ids)
+
+
+class TestBordaCount:
+    async def test_winner_from_two_preferences(self) -> None:
+        # 3 agents; 2 preferences both rank agent-0 first.
+        responses = [_resp("ans-A", "agent-0"), _resp("ans-B", "agent-1"), _resp("ans-C", "agent-2")]
+        prefs = [_pref(["agent-0", "agent-1", "agent-2"]), _pref(["agent-0", "agent-2", "agent-1"])]
+        result = await BordaCount().aggregate(responses, prefs)
+        assert result.final_answer == "ans-A"
+        assert result.method == "BordaCount"
+
+    async def test_confidence_is_winner_score_over_max(self) -> None:
+        # 2 agents, 1 preference: agent-0 > agent-1. n=2 → max_possible = 1*(2-1) = 1.
+        # agent-0 gets 1 point → confidence = 1/1 = 1.0
+        responses = [_resp("A", "agent-0"), _resp("B", "agent-1")]
+        prefs = [_pref(["agent-0", "agent-1"])]
+        result = await BordaCount().aggregate(responses, prefs)
+        assert result.confidence == pytest.approx(1.0)
+
+    async def test_empty_preferences_returns_empty(self) -> None:
+        result = await BordaCount().aggregate([_resp("x")], preferences=[])
+        assert result.final_answer == ""
+        assert result.confidence == pytest.approx(0.0)
+
+    async def test_no_rich_preferences_returns_empty(self) -> None:
+        from council.context import PreferenceData
+        result = await BordaCount().aggregate([_resp("x")], preferences=[PreferenceData()])
+        assert result.final_answer == ""
+
+    async def test_split_preferences_lower_confidence(self) -> None:
+        # 2 agents, 2 prefs: one prefers agent-0, one prefers agent-1.
+        # n=2 → max_possible = 2*(2-1) = 2; each gets 1 point → conf = 0.5
+        responses = [_resp("A", "agent-0"), _resp("B", "agent-1")]
+        prefs = [_pref(["agent-0", "agent-1"]), _pref(["agent-1", "agent-0"])]
+        result = await BordaCount().aggregate(responses, prefs)
+        assert result.confidence == pytest.approx(0.5)
 
 
 # ---------------------------------------------------------------------------
