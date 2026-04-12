@@ -157,3 +157,73 @@ class MetaJudge(Aggregation):
             confidence=1.0,
             method="MetaJudge",
         )
+
+
+class CondorcetAggregation(Aggregation):
+    """Condorcet/Copeland social-choice aggregation (Issue 13 ground truth).
+
+    Builds a pairwise win matrix from RichPreference.ordered_ids.
+    A Condorcet winner beats every other candidate in a majority of preference
+    lists. If no Condorcet winner exists (cycle), Copeland's method is used:
+    each candidate's score = wins - losses across all pairwise contests.
+
+    Confidence:
+    - Condorcet: min pairwise win-ratio (weakest majority the winner holds).
+    - Copeland: (copeland_score + max_wins) / (2 * max_wins), normalized to [0, 1].
+    """
+
+    async def aggregate(
+        self,
+        responses: list[AgentResponse],
+        preferences: list[PreferenceData] | None = None,
+    ) -> AggregationResult:
+        if not responses or not preferences:
+            return AggregationResult(final_answer="", confidence=0.0, method="Condorcet")
+
+        rich = [p for p in preferences if isinstance(p, RichPreference) and p.ordered_ids]
+        if not rich:
+            return AggregationResult(final_answer="", confidence=0.0, method="Condorcet")
+
+        agent_ids = [r.agent_id for r in responses]
+        content_map = {r.agent_id: r.content for r in responses}
+        n_prefs = len(rich)
+
+        # Build pairwise win counts: wins[a][b] = # prefs where a is ranked above b.
+        wins: dict[str, dict[str, int]] = {a: {b: 0 for b in agent_ids} for a in agent_ids}
+        for pref in rich:
+            for i, a in enumerate(pref.ordered_ids):
+                for b in pref.ordered_ids[i + 1 :]:
+                    if a in wins and b in wins:
+                        wins[a][b] += 1
+
+        others = {a: [b for b in agent_ids if b != a] for a in agent_ids}
+
+        # Check for Condorcet winner: beats all others in strict majority.
+        for candidate in agent_ids:
+            rivals = others[candidate]
+            if rivals and all(wins[candidate][b] > n_prefs / 2 for b in rivals):
+                confidence = min(wins[candidate][b] / n_prefs for b in rivals)
+                return AggregationResult(
+                    final_answer=content_map.get(candidate, ""),
+                    confidence=confidence,
+                    method="Condorcet",
+                )
+
+        # Copeland fallback: score = wins - losses across pairwise contests.
+        copeland: dict[str, float] = {a: 0.0 for a in agent_ids}
+        for a in agent_ids:
+            for b in others[a]:
+                if wins[a][b] > wins[b][a]:
+                    copeland[a] += 1.0
+                elif wins[a][b] < wins[b][a]:
+                    copeland[a] -= 1.0
+
+        winner = max(copeland, key=lambda k: copeland[k])
+        max_wins = len(agent_ids) - 1
+        confidence = (copeland[winner] + max_wins) / (2 * max_wins) if max_wins > 0 else 1.0
+
+        return AggregationResult(
+            final_answer=content_map.get(winner, ""),
+            confidence=max(0.0, min(1.0, confidence)),
+            method="Copeland",
+        )

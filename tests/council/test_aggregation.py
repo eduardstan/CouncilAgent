@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from council.aggregation import BordaCount, MajorityVote, MetaJudge
+from council.aggregation import BordaCount, CondorcetAggregation, MajorityVote, MetaJudge
 from council.context import AgentResponse, AggregationResult, RichPreference
 from council.normalizer import IdentityNormalizer, StructuredOutputNormalizer
 
@@ -176,6 +176,52 @@ class TestMetaJudge:
         result = await agg.aggregate([_resp("x")])
         assert result.final_answer == ""
         assert result.confidence == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Cross-layer isolation
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# CondorcetAggregation
+# ---------------------------------------------------------------------------
+
+
+class TestCondorcetAggregation:
+    async def test_condorcet_winner_when_one_exists(self) -> None:
+        # 3 agents; 2 prefs both rank agent-0 first → strict Condorcet winner.
+        responses = [_resp("ans-A", "agent-0"), _resp("ans-B", "agent-1"), _resp("ans-C", "agent-2")]
+        prefs = [_pref(["agent-0", "agent-1", "agent-2"]), _pref(["agent-0", "agent-2", "agent-1"])]
+        result = await CondorcetAggregation().aggregate(responses, prefs)
+        assert result.final_answer == "ans-A"
+        assert result.method == "Condorcet"
+        assert result.confidence > 0.5
+
+    async def test_copeland_fallback_on_condorcet_cycle(self) -> None:
+        # Classic A>B>C>A cycle — no Condorcet winner.
+        # Pref 1: A > B > C
+        # Pref 2: B > C > A
+        # Pref 3: C > A > B
+        # Pairwise: A>B 2-1, B>C 2-1, C>A 2-1 → cycle → Copeland, all tie at 0.
+        responses = [_resp("alpha", "A"), _resp("beta", "B"), _resp("gamma", "C")]
+        prefs = [_pref(["A", "B", "C"]), _pref(["B", "C", "A"]), _pref(["C", "A", "B"])]
+        result = await CondorcetAggregation().aggregate(responses, prefs)
+        assert result.method == "Copeland"
+        # Three-way Copeland tie: each agent has 1 win, 1 loss → score 0.
+        # Max_wins = 2; confidence = (0 + 2) / (2 * 2) = 0.5
+        assert result.confidence == pytest.approx(0.5)
+
+    async def test_empty_preferences_returns_empty(self) -> None:
+        result = await CondorcetAggregation().aggregate([_resp("x")], preferences=[])
+        assert result.final_answer == ""
+        assert result.method == "Condorcet"
+
+    async def test_single_candidate_returns_it(self) -> None:
+        responses = [_resp("only", "agent-0")]
+        prefs = [_pref(["agent-0"])]
+        result = await CondorcetAggregation().aggregate(responses, prefs)
+        assert result.final_answer == "only"
 
 
 # ---------------------------------------------------------------------------
