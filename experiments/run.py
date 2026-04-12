@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,53 @@ def load_config(path: str | Path) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def _format_task_transcript(
+    task_idx: int,
+    task_id: str,
+    question: str,
+    ground_truth: str,
+    round_history: list[Any],
+    final_answer: str,
+    confidence: float,
+    accuracy: float,
+    model_map: dict[str, str],
+) -> str:
+    """Format the full round-by-round debate for one task as a readable string."""
+    lines: list[str] = []
+    sep = "=" * 72
+    lines.append(sep)
+    lines.append(f"Task {task_idx + 1}  [{task_id}]")
+    lines.append(sep)
+    lines.append(f"Q: {question[:200]}{'...' if len(question) > 200 else ''}")
+    lines.append(f"Ground truth: {ground_truth}")
+    lines.append("")
+
+    # Group responses by round
+    rounds: dict[int, list[Any]] = {}
+    for r in round_history:
+        rounds.setdefault(r.round_index, []).append(r)
+
+    round_labels = {0: "Initial answers", 1: "Critiques", 2: "Revisions"}
+    for round_idx in sorted(rounds):
+        label = round_labels.get(round_idx, f"Round {round_idx}")
+        lines.append(f"--- Round {round_idx}: {label} ---")
+        for resp in sorted(rounds[round_idx], key=lambda r: r.agent_id):
+            model = model_map.get(resp.agent_id, resp.agent_id)
+            short_model = model.split("/")[-1]  # e.g. "gpt-4.1-nano" from full path
+            content = resp.content.strip()
+            lines.append(f"  [{short_model}]")
+            # Indent content for readability
+            for content_line in content.splitlines():
+                lines.append(f"    {content_line}")
+        lines.append("")
+
+    tick = "✓" if accuracy == 1.0 else "✗"
+    lines.append(f"Final answer: {final_answer}  (confidence: {confidence:.2f})")
+    lines.append(f"Accuracy: {tick}  (expected: {ground_truth})")
+    lines.append("")
+    return "\n".join(lines)
+
+
 async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     """Run a benchmark experiment and log to MLflow.
 
@@ -63,8 +111,8 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         name:           Experiment config name (used in MLflow experiment name).
         dataset:        Task dataset name (key in tasks.registry.REGISTRY).
         task_limit:     Max tasks to evaluate (None = full dataset).
-        council:        Council config dict with keys: models, topology, protocol,
-                        aggregation, max_rounds, budget_usd.
+        council:        Council config dict with keys: models, protocol,
+                        max_rounds, budget_usd, task_delay_seconds.
         mlflow:         MLflow config dict with keys: tracking_uri, experiment_name.
                         Optional — if absent, MLflow logging is skipped.
     """
@@ -76,12 +124,10 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         logger.warning("mlflow not installed — results will not be logged. "
                        "Install with: uv pip install 'council-agent[benchmark]'")
 
-    from council.agent import CouncilAgent
     from council.aggregation import MajorityVote
     from council.core import AgentConfig, run_council
     from council.models import LiteLLMClient
     from council.normalizer import StructuredOutputNormalizer
-    from council.policy import CouncilConfig
     from council.protocol import DirectAnswerProtocol, PeerReviewProtocol, SimultaneousProtocol
     from council.termination import FixedRounds
     from council.topology import CompleteGraphTopology
@@ -95,21 +141,17 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     council_cfg: dict[str, Any] = config.get("council", {})
     mlflow_cfg: dict[str, Any] = config.get("mlflow", {})
 
-    # --- Build council config from YAML --------------------------------
+    # --- Build components from YAML ----------------------------------------
     models: list[str] = council_cfg.get("models", [
-        "openrouter/google/gemma-3-27b-it:free",
-        "openrouter/nvidia/nemotron-3-nano-30b-a3b:free",
-        "openrouter/z-ai/glm-4.5-air:free",
+        "openrouter/openai/gpt-4.1-nano",
+        "openrouter/qwen/qwen3.5-flash-02-23",
+        "openrouter/google/gemini-2.5-flash-lite",
     ])
-    max_rounds: int = council_cfg.get("max_rounds", 1)
+    max_rounds: int = council_cfg.get("max_rounds", 3)
     budget_usd: float = council_cfg.get("budget_usd", 0.10)
     task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
-    protocol_name: str = council_cfg.get("protocol", "direct")
+    protocol_name: str = council_cfg.get("protocol", "peer_review")
 
-    # Map protocol name → Protocol instance.
-    # "direct":       agents answer independently, no peer visibility.
-    # "peer_review":  odd rounds=critique, even rounds=revision.
-    # "simultaneous": all agents see a sliding window of previous-round responses.
     _protocol_map = {
         "direct": DirectAnswerProtocol(),
         "peer_review": PeerReviewProtocol(),
@@ -120,19 +162,10 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         logger.warning("Unknown protocol %r, falling back to 'direct'", protocol_name)
 
     agents = [AgentConfig(id=f"agent-{i}", model=m) for i, m in enumerate(models)]
+    # Convenience map for transcript formatting: agent-0 → full model string
+    model_map = {f"agent-{i}": m for i, m in enumerate(models)}
     normalizer = StructuredOutputNormalizer()
-    council_config = CouncilConfig(
-        name=cfg_name,
-        agents=agents,
-        topology=CompleteGraphTopology(len(agents)),
-        protocol=protocol,
-        aggregation=MajorityVote(normalizer=normalizer),
-        termination=FixedRounds(max_rounds),
-        estimated_cost_usd=0.0,
-    )
-
     model_client = LiteLLMClient()
-    agent = CouncilAgent(config=council_config, model_client=model_client)
 
     # --- Load tasks -------------------------------------------------------
     loader = REGISTRY[dataset_name]
@@ -156,33 +189,61 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     costs: list[float] = []
     baseline_accuracies: list[float] = []
     errors: list[str] = []
+    all_transcripts: list[str] = []
+
+    print(f"\n{'=' * 72}")
+    print(f"Experiment: {cfg_name}  |  dataset: {dataset_name}  |  tasks: {task_limit or 'all'}")
+    print(f"Models: {', '.join(m.split('/')[-1] for m in models)}")
+    print(f"Protocol: {protocol_name}  |  max_rounds: {max_rounds}")
+    print(f"{'=' * 72}\n")
 
     for task_idx, task in enumerate(tasks):
         if task_idx > 0 and task_delay > 0:
             await asyncio.sleep(task_delay)
         try:
-            response = await agent.complete(task.question)
-            acc = await task_accuracy(response.content, task.ground_truth, method="smart", normalizer=normalizer)
-            accuracies.append(acc)
-            costs.append(response.cost)
-
-            # §6 baseline: majority vote without deliberation.
-            # We re-use the single council response as a "council of 1"; in full
-            # evaluation, pass raw round-0 agent responses from run_council directly.
-            # Accuracy is measured with task_accuracy (word-boundary aware) to be
-            # consistent with the main loop — _accuracy inside baselines only does
-            # exact match and would undercount when models answer in prose form.
-            baseline_result = await majority_vote_no_deliberation(
-                [response], normalizer
+            result = await run_council(
+                prompt=task.question,
+                agents=agents,
+                model_client=model_client,
+                topology=CompleteGraphTopology(len(agents)),
+                protocol=protocol,
+                aggregation=MajorityVote(normalizer=normalizer),
+                termination=FixedRounds(max_rounds),
             )
+
+            acc = await task_accuracy(
+                result.final_answer, task.ground_truth, method="smart", normalizer=normalizer
+            )
+            accuracies.append(acc)
+            costs.append(result.total_cost)
+
+            # §6 baseline: majority vote on round-0 responses only (before any
+            # deliberation), measured with task_accuracy for consistency.
+            round0_responses = [r for r in result.round_history if r.round_index == 0]
+            baseline_result = await majority_vote_no_deliberation(round0_responses, normalizer)
             baseline_acc = await task_accuracy(
                 baseline_result.answer, task.ground_truth, method="smart", normalizer=normalizer
             )
             baseline_accuracies.append(baseline_acc)
 
+            transcript = _format_task_transcript(
+                task_idx=task_idx,
+                task_id=task.id,
+                question=task.question,
+                ground_truth=task.ground_truth,
+                round_history=result.round_history,
+                final_answer=result.final_answer,
+                confidence=result.confidence,
+                accuracy=acc,
+                model_map=model_map,
+            )
+            print(transcript)
+            all_transcripts.append(transcript)
+
         except Exception as e:
             logger.error("Task %s failed: %s", task.id, e)
             errors.append(f"{task.id}: {e}")
+            print(f"[ERROR] Task {task.id}: {e}\n")
 
     mean_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0.0
     mean_cost = sum(costs) / len(costs) if costs else 0.0
@@ -218,6 +279,18 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 "task_count": float(len(tasks)),
                 "error_count": float(len(errors)),
             })
+            # Save the full debate transcript as an artifact so it's browsable
+            # in the MLflow UI under Artifacts → debate_transcript.txt
+            if all_transcripts:
+                full_transcript = "\n".join(all_transcripts)
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".txt", delete=False, prefix="debate_"
+                ) as f:
+                    f.write(full_transcript)
+                    tmp_path = f.name
+                mlflow.log_artifact(tmp_path, artifact_path="")
+                Path(tmp_path).unlink(missing_ok=True)
+
         summary.mlflow_run_id = run_id
         logger.info("MLflow run logged: %s (experiment: %s)", run_id, experiment_name)
 
@@ -231,19 +304,25 @@ def main() -> None:
     parser.add_argument("--config", required=True, help="Path to YAML experiment config")
     args = parser.parse_args()
 
+    logging.basicConfig(level=logging.WARNING)  # suppress INFO noise; keep WARNING+
     cfg = load_config(args.config)
     summary = asyncio.run(run_experiment(cfg))
 
-    print(f"\n=== Experiment: {summary.config_name} ===")
-    print(f"Tasks evaluated: {summary.task_count}")
-    print(f"Mean accuracy:   {summary.mean_accuracy:.3f}")
-    print(f"Mean cost (USD): {summary.mean_cost:.6f}")
+    print(f"\n{'=' * 72}")
+    print(f"RESULTS  —  {summary.config_name}")
+    print(f"{'=' * 72}")
+    print(f"Tasks evaluated:  {summary.task_count}")
+    print(f"Mean accuracy:    {summary.mean_accuracy:.3f}")
+    print(f"Mean cost (USD):  {summary.mean_cost:.6f}")
     for baseline, score in summary.baseline_comparison.items():
-        print(f"Baseline ({baseline}): {score:.3f}")
+        delta = summary.mean_accuracy - score
+        sign = "+" if delta >= 0 else ""
+        print(f"Baseline ({baseline}): {score:.3f}  (council delta: {sign}{delta:.3f})")
     if summary.mlflow_run_id:
-        print(f"MLflow run: {summary.mlflow_run_id}")
+        print(f"\nMLflow run: {summary.mlflow_run_id}")
+        print("  → open MLflow UI, click 'Experiments' (left sidebar), not 'Traces'")
     if summary.errors:
-        print(f"Errors ({len(summary.errors)}): {summary.errors[:3]}")
+        print(f"\nErrors ({len(summary.errors)}): {summary.errors[:3]}")
 
 
 if __name__ == "__main__":
