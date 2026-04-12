@@ -134,8 +134,11 @@ class MetaJudge(Aggregation):
         if not responses:
             return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
 
+        # Use positional labels — never real agent_id — so the synthesis model
+        # cannot be influenced by agent identity (Constitution §10).
         formatted = "\n\n".join(
-            f"[{r.agent_id}]:\n{r.content}" for r in responses
+            f"[Response {chr(65 + i)}]:\n{r.content}"
+            for i, r in enumerate(responses)
         )
         prompt = (
             "You are a synthesis judge. Below are responses from multiple agents "
