@@ -178,12 +178,27 @@ class TestPeerReviewProtocol:
         # Shared board: no per-sender label needed — just the content
         assert "some answer" in prompt
 
-    def test_schema_injected_in_output(self) -> None:
+    def test_schema_injected_in_answer_rounds_only(self) -> None:
+        """Schema is injected in initial (round 0) and revision (even round >0) prompts,
+        but NOT in critique prompts (odd rounds) — critiques are free-text analysis."""
         schema = StructuredRanking.SCHEMA
         protocol = PeerReviewProtocol(output_schema=schema)
-        ctx = _ctx(round_index=1, visible=[_response("Response A", "x")])
-        prompt = protocol.build_prompt(ctx)
-        assert "ranking" in prompt  # schema field name appears
+
+        # round 0 (initial answer) — schema must appear
+        ctx_r0 = _ctx(round_index=0, visible=[])
+        prompt_r0 = protocol.build_prompt(ctx_r0)
+        assert "ranking" in prompt_r0
+
+        # round 1 (critique) — schema must NOT appear
+        ctx_r1 = _ctx(round_index=1, visible=[_response("Response A", "x")])
+        prompt_r1 = protocol.build_prompt(ctx_r1)
+        assert "ranking" not in prompt_r1
+        assert "Critique" in prompt_r1
+
+        # round 2 (revision) — schema must appear again
+        ctx_r2 = _ctx(round_index=2, visible=[_response("Response A", "some critique")])
+        prompt_r2 = protocol.build_prompt(ctx_r2)
+        assert "ranking" in prompt_r2
 
     def test_protocol_does_not_filter_by_agent_identity(self) -> None:
         # Protocol must format all visible_responses regardless of agent_id.

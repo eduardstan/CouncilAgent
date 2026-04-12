@@ -65,15 +65,23 @@ def _format_task_transcript(
     confidence: float,
     accuracy: float,
     model_map: dict[str, str],
+    final_round_normalized: dict[str, str],  # agent_id → normalized answer
 ) -> str:
-    """Format the full round-by-round debate for one task as a readable string."""
+    """Format the full round-by-round debate for one task as a readable string.
+
+    Pipeline stages shown:
+      GENERATE  — Round 0: each agent answers independently
+      DELIBERATE — Round 1+: critiques and revisions
+      RANK      — NullRanking (no preferences collected in fast mode)
+      AGGREGATE — MajorityVote on final-round responses
+    """
     lines: list[str] = []
     sep = "=" * 72
     lines.append(sep)
-    lines.append(f"Task {task_idx + 1}  [{task_id}]")
+    lines.append(f"## Task {task_idx + 1}  `{task_id}`")
     lines.append(sep)
-    lines.append(f"Q: {question[:200]}{'...' if len(question) > 200 else ''}")
-    lines.append(f"Ground truth: {ground_truth}")
+    lines.append(f"**Q:** {question[:300]}{'...' if len(question) > 300 else ''}")
+    lines.append(f"**Ground truth:** `{ground_truth}`")
     lines.append("")
 
     # Group responses by round
@@ -81,23 +89,42 @@ def _format_task_transcript(
     for r in round_history:
         rounds.setdefault(r.round_index, []).append(r)
 
-    round_labels = {0: "Initial answers", 1: "Critiques", 2: "Revisions"}
+    last_round = max(rounds) if rounds else 0
+    round_labels = {0: "GENERATE — Initial answers", 1: "DELIBERATE — Critiques", 2: "DELIBERATE — Revisions"}
+
     for round_idx in sorted(rounds):
-        label = round_labels.get(round_idx, f"Round {round_idx}")
-        lines.append(f"--- Round {round_idx}: {label} ---")
+        label = round_labels.get(round_idx, f"DELIBERATE — Round {round_idx}")
+        lines.append(f"### {label}")
+        lines.append("")
         for resp in sorted(rounds[round_idx], key=lambda r: r.agent_id):
             model = model_map.get(resp.agent_id, resp.agent_id)
-            short_model = model.split("/")[-1]  # e.g. "gpt-4.1-nano" from full path
+            short_model = model.split("/")[-1]
             content = resp.content.strip()
-            lines.append(f"  [{short_model}]")
-            # Indent content for readability
-            for content_line in content.splitlines():
-                lines.append(f"    {content_line}")
-        lines.append("")
+            lines.append(f"**[{short_model}]**")
+            lines.append("")
+            lines.append(content)
+            lines.append("")
+
+    # AGGREGATE section — show MajorityVote ballot
+    lines.append("### AGGREGATE — MajorityVote on final-round responses")
+    lines.append("")
+    lines.append("| Agent | Model | Normalized answer |")
+    lines.append("|-------|-------|-------------------|")
+    vote_counts: dict[str, int] = {}
+    for agent_id, norm in sorted(final_round_normalized.items()):
+        model = model_map.get(agent_id, agent_id)
+        short_model = model.split("/")[-1]
+        lines.append(f"| `{agent_id}` | {short_model} | `{norm}` |")
+        vote_counts[norm] = vote_counts.get(norm, 0) + 1
+    lines.append("")
+    total = sum(vote_counts.values())
+    for answer, count in sorted(vote_counts.items(), key=lambda x: -x[1]):
+        marker = " ← **winner**" if answer == final_answer else ""
+        lines.append(f"- `{answer}`: {count}/{total} votes{marker}")
+    lines.append("")
 
     tick = "✓" if accuracy == 1.0 else "✗"
-    lines.append(f"Final answer: {final_answer}  (confidence: {confidence:.2f})")
-    lines.append(f"Accuracy: {tick}  (expected: {ground_truth})")
+    lines.append(f"**Final answer:** `{final_answer}`  — confidence: {confidence:.2f}  — {tick} (expected: `{ground_truth}`)")
     lines.append("")
     return "\n".join(lines)
 
@@ -150,12 +177,16 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
     protocol_name: str = council_cfg.get("protocol", "peer_review")
 
+    # Ask models to produce structured JSON so MajorityVote can normalize cleanly.
+    # Critique rounds (odd rounds in PeerReviewProtocol) intentionally ignore this
+    # schema — free-text critique is correct there.
+    _answer_schema = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
     _protocol_map = {
-        "direct": DirectAnswerProtocol(),
-        "peer_review": PeerReviewProtocol(),
-        "simultaneous": SimultaneousProtocol(),
+        "direct": DirectAnswerProtocol(output_schema=_answer_schema),
+        "peer_review": PeerReviewProtocol(output_schema=_answer_schema),
+        "simultaneous": SimultaneousProtocol(output_schema=_answer_schema),
     }
-    protocol = _protocol_map.get(protocol_name, DirectAnswerProtocol())
+    protocol = _protocol_map.get(protocol_name, DirectAnswerProtocol(output_schema=_answer_schema))
     if protocol_name not in _protocol_map:
         logger.warning("Unknown protocol %r, falling back to 'direct'", protocol_name)
 
@@ -224,6 +255,14 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
             )
             baseline_accuracies.append(baseline_acc)
 
+            # Normalize each final-round response for the aggregation section.
+            last_round_idx = result.rounds_used - 1
+            final_round_normalized = {
+                r.agent_id: await normalizer.normalize(r.content)
+                for r in result.round_history
+                if r.round_index == last_round_idx
+            }
+
             transcript = _format_task_transcript(
                 task_idx=task_idx,
                 task_id=task.id,
@@ -234,6 +273,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 confidence=result.confidence,
                 accuracy=acc,
                 model_map=model_map,
+                final_round_normalized=final_round_normalized,
             )
             print(transcript)
             all_transcripts.append(transcript)
@@ -281,7 +321,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
             # in the MLflow UI under Artifacts → debate_transcript.txt
             if all_transcripts:
                 full_transcript = "\n".join(all_transcripts)
-                mlflow.log_text(full_transcript, "debate_transcript.txt")
+                mlflow.log_text(full_transcript, "debate_transcript.md")
 
         summary.mlflow_run_id = run_id
         logger.info("MLflow run logged: %s (experiment: %s)", run_id, experiment_name)

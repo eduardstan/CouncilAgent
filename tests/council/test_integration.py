@@ -25,13 +25,18 @@ from council.topology import CompleteGraphTopology, RingTopology
 # ---------------------------------------------------------------------------
 
 
-async def test_peer_review_two_rounds_structured_output() -> None:
-    """Full PeerReview run: round 0 → structured JSON answers, round 1 → critique."""
+async def test_peer_review_three_rounds_structured_output() -> None:
+    """Full PeerReview run: round 0 → answers, round 1 → critiques, round 2 → revisions.
+
+    Aggregation uses only the final-round (revision) responses. Confidence should
+    be 1.0 because all three agents converge on the same revised answer.
+    """
     n = 3
     responses: dict[tuple[str, int], str] = {}
     for i in range(n):
         responses[(f"agent-{i}", 0)] = '{"answer": 72, "reasoning": "8 times 9 is 72"}'
-        responses[(f"agent-{i}", 1)] = '{"ranking": ["Response A","Response B"], "scores": {"Response A": 8, "Response B": 6}}'
+        responses[(f"agent-{i}", 1)] = "All responses look correct. No errors found."
+        responses[(f"agent-{i}", 2)] = '{"answer": 72, "reasoning": "confirmed after review"}'
 
     agents = [AgentConfig(id=f"agent-{i}", model=f"fake/m{i}") for i in range(n)]
     client = FakeModelClient(responses)
@@ -43,14 +48,12 @@ async def test_peer_review_two_rounds_structured_output() -> None:
         topology=CompleteGraphTopology(n),
         protocol=PeerReviewProtocol(output_schema={"answer": {"type": "number"}}),
         aggregation=MajorityVote(normalizer=StructuredOutputNormalizer()),
-        termination=FixedRounds(2),
+        termination=FixedRounds(3),
     )
-    # Round 0 answers all normalize to "72"; round 1 critique responses are also
-    # aggregated (they don't normalize to "72"), so confidence < 1.0 over all rounds.
-    # The majority form is still "72" (3/6 = 0.5, or dominant over other unique forms).
+    # Only round-2 revision responses are aggregated — all normalize to "72".
     assert result.final_answer == "72"
-    assert result.confidence > 0.0
-    assert result.rounds_used == 2
+    assert result.confidence == 1.0  # 3/3 revision responses agree
+    assert result.rounds_used == 3
     assert result.tokens_in > 0
     assert result.tokens_out > 0
 
@@ -165,6 +168,8 @@ async def test_structured_ranking_round_trip() -> None:
         ("agent-1", 0): '{"answer": "Paris"}',
         ("agent-0", 1): ranking_json,
         ("agent-1", 1): ranking_json,
+        ("agent-0", 2): '{"answer": "Paris"}',
+        ("agent-1", 2): '{"answer": "Paris"}',
     }
 
     agents = [AgentConfig(id=f"agent-{i}", model=f"fake/m{i}") for i in range(n)]
@@ -178,10 +183,9 @@ async def test_structured_ranking_round_trip() -> None:
         protocol=PeerReviewProtocol(output_schema=StructuredRanking.SCHEMA),
         aggregation=MajorityVote(normalizer=StructuredOutputNormalizer()),
         ranking=StructuredRanking(),
-        termination=FixedRounds(2),
+        termination=FixedRounds(3),
     )
-    # Round 0 answers are "paris"; round 1 outputs are ranking JSON.
-    # "paris" is the plurality winner across all rounds.
+    # Only round-2 revision responses are aggregated — both normalize to "paris".
     assert result.final_answer == "paris"
-    assert result.confidence > 0.0
-    assert result.rounds_used == 2
+    assert result.confidence == 1.0  # 2/2 revision responses agree
+    assert result.rounds_used == 3

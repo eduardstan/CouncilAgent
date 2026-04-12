@@ -89,8 +89,17 @@ async def run_council(
     # Rank (no-op for NullRanking).
     preferences = await _rank(state, ranking, [a.id for a in agents])
 
-    # Aggregate across all rounds that ran.
-    round_responses = [r for r in state.round_history if not isinstance(r, ModelFailure)]
+    # Aggregate the final round's responses only.
+    # Intermediate rounds (e.g. critiques in PeerReviewProtocol) are deliberation
+    # artefacts — feeding them to MajorityVote would pollute the vote with
+    # critique text that is not an answer to the original question.
+    last_round = state.current_round - 1
+    round_responses = [
+        r for r in state.round_history
+        if r.round_index == last_round and not isinstance(r, ModelFailure)
+    ]
+    if not round_responses:  # all agents failed in the last round — fall back
+        round_responses = [r for r in state.round_history if not isinstance(r, ModelFailure)]
     agg_result = await aggregation.aggregate(round_responses, preferences)
     state.final_result = agg_result
 

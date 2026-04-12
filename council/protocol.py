@@ -120,8 +120,8 @@ class PeerReviewProtocol(Protocol):
             "Critique each response above. Identify any errors, gaps, or weaknesses. "
             "Be specific and constructive.",
         ]
-        if self._schema:
-            parts.append(_format_schema(self._schema))
+        # Critiques are free-text analysis — no JSON schema here.
+        # Schema is only injected in answer rounds (initial + revision).
         return "\n".join(parts)
 
     def _revision_prompt(self, ctx: VisibilityContext) -> str:
