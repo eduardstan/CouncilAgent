@@ -35,7 +35,7 @@ Evaluation layer    (evaluation/)   — metrics, baselines, Shapley, statistics,
 
 ## Tech Stack
 - **Language**: Python ≥ 3.11, async-first (`asyncio`)
-- **Model access**: LiteLLM **and** OpenRouter — both supported behind the `ModelClient` abstraction. The abstraction decides which backend to use per-model based on config (e.g. `openrouter/anthropic/claude-sonnet-4` routes via OpenRouter; `openai/gpt-4o` via LiteLLM direct). Never call providers directly from core code.
+- **Model access**: LiteLLM is the single backend (`LiteLLMClient`). It routes all providers — `openai/*`, `anthropic/*`, `openrouter/*` (including `:free` tier models), `ollama/*`, etc. — via one `litellm.acompletion` call. Never call providers directly from core code.
 - **Orchestration**: LangGraph *only* as a thin adapter in `council/adapters/langgraph.py`. The core pipeline must run without it.
 - **Config**: Hydra (YAML composition) for experiments. The `CouncilAgent` itself must be usable without Hydra.
 - **Tracking**: MLflow for experiments, OpenTelemetry for distributed tracing.
@@ -78,10 +78,12 @@ Do not create these files until the corresponding Phase task (see the deep revie
 - **Follow the phased roadmap.** Do not skip ahead (e.g. don't add Shapley values before `CouncilAgent` works end-to-end).
 - **Rules files** in `.claude/rules/` are binding. Subagents in `.claude/agents/` handle reviews and scaffolding — use them.
 
-## Common Commands (to be populated as the project grows)
+## Common Commands
 ```bash
-# These will be filled in once pyproject.toml exists
-uv run pytest tests/
-uv run ruff check council/ evaluation/
-uv run mypy council/core.py council/agent.py
+uv run pytest tests/                          # full unit test suite
+uv run pytest tests/ -q                       # quiet mode
+uv run pytest tests/ -k "test_name"           # single test
+RUN_INTEGRATION=1 uv run pytest tests/integration/  # real model calls (needs API keys)
+uv run ruff check council/ evaluation/        # lint
+uv run mypy council/core.py council/agent.py  # type-check (strict)
 ```

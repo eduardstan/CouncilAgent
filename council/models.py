@@ -3,8 +3,14 @@
 All LLM I/O flows through this module. No other council module imports
 litellm, httpx, or any provider SDK (architecture.md, Constitution §8).
 
-LiteLLM natively supports the openrouter/* model prefix (routes to OpenRouter
-via OPENROUTER_API_KEY), so a separate OpenRouterClient is not needed.
+LiteLLM is the single backend. It natively handles:
+  - openrouter/* → OpenRouter via OPENROUTER_API_KEY
+  - openai/*     → OpenAI via OPENAI_API_KEY
+  - anthropic/*  → Anthropic via ANTHROPIC_API_KEY
+  - ollama/*     → Local Ollama daemon
+  - … and every other provider it supports
+
+No separate OpenRouterClient, OllamaClient, or RoutingModelClient is needed.
 
 Cache: intentionally absent in Phase 1.
 # TODO(phase-2): response cache keyed by (model, prompt_hash, temperature)
@@ -15,7 +21,6 @@ Retry: max_retries parameter accepted; Phase 2 adds exponential back-off.
 from __future__ import annotations
 
 import logging
-import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -127,17 +132,21 @@ class FakeModelClient(ModelClient):
 
 
 # ---------------------------------------------------------------------------
-# LiteLLMClient
+# LiteLLMClient — the single real backend
 # ---------------------------------------------------------------------------
 
 
 class LiteLLMClient(ModelClient):
-    """Routes to any LiteLLM-supported provider (OpenAI, Anthropic, Google, OpenRouter, etc.).
+    """Routes to any LiteLLM-supported provider via a single litellm.acompletion call.
 
-    The model string is passed verbatim to litellm.acompletion, so callers use
-    LiteLLM model naming: "openai/gpt-4o-mini", "anthropic/claude-sonnet-4-5",
-    "openrouter/anthropic/claude-sonnet-4-5", etc.
+    Pass model strings verbatim:
+      "openai/gpt-4o-mini"
+      "anthropic/claude-sonnet-4-5"
+      "openrouter/openai/gpt-oss-20b:free"
+      "openrouter/google/gemma-3-27b-it:free"
+      "ollama/llama3.2"
 
+    LiteLLM reads the appropriate API key from the environment automatically.
     Cost is parsed from response._hidden_params["response_cost"] when present.
 
     # TODO(phase-2): retry with exponential back-off
@@ -202,107 +211,3 @@ class LiteLLMClient(ModelClient):
             return per_token * prompt_tokens
         except Exception:
             return 0.0
-
-
-# ---------------------------------------------------------------------------
-# OllamaClient
-# ---------------------------------------------------------------------------
-
-
-class OllamaClient(ModelClient):
-    """Direct httpx calls to a local Ollama daemon.
-
-    Cost is always 0.0 (local inference).
-
-    # TODO(phase-2): retry on transient connection errors
-    """
-
-    def __init__(self, base_url: str | None = None) -> None:
-        self.base_url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-
-    async def complete(
-        self,
-        request: ModelRequest,
-        agent_id: str,
-        round_index: int,
-    ) -> AgentResponse | ModelFailure:
-        import httpx
-
-        # Strip the "ollama/" prefix if callers pass it.
-        model = request.model.removeprefix("ollama/")
-        body: dict[str, object] = {
-            "model": model,
-            "prompt": request.prompt,
-            "stream": False,
-            "options": {"num_predict": request.max_tokens, "temperature": request.temperature},
-        }
-
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{self.base_url}/api/generate",
-                    json=body,
-                    timeout=120.0,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content: str = data.get("response", "")
-                tokens_in: int = data.get("prompt_eval_count", max(1, len(request.prompt) // 4))
-                tokens_out: int = data.get("eval_count", max(1, len(content) // 4))
-                return AgentResponse(
-                    agent_id=agent_id,
-                    content=content,
-                    round_index=round_index,
-                    tokens_in=tokens_in,
-                    tokens_out=tokens_out,
-                    cost=0.0,
-                )
-        except Exception as exc:
-            logger.debug("OllamaClient failure for %s: %s", request.model, exc)
-            return ModelFailure(model=request.model, error=str(exc).lower())
-
-    async def estimate_cost(self, model: str, prompt_tokens: int) -> float:
-        return 0.0
-
-
-# ---------------------------------------------------------------------------
-# RoutingModelClient
-# ---------------------------------------------------------------------------
-
-
-class RoutingModelClient(ModelClient):
-    """Dispatches calls to the correct backend by model-name prefix.
-
-    Routing rules:
-    - "ollama/*"     → OllamaClient (local inference, no API key needed)
-    - anything else  → LiteLLMClient (handles openai/*, anthropic/*, openrouter/*, etc.)
-
-    LiteLLM natively routes "openrouter/*" models to OpenRouter via
-    OPENROUTER_API_KEY, so no separate OpenRouterClient is required.
-
-    Construct with explicit backend instances to allow test injection.
-    """
-
-    def __init__(
-        self,
-        litellm: ModelClient | None = None,
-        ollama: ModelClient | None = None,
-    ) -> None:
-        self._litellm: ModelClient = litellm or LiteLLMClient()
-        self._ollama: ModelClient = ollama or OllamaClient()
-
-    def _backend(self, model: str) -> ModelClient:
-        if model.startswith("ollama/"):
-            return self._ollama
-        return self._litellm
-
-    async def complete(
-        self,
-        request: ModelRequest,
-        agent_id: str,
-        round_index: int,
-    ) -> AgentResponse | ModelFailure:
-        return await self._backend(request.model).complete(request, agent_id, round_index)
-
-    async def estimate_cost(self, model: str, prompt_tokens: int) -> float:
-        return await self._backend(model).estimate_cost(model, prompt_tokens)
