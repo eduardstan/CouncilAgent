@@ -27,7 +27,8 @@ from council.context import (
 )
 from council.models import ModelClient, ModelFailure, ModelRequest
 from council.protocol import Protocol
-from council.ranking import NullRanking, PreferenceData, Ranking
+from council.context import PreferenceData
+from council.ranking import NullRanking, Ranking
 from council.termination import TerminationStrategy
 from council.topology import Topology
 
