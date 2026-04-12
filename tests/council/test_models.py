@@ -1,8 +1,11 @@
 """Tests for council/models.py — ModelClient hierarchy and routing.
 
-No real network calls. LiteLLMClient, OpenRouterClient, and OllamaClient are
-tested with mocked HTTP/library calls. FakeModelClient is the canonical test
-double used throughout the project — its contract is tested thoroughly here.
+No real network calls. LiteLLMClient and OllamaClient are tested with mocked
+HTTP/library calls. FakeModelClient is the canonical test double used
+throughout the project — its contract is tested thoroughly here.
+
+OpenRouterClient was removed: LiteLLM natively routes "openrouter/*" models
+via OPENROUTER_API_KEY, so a separate client is not needed.
 """
 
 from __future__ import annotations
@@ -16,7 +19,6 @@ from council.models import (
     ModelFailure,
     ModelRequest,
     OllamaClient,
-    OpenRouterClient,
     RoutingModelClient,
 )
 
@@ -146,109 +148,44 @@ class TestFakeModelClient:
 
 
 class TestRoutingModelClient:
-    async def test_openrouter_prefix_dispatches_to_openrouter(self, mocker: pytest.FixtureRequest) -> None:
-        fake_or = FakeModelClient({("a", 0): "or-response"})
+    async def test_openrouter_prefix_dispatches_to_litellm(self) -> None:
+        """openrouter/* routes to LiteLLMClient — LiteLLM handles it natively."""
         fake_litellm = FakeModelClient({("a", 0): "ll-response"})
         fake_ollama = FakeModelClient({("a", 0): "ol-response"})
 
-        router = RoutingModelClient(
-            openrouter=fake_or,
-            litellm=fake_litellm,
-            ollama=fake_ollama,
-        )
+        router = RoutingModelClient(litellm=fake_litellm, ollama=fake_ollama)
         req = ModelRequest(model="openrouter/anthropic/claude-sonnet-4", prompt="p")
         result = await router.complete(req, agent_id="a", round_index=0)
         assert isinstance(result, AgentResponse)
-        assert result.content == "or-response"
+        assert result.content == "ll-response"
 
-    async def test_ollama_prefix_dispatches_to_ollama(self, mocker: pytest.FixtureRequest) -> None:
-        fake_or = FakeModelClient({("a", 0): "or-response"})
+    async def test_ollama_prefix_dispatches_to_ollama(self) -> None:
         fake_litellm = FakeModelClient({("a", 0): "ll-response"})
         fake_ollama = FakeModelClient({("a", 0): "ol-response"})
 
-        router = RoutingModelClient(
-            openrouter=fake_or,
-            litellm=fake_litellm,
-            ollama=fake_ollama,
-        )
+        router = RoutingModelClient(litellm=fake_litellm, ollama=fake_ollama)
         req = ModelRequest(model="ollama/llama3", prompt="p")
         result = await router.complete(req, agent_id="a", round_index=0)
         assert isinstance(result, AgentResponse)
         assert result.content == "ol-response"
 
-    async def test_other_prefix_dispatches_to_litellm(self, mocker: pytest.FixtureRequest) -> None:
-        fake_or = FakeModelClient({("a", 0): "or-response"})
+    async def test_openai_prefix_dispatches_to_litellm(self) -> None:
         fake_litellm = FakeModelClient({("a", 0): "ll-response"})
         fake_ollama = FakeModelClient({("a", 0): "ol-response"})
 
-        router = RoutingModelClient(
-            openrouter=fake_or,
-            litellm=fake_litellm,
-            ollama=fake_ollama,
-        )
+        router = RoutingModelClient(litellm=fake_litellm, ollama=fake_ollama)
         req = ModelRequest(model="openai/gpt-4o", prompt="p")
         result = await router.complete(req, agent_id="a", round_index=0)
         assert isinstance(result, AgentResponse)
         assert result.content == "ll-response"
 
     async def test_estimate_cost_delegated_to_correct_backend(self) -> None:
-        fake_or = FakeModelClient({})
         fake_litellm = FakeModelClient({})
         fake_ollama = FakeModelClient({})
 
-        router = RoutingModelClient(openrouter=fake_or, litellm=fake_litellm, ollama=fake_ollama)
+        router = RoutingModelClient(litellm=fake_litellm, ollama=fake_ollama)
         cost = await router.estimate_cost("openrouter/anthropic/claude-haiku-4", prompt_tokens=50)
         assert cost == 0.0  # FakeModelClient always returns 0
-
-
-# ---------------------------------------------------------------------------
-# OpenRouterClient — auth header and URL (mocked httpx)
-# ---------------------------------------------------------------------------
-
-
-class TestOpenRouterClient:
-    async def test_sends_bearer_auth_header(self, mocker: pytest.FixtureRequest) -> None:
-        # Build a mock response object
-        mock_response = mocker.MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = mocker.MagicMock()
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "hello"}}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
-        }
-
-        # httpx.AsyncClient is used as an async context manager;
-        # .post() is an awaitable method on the inner client.
-        mock_client = mocker.AsyncMock()
-        mock_client.__aenter__.return_value = mock_client
-        mock_client.post = mocker.AsyncMock(return_value=mock_response)
-        mocker.patch("httpx.AsyncClient", return_value=mock_client)
-
-        client = OpenRouterClient(api_key="test-key-123")
-        req = ModelRequest(model="openrouter/anthropic/claude-haiku-4", prompt="hi")
-        result = await client.complete(req, agent_id="a", round_index=0)
-        assert isinstance(result, AgentResponse)
-        assert result.content == "hello"
-        # Confirm post was called (auth header wiring verified in integration tests)
-        mock_client.post.assert_called_once()
-
-    async def test_model_failure_on_http_error(self, mocker: pytest.FixtureRequest) -> None:
-        import httpx
-
-        mocker.patch("httpx.AsyncClient.post", side_effect=httpx.HTTPError("connection refused"))
-        client = OpenRouterClient(api_key="test-key")
-        req = ModelRequest(model="openrouter/anthropic/claude-haiku-4", prompt="hi")
-        result = await client.complete(req, agent_id="a", round_index=0)
-        assert isinstance(result, ModelFailure)
-        assert "connection refused" in result.error.lower()
-
-    async def test_estimate_cost_returns_zero_on_fetch_failure(self, mocker: pytest.FixtureRequest) -> None:
-        import httpx
-
-        mocker.patch("httpx.AsyncClient.get", side_effect=httpx.HTTPError("fail"))
-        client = OpenRouterClient(api_key="key")
-        cost = await client.estimate_cost("openrouter/anthropic/claude-haiku-4", prompt_tokens=100)
-        assert cost == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +213,7 @@ class TestOllamaClient:
 
 
 # ---------------------------------------------------------------------------
-# LiteLLMClient — routing sanity (mocked litellm.acompletion)
+# LiteLLMClient — routing sanity + cost parsing (mocked litellm.acompletion)
 # ---------------------------------------------------------------------------
 
 
@@ -287,6 +224,7 @@ class TestLiteLLMClient:
         mock_resp.choices[0].message.content = "litellm answer"
         mock_resp.usage.prompt_tokens = 8
         mock_resp.usage.completion_tokens = 4
+        mock_resp._hidden_params = {"response_cost": 0.0}
 
         mocker.patch("litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp)
 
@@ -297,6 +235,39 @@ class TestLiteLLMClient:
         assert result.content == "litellm answer"
         assert result.tokens_in == 8
         assert result.tokens_out == 4
+
+    async def test_cost_parsed_from_hidden_params(self, mocker: pytest.FixtureRequest) -> None:
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = "answer"
+        mock_resp.usage.prompt_tokens = 10
+        mock_resp.usage.completion_tokens = 5
+        mock_resp._hidden_params = {"response_cost": 0.00042}
+
+        mocker.patch("litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp)
+
+        client = LiteLLMClient()
+        req = ModelRequest(model="openai/gpt-4o-mini", prompt="hi")
+        result = await client.complete(req, agent_id="a", round_index=0)
+        assert isinstance(result, AgentResponse)
+        assert result.cost == pytest.approx(0.00042)
+
+    async def test_cost_defaults_to_zero_if_hidden_params_missing(self, mocker: pytest.FixtureRequest) -> None:
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = "answer"
+        mock_resp.usage.prompt_tokens = 10
+        mock_resp.usage.completion_tokens = 5
+        # Simulate _hidden_params not present
+        del mock_resp._hidden_params
+
+        mocker.patch("litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp)
+
+        client = LiteLLMClient()
+        req = ModelRequest(model="openai/gpt-4o-mini", prompt="hi")
+        result = await client.complete(req, agent_id="a", round_index=0)
+        assert isinstance(result, AgentResponse)
+        assert result.cost == 0.0
 
     async def test_returns_model_failure_on_exception(self, mocker: pytest.FixtureRequest) -> None:
         mocker.patch("litellm.acompletion", side_effect=Exception("api error"))
