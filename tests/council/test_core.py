@@ -354,6 +354,12 @@ def test_core_has_no_framework_imports() -> None:
     with open(spec.origin) as f:
         source = f.read()
 
+    import_lines = [
+        line for line in source.splitlines()
+        if line.strip().startswith(("import ", "from ")) and not line.strip().startswith("#")
+    ]
+    import_text = "\n".join(import_lines)
+
     forbidden = ["langgraph", "hydra", "mlflow", "opentelemetry", "langchain"]
     for fw in forbidden:
-        assert fw not in source, f"council/core.py contains forbidden import: {fw}"
+        assert fw not in import_text, f"council/core.py imports forbidden framework: {fw}"

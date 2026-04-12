@@ -12,7 +12,8 @@ import logging
 from abc import ABC, abstractmethod
 from collections import Counter
 
-from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData
+from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData, RichPreference
+from council.models import ModelClient, ModelFailure, ModelRequest
 
 logger = logging.getLogger(__name__)
 
@@ -69,21 +70,12 @@ class MajorityVote(Aggregation):
 
 
 class BordaCount(Aggregation):
-    """Phase 3 implementation. Stub raises NotImplementedError."""
+    """Ordinal aggregation via Borda count.
 
-    async def aggregate(
-        self,
-        responses: list[AgentResponse],
-        preferences: list[PreferenceData] | None = None,
-    ) -> AggregationResult:
-        raise NotImplementedError("BordaCount is implemented in Phase 3")
-
-
-class MetaJudge(Aggregation):
-    """LLM-based synthesis aggregation. Phase 3 implementation.
-
-    Stub raises NotImplementedError. Implementing here would require a ModelClient
-    call inside aggregation, which is architecturally allowed but deferred (§9).
+    Each RichPreference.ordered_ids list contributes N-1 points to rank-1,
+    N-2 to rank-2, …, 0 to rank-N (N = number of responses).
+    Winner = agent with the highest total points.
+    Confidence = winner_score / max_possible_score (bounded [0, 1]).
     """
 
     async def aggregate(
@@ -91,4 +83,147 @@ class MetaJudge(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
     ) -> AggregationResult:
-        raise NotImplementedError("MetaJudge is implemented in Phase 3")
+        if not responses or not preferences:
+            return AggregationResult(final_answer="", confidence=0.0, method="BordaCount")
+
+        rich = [p for p in preferences if isinstance(p, RichPreference) and p.ordered_ids]
+        if not rich:
+            return AggregationResult(final_answer="", confidence=0.0, method="BordaCount")
+
+        n = len(responses)
+        scores: dict[str, float] = {r.agent_id: 0.0 for r in responses}
+
+        for pref in rich:
+            for rank, agent_id in enumerate(pref.ordered_ids):
+                if agent_id in scores:
+                    scores[agent_id] += n - 1 - rank
+
+        winner_id = max(scores, key=lambda k: scores[k])
+        winner_score = scores[winner_id]
+        max_possible = len(rich) * (n - 1)
+        confidence = winner_score / max_possible if max_possible > 0 else 0.0
+
+        content_map = {r.agent_id: r.content for r in responses}
+        return AggregationResult(
+            final_answer=content_map.get(winner_id, ""),
+            confidence=confidence,
+            method="BordaCount",
+        )
+
+
+class MetaJudge(Aggregation):
+    """LLM-based synthesis aggregation.
+
+    Sends all agent responses to a synthesis model and returns its output as the
+    final answer. The synthesis model and ModelClient are injected at construction
+    — never hardcoded (Constitution §3).
+
+    Confidence is fixed at 1.0 because MetaJudge produces one synthesized answer;
+    agreement-based confidence lives at the CouncilAgent layer above.
+    """
+
+    def __init__(self, model: str, model_client: ModelClient) -> None:
+        self._model = model
+        self._model_client = model_client
+
+    async def aggregate(
+        self,
+        responses: list[AgentResponse],
+        preferences: list[PreferenceData] | None = None,
+    ) -> AggregationResult:
+        if not responses:
+            return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
+
+        formatted = "\n\n".join(
+            f"[{r.agent_id}]:\n{r.content}" for r in responses
+        )
+        prompt = (
+            "You are a synthesis judge. Below are responses from multiple agents "
+            "to a question. Synthesize them into a single best answer.\n\n"
+            f"Responses:\n{formatted}\n\n"
+            "Provide your synthesized answer:"
+        )
+        outcome = await self._model_client.complete(
+            ModelRequest(model=self._model, prompt=prompt),
+            agent_id="meta-judge",
+            round_index=0,
+        )
+        if isinstance(outcome, ModelFailure):
+            logger.warning("MetaJudge model call failed: %s", outcome.error)
+            return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
+
+        return AggregationResult(
+            final_answer=outcome.content,
+            confidence=1.0,
+            method="MetaJudge",
+        )
+
+
+class CondorcetAggregation(Aggregation):
+    """Condorcet/Copeland social-choice aggregation (Issue 13 ground truth).
+
+    Builds a pairwise win matrix from RichPreference.ordered_ids.
+    A Condorcet winner beats every other candidate in a majority of preference
+    lists. If no Condorcet winner exists (cycle), Copeland's method is used:
+    each candidate's score = wins - losses across all pairwise contests.
+
+    Confidence:
+    - Condorcet: min pairwise win-ratio (weakest majority the winner holds).
+    - Copeland: (copeland_score + max_wins) / (2 * max_wins), normalized to [0, 1].
+    """
+
+    async def aggregate(
+        self,
+        responses: list[AgentResponse],
+        preferences: list[PreferenceData] | None = None,
+    ) -> AggregationResult:
+        if not responses or not preferences:
+            return AggregationResult(final_answer="", confidence=0.0, method="Condorcet")
+
+        rich = [p for p in preferences if isinstance(p, RichPreference) and p.ordered_ids]
+        if not rich:
+            return AggregationResult(final_answer="", confidence=0.0, method="Condorcet")
+
+        agent_ids = [r.agent_id for r in responses]
+        content_map = {r.agent_id: r.content for r in responses}
+        n_prefs = len(rich)
+
+        # Build pairwise win counts: wins[a][b] = # prefs where a is ranked above b.
+        wins: dict[str, dict[str, int]] = {a: {b: 0 for b in agent_ids} for a in agent_ids}
+        for pref in rich:
+            for i, a in enumerate(pref.ordered_ids):
+                for b in pref.ordered_ids[i + 1 :]:
+                    if a in wins and b in wins:
+                        wins[a][b] += 1
+
+        others = {a: [b for b in agent_ids if b != a] for a in agent_ids}
+
+        # Check for Condorcet winner: beats all others in strict majority.
+        for candidate in agent_ids:
+            rivals = others[candidate]
+            if rivals and all(wins[candidate][b] > n_prefs / 2 for b in rivals):
+                confidence = min(wins[candidate][b] / n_prefs for b in rivals)
+                return AggregationResult(
+                    final_answer=content_map.get(candidate, ""),
+                    confidence=confidence,
+                    method="Condorcet",
+                )
+
+        # Copeland fallback: score = wins - losses across pairwise contests.
+        copeland: dict[str, float] = {a: 0.0 for a in agent_ids}
+        for a in agent_ids:
+            for b in others[a]:
+                if wins[a][b] > wins[b][a]:
+                    copeland[a] += 1.0
+                elif wins[a][b] < wins[b][a]:
+                    copeland[a] -= 1.0
+
+        winner = max(copeland, key=lambda k: copeland[k])
+        max_wins = len(agent_ids) - 1
+        confidence = (copeland[winner] + max_wins) / (2 * max_wins) if max_wins > 0 else 1.0
+
+        return AggregationResult(
+            final_answer=content_map.get(winner, ""),
+            confidence=max(0.0, min(1.0, confidence)),
+            method="Copeland",
+        )
