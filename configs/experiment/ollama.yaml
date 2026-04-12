@@ -1,0 +1,24 @@
+# Ollama benchmark config — local models, no API keys or rate limits.
+# Requires: ollama serve (running locally) with these models pulled:
+#   ollama pull qwen3:0.6b
+#   ollama pull deepseek-r1:1.5b
+#
+# Single round (direct) by default — set protocol: peer_review and
+# max_rounds: 3 to enable deliberation.
+
+name: ollama
+
+dataset: gsm8k
+task_limit: 10
+
+council:
+  models:
+    - "ollama/qwen3:0.6b"
+    - "ollama/deepseek-r1:1.5b"
+  protocol: direct      # options: direct | peer_review | simultaneous
+  max_rounds: 1
+  budget_usd: 0.0       # local models are free
+  task_delay_seconds: 0.0
+
+mlflow:
+  tracking_uri: "mlruns"

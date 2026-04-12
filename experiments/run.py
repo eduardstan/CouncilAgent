@@ -82,7 +82,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     from council.models import LiteLLMClient
     from council.normalizer import StructuredOutputNormalizer
     from council.policy import CouncilConfig
-    from council.protocol import DirectAnswerProtocol
+    from council.protocol import DirectAnswerProtocol, PeerReviewProtocol, SimultaneousProtocol
     from council.termination import FixedRounds
     from council.topology import CompleteGraphTopology
     from evaluation.baselines import majority_vote_no_deliberation
@@ -104,6 +104,20 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     max_rounds: int = council_cfg.get("max_rounds", 1)
     budget_usd: float = council_cfg.get("budget_usd", 0.10)
     task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
+    protocol_name: str = council_cfg.get("protocol", "direct")
+
+    # Map protocol name → Protocol instance.
+    # "direct":       agents answer independently, no peer visibility.
+    # "peer_review":  odd rounds=critique, even rounds=revision.
+    # "simultaneous": all agents see a sliding window of previous-round responses.
+    _protocol_map = {
+        "direct": DirectAnswerProtocol(),
+        "peer_review": PeerReviewProtocol(),
+        "simultaneous": SimultaneousProtocol(),
+    }
+    protocol = _protocol_map.get(protocol_name, DirectAnswerProtocol())
+    if protocol_name not in _protocol_map:
+        logger.warning("Unknown protocol %r, falling back to 'direct'", protocol_name)
 
     agents = [AgentConfig(id=f"agent-{i}", model=m) for i, m in enumerate(models)]
     normalizer = StructuredOutputNormalizer()
@@ -111,7 +125,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         name=cfg_name,
         agents=agents,
         topology=CompleteGraphTopology(len(agents)),
-        protocol=DirectAnswerProtocol(),
+        protocol=protocol,
         aggregation=MajorityVote(normalizer=normalizer),
         termination=FixedRounds(max_rounds),
         estimated_cost_usd=0.0,
@@ -152,14 +166,19 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
             accuracies.append(acc)
             costs.append(response.cost)
 
-            # §6 baseline: majority vote without deliberation
-            # We re-use the single response as a "council of 1" for this baseline.
-            # In full evaluation, pass round-0 responses from run_council directly.
+            # §6 baseline: majority vote without deliberation.
+            # We re-use the single council response as a "council of 1"; in full
+            # evaluation, pass raw round-0 agent responses from run_council directly.
+            # Accuracy is measured with task_accuracy (word-boundary aware) to be
+            # consistent with the main loop — _accuracy inside baselines only does
+            # exact match and would undercount when models answer in prose form.
             baseline_result = await majority_vote_no_deliberation(
-                [response], normalizer, ground_truth=task.ground_truth
+                [response], normalizer
             )
-            if baseline_result.accuracy is not None:
-                baseline_accuracies.append(baseline_result.accuracy)
+            baseline_acc = await task_accuracy(
+                baseline_result.answer, task.ground_truth, method="smart", normalizer=normalizer
+            )
+            baseline_accuracies.append(baseline_acc)
 
         except Exception as e:
             logger.error("Task %s failed: %s", task.id, e)
@@ -188,6 +207,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 "task_limit": task_limit,
                 "models": str(models),
                 "max_rounds": max_rounds,
+                "protocol": protocol_name,
                 "budget_usd": budget_usd,
                 "git_sha": sha,
             })
