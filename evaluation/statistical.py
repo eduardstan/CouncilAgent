@@ -71,6 +71,12 @@ def wilcoxon_test(a: list[float], b: list[float]) -> tuple[float, float]:
     if len(a) < 2:
         raise ValueError("wilcoxon_test: need at least 2 observations")
 
+    # When all differences are zero (identical series), scipy raises RuntimeWarning
+    # due to division by zero in the rank normalization. Handle this degenerate
+    # case directly: no difference → statistic=0, p-value=1.0.
+    if all(x == y for x, y in zip(a, b)):
+        return 0.0, 1.0
+
     result = wilcoxon(a, b)
     return float(result.statistic), float(result.pvalue)
 
