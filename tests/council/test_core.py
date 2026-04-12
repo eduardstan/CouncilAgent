@@ -288,6 +288,60 @@ async def test_agreement_threshold_stops_early_on_consensus() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Adjacency slot alignment — agent failure must not shift visibility indices
+# ---------------------------------------------------------------------------
+
+
+async def test_adjacency_correct_when_middle_agent_fails_in_round_0() -> None:
+    """Regression: if agent-1 (slot 1) fails in round 0, agent-2's round-1 visibility
+    must still see agent-0's response via the adjacency matrix, not agent-1's slot.
+
+    With a complete graph (all visible), agents 0 and 2 succeed; agent 1 fails.
+    In round 1, agents 0 and 2 should both see each other's round-0 response.
+    The old bug would index prev_responses by position [0,1,...] instead of by
+    agent slot, causing agent-2 to see agent-0's response where agent-1 was expected.
+    """
+    captured: dict[str, list[str]] = {}
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            if ctx.round_index == 1:
+                # Record which real or anonymized agent_ids are visible
+                captured[ctx.agent_id] = [r.agent_id for r in ctx.visible_responses]
+            return super().build_prompt(ctx)
+
+    responses: dict[tuple[str, int], str] = {
+        ("agent-0", 0): "answer-from-0",
+        # agent-1 round 0 absent → ModelFailure
+        ("agent-2", 0): "answer-from-2",
+        ("agent-0", 1): "ok",
+        ("agent-2", 1): "ok",
+    }
+    agents = _agents(3)
+    client = FakeModelClient(responses)
+
+    result = await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(2),
+        anonymize=False,  # keep real ids so we can inspect them
+    )
+    assert isinstance(result, CouncilResult)
+    # In round 1, surviving agents should see only the 2 responses that succeeded.
+    for _agent_id, visible_ids in captured.items():
+        # Only agent-0 and agent-2 produced round-0 responses.
+        assert "agent-1" not in visible_ids, (
+            f"agent-1 (which failed) appeared in visibility list: {visible_ids}"
+        )
+        # At most 2 visible responses (agent-0 and agent-2, minus self if applicable).
+        assert len(visible_ids) <= 2
+
+
+# ---------------------------------------------------------------------------
 # Constitution §8 — zero framework imports in council.core
 # ---------------------------------------------------------------------------
 

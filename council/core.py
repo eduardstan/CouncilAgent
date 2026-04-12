@@ -167,12 +167,21 @@ async def _deliberate(
     adjacency = topology.get_adjacency_matrix(round_index)
     communication_mode = topology.communication_mode
 
-    # Collect responses from the previous round for visibility computation.
-    prev_responses = [r for r in state.round_history if r.round_index == round_index - 1]
+    # Build a slot-aligned lookup for the previous round.
+    # Keyed by agent_id so that gaps from failed agents don't shift indices.
+    prev_by_agent = {
+        r.agent_id: r
+        for r in state.round_history
+        if r.round_index == round_index - 1
+    }
 
     tasks = []
     for i, agent in enumerate(agents):
-        visible_raw = [prev_responses[j] for j in range(len(agents)) if adjacency[i][j] and j < len(prev_responses)]
+        visible_raw = [
+            prev_by_agent[agents[j].id]
+            for j in range(len(agents))
+            if adjacency[i][j] and agents[j].id in prev_by_agent
+        ]
         own_prev = [r for r in state.round_history if r.agent_id == agent.id]
         ctx = _build_visibility_context(
             agent_id=agent.id,
