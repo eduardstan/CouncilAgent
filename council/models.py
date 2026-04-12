@@ -153,8 +153,25 @@ class LiteLLMClient(ModelClient):
     # TODO(phase-2): response cache
     """
 
-    def __init__(self, max_retries: int = 1) -> None:
-        self._max_retries = max_retries  # TODO(phase-2): use for retry logic
+    def __init__(self, max_retries: int = 3, timeout: float = 60.0) -> None:
+        self._max_retries = max_retries
+        self._timeout = timeout
+        # Load .env so OPENROUTER_API_KEY and other provider keys are available
+        # to LiteLLM without requiring the caller to set them manually.
+        try:
+            from dotenv import load_dotenv  # type: ignore[import-untyped]
+            load_dotenv(override=False)  # don't override already-set env vars
+        except ImportError:
+            pass  # python-dotenv not installed; assume env is already set
+
+        # Suppress litellm's verbose "Provider List" error banners — they are
+        # printed for any exception including rate limits and add no signal.
+        try:
+            import litellm as _litellm  # type: ignore[import-untyped]
+            _litellm.suppress_debug_info = True
+            _litellm.set_verbose = False
+        except Exception:
+            pass
 
     async def complete(
         self,
@@ -162,6 +179,8 @@ class LiteLLMClient(ModelClient):
         agent_id: str,
         round_index: int,
     ) -> AgentResponse | ModelFailure:
+        import asyncio
+
         import litellm  # local import keeps council/core.py framework-free
 
         kwargs: dict[str, object] = {
@@ -173,31 +192,54 @@ class LiteLLMClient(ModelClient):
         if request.response_format:
             kwargs["response_format"] = request.response_format
 
-        try:
-            response = await litellm.acompletion(**kwargs)
-            content: str = response.choices[0].message.content or ""
-            tokens_in: int = response.usage.prompt_tokens or 0
-            tokens_out: int = response.usage.completion_tokens or 0
-
-            # Parse real cost from litellm hidden params (populated for most providers).
-            cost: float = 0.0
+        last_error = ""
+        for attempt in range(max(1, self._max_retries)):
             try:
-                raw_cost = response._hidden_params.get("response_cost", 0.0)
-                cost = float(raw_cost or 0.0)
-            except (AttributeError, TypeError, ValueError):
-                pass
+                response = await asyncio.wait_for(
+                    litellm.acompletion(**kwargs),
+                    timeout=self._timeout,
+                )
+                content: str = response.choices[0].message.content or ""
+                tokens_in: int = response.usage.prompt_tokens or 0
+                tokens_out: int = response.usage.completion_tokens or 0
 
-            return AgentResponse(
-                agent_id=agent_id,
-                content=content,
-                round_index=round_index,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                cost=cost,
-            )
-        except Exception as exc:
-            logger.debug("LiteLLMClient failure for %s: %s", request.model, exc)
-            return ModelFailure(model=request.model, error=str(exc).lower())
+                # Parse real cost from litellm hidden params (populated for most providers).
+                cost: float = 0.0
+                try:
+                    raw_cost = response._hidden_params.get("response_cost", 0.0)
+                    cost = float(raw_cost or 0.0)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+
+                return AgentResponse(
+                    agent_id=agent_id,
+                    content=content,
+                    round_index=round_index,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    cost=cost,
+                )
+            except asyncio.TimeoutError:
+                last_error = f"timeout after {self._timeout}s"
+                logger.warning("LiteLLMClient: %s timed out (attempt %d/%d)",
+                               request.model, attempt + 1, self._max_retries)
+                break  # timeouts are not retryable
+            except litellm.RateLimitError as exc:
+                last_error = str(exc)
+                if attempt < self._max_retries - 1:
+                    backoff = 2.0 ** attempt  # 1s, 2s, 4s ...
+                    logger.warning("LiteLLMClient: rate limit on %s, retrying in %.1fs (attempt %d/%d)",
+                                   request.model, backoff, attempt + 1, self._max_retries)
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.warning("LiteLLMClient: rate limit on %s, all retries exhausted",
+                                   request.model)
+            except Exception as exc:
+                last_error = str(exc)
+                logger.debug("LiteLLMClient failure for %s: %s", request.model, exc)
+                break  # non-retryable errors
+
+        return ModelFailure(model=request.model, error=last_error)
 
     async def estimate_cost(self, model: str, prompt_tokens: int) -> float:
         try:

@@ -9,8 +9,8 @@ task_limit: 10
 council:
   models:
     - "openrouter/google/gemma-3-27b-it:free"
-    - "openrouter/openai/gpt-oss-20b:free"
-    - "openrouter/minimax/minimax-m2.5:free"
+    - "openrouter/google/gemma-3-27b-it:free"
+    - "openrouter/google/gemma-3-27b-it:free"
   max_rounds: 1
   budget_usd: 0.10
 
