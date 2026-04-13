@@ -342,6 +342,82 @@ async def test_adjacency_correct_when_middle_agent_fails_in_round_0() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Task 5.2 — loop restructure: critiques excluded, interim_result populated
+# ---------------------------------------------------------------------------
+
+
+async def test_peer_review_critiques_excluded_from_aggregation() -> None:
+    """MajorityVote must never receive critique-round (odd) responses.
+
+    With PeerReview and FixedRounds(3): round 0 = answers, round 1 = critiques,
+    round 2 = revised answers. The final aggregated answer must come from round 2
+    only — not from critique text mixed in.
+    """
+    n = 3
+    responses: dict[tuple[str, int], str] = {}
+    for i in range(n):
+        responses[(f"agent-{i}", 0)] = "initial answer"
+        responses[(f"agent-{i}", 1)] = "CRITIQUE: this is a critique, not an answer"
+        responses[(f"agent-{i}", 2)] = "revised answer"
+
+    agents = _agents(n)
+    client = FakeModelClient(responses)
+    result = await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(n),
+        protocol=PeerReviewProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),
+    )
+    # The final answer must come from round-2 revised answers, not critique text.
+    assert "critique" not in result.final_answer.lower(), (
+        f"Critique text leaked into final answer: {result.final_answer!r}"
+    )
+    assert "revised answer" in result.final_answer.lower()
+
+
+async def test_aggregation_receives_only_last_answer_round_responses() -> None:
+    """Spy aggregation: verify it only sees round-0 (or round-2) responses, never round-1 critiques."""
+    n = 2
+    seen_responses: list[list[str]] = []
+
+    from council.aggregation import Aggregation, AggregationResult
+    from council.context import AggregationResult as AR
+
+    class SpyAggregation(Aggregation):
+        async def aggregate(self, responses, preferences=None, round_history=None):
+            seen_responses.append([r.content for r in responses])
+            return AggregationResult(final_answer=responses[0].content if responses else "", confidence=1.0, method="spy")
+
+    responses_map: dict[tuple[str, int], str] = {
+        ("agent-0", 0): "answer0",
+        ("agent-1", 0): "answer0",
+        ("agent-0", 1): "CRITIQUE TEXT",
+        ("agent-1", 1): "CRITIQUE TEXT",
+        ("agent-0", 2): "final_answer",
+        ("agent-1", 2): "final_answer",
+    }
+    agents = _agents(n)
+    client = FakeModelClient(responses_map)
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(n),
+        protocol=PeerReviewProtocol(),
+        aggregation=SpyAggregation(),
+        termination=FixedRounds(3),
+    )
+    for call_responses in seen_responses:
+        for content in call_responses:
+            assert "CRITIQUE" not in content, (
+                f"Critique response leaked into aggregation call: {content!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
 # Tasks 5.1+5.5 — response_format gating
 # ---------------------------------------------------------------------------
 

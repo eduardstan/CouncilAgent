@@ -76,32 +76,50 @@ async def run_council(
 
     state = CouncilState.initial(prompt)
 
+    agent_ids = [a.id for a in agents]
+
     # Round 0 — initial generation (no visibility, no adjacency filtering needed).
     state = await _generate(state, agents, protocol, model_client, answer_response_format)
+
+    # After every answer round, compute an interim aggregation so termination
+    # strategies check consensus on normalized answers — not on raw response text.
+    # This mirrors the academic peer review model: the area chair aggregates all
+    # reviews before deciding whether to invoke another discussion round.
+    if protocol.is_answer_round(0):
+        r0_responses = [r for r in state.round_history if r.round_index == 0 and not isinstance(r, ModelFailure)]
+        if r0_responses:
+            prefs_r0 = await _rank(state, ranking, agent_ids, 0)
+            state.interim_result = await aggregation.aggregate(r0_responses, prefs_r0)
+
     stop, reason = await termination.should_stop(state)
 
-    # Deliberation rounds 1+ — loop until termination strategy halts.
+    # Deliberation rounds 1+ — rank+aggregate run inside the loop so that
+    # termination can check aggregated consensus after each answer round.
     while not stop:
         state = await _deliberate(state, agents, topology, protocol, model_client, anonymize, answer_response_format)
+        round_just_completed = state.current_round - 1
+        if protocol.is_answer_round(round_just_completed):
+            answer_responses = [
+                r for r in state.round_history
+                if r.round_index == round_just_completed and not isinstance(r, ModelFailure)
+            ]
+            if answer_responses:
+                prefs = await _rank(state, ranking, agent_ids, round_just_completed)
+                state.interim_result = await aggregation.aggregate(answer_responses, prefs)
         stop, reason = await termination.should_stop(state)
 
     state.termination_reason = reason
 
-    # Rank (no-op for NullRanking).
-    preferences = await _rank(state, ranking, [a.id for a in agents])
+    # Use the last interim_result as the final answer; it was computed from the
+    # most recent answer round's responses. This is always set because round 0
+    # is always an answer round and _generate always runs.
+    agg_result = state.interim_result
+    if agg_result is None:
+        # Safety fallback: should not happen — aggregate whatever we have.
+        all_responses = [r for r in state.round_history if not isinstance(r, ModelFailure)]
+        prefs_fb = await _rank(state, ranking, agent_ids, state.current_round - 1)
+        agg_result = await aggregation.aggregate(all_responses, prefs_fb)
 
-    # Aggregate the final round's responses only.
-    # Intermediate rounds (e.g. critiques in PeerReviewProtocol) are deliberation
-    # artefacts — feeding them to MajorityVote would pollute the vote with
-    # critique text that is not an answer to the original question.
-    last_round = state.current_round - 1
-    round_responses = [
-        r for r in state.round_history
-        if r.round_index == last_round and not isinstance(r, ModelFailure)
-    ]
-    if not round_responses:  # all agents failed in the last round — fall back
-        round_responses = [r for r in state.round_history if not isinstance(r, ModelFailure)]
-    agg_result = await aggregation.aggregate(round_responses, preferences)
     state.final_result = agg_result
 
     return CouncilResult(
@@ -235,11 +253,11 @@ async def _rank(
     state: CouncilState,
     ranking: Ranking,
     agent_ids: list[str],
+    round_index: int,
 ) -> list[PreferenceData]:
-    """Extract preferences from the last round's responses."""
-    last_round = state.current_round - 1
-    last_responses = [r for r in state.round_history if r.round_index == last_round]
-    return [ranking.extract(r.content, agent_ids) for r in last_responses]
+    """Extract preferences from the specified round's responses."""
+    responses = [r for r in state.round_history if r.round_index == round_index]
+    return [ranking.extract(r.content, agent_ids) for r in responses]
 
 
 # ---------------------------------------------------------------------------

@@ -115,6 +115,7 @@ class CouncilState:
     tokens_out: int = 0
     termination_reason: str = ""
     final_result: AggregationResult | None = None
+    interim_result: AggregationResult | None = None
 
     @classmethod
     def initial(cls, question: str) -> CouncilState:
