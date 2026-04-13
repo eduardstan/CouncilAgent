@@ -90,10 +90,14 @@ def _format_task_transcript(
         rounds.setdefault(r.round_index, []).append(r)
 
     last_round = max(rounds) if rounds else 0
-    round_labels = {0: "GENERATE — Initial answers", 1: "DELIBERATE — Critiques", 2: "DELIBERATE — Revisions"}
+
+    def _round_label(idx: int) -> str:
+        if idx == 0:
+            return "GENERATE — Initial answers"
+        return "DELIBERATE — Critiques" if idx % 2 == 1 else "DELIBERATE — Revisions"
 
     for round_idx in sorted(rounds):
-        label = round_labels.get(round_idx, f"DELIBERATE — Round {round_idx}")
+        label = _round_label(round_idx)
         lines.append(f"### {label}")
         lines.append("")
         for resp in sorted(rounds[round_idx], key=lambda r: r.agent_id):
@@ -238,6 +242,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 protocol=protocol,
                 aggregation=MajorityVote(normalizer=normalizer),
                 termination=FixedRounds(max_rounds),
+                answer_response_format={"type": "json_object"},
             )
 
             acc = await task_accuracy(

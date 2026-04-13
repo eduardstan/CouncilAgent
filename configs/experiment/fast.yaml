@@ -1,11 +1,11 @@
-# Fast benchmark config — 3-round peer review, 5 GSM8K problems.
+# Fast benchmark config — 3-round peer review, 3 GSM8K problems.
 # Agents answer → critique each other → revise their own answers.
 # Full debate transcript is printed to stdout and saved as an MLflow artifact.
 
 name: fast
 
 dataset: gsm8k
-task_limit: 5
+task_limit: 3
 
 council:
   models:
