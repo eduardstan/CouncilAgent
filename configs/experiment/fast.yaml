@@ -1,6 +1,10 @@
-# Fast benchmark config — 3-round peer review, 3 GSM8K problems.
+# Fast benchmark config — 1 deliberation cycle of peer review, 3 GSM8K problems.
 # Agents answer → critique each other → revise their own answers.
 # Full debate transcript is printed to stdout and saved as an MLflow artifact.
+#
+# max_rounds = deliberation cycles after initial generation.
+# PeerReview cycle = critique + revision (2 raw rounds).
+# So max_rounds: 1 → 1 + 1*2 = 3 total raw rounds.
 
 name: fast
 
@@ -13,7 +17,7 @@ council:
     - "openrouter/qwen/qwen3.5-flash-02-23"
     - "openrouter/google/gemini-2.5-flash-lite"
   protocol: peer_review    # direct | peer_review | simultaneous
-  max_rounds: 3            # round 0=answer, 1=critique, 2=revision
+  max_rounds: 1            # 1 deliberation cycle (generate → critique → revise)
   budget_usd: 0.10
   task_delay_seconds: 1.0  # paid models need much less throttling
 

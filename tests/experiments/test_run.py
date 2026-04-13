@@ -77,7 +77,7 @@ class TestLoadConfig:
         assert cfg["name"] == "fast"
         assert cfg["dataset"] == "gsm8k"
         assert cfg["task_limit"] == 3
-        assert cfg["council"]["max_rounds"] == 3
+        assert cfg["council"]["max_rounds"] == 1
 
     def test_full_config_valid(self) -> None:
         cfg = load_config("configs/experiment/full.yaml")

@@ -177,7 +177,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         "openrouter/qwen/qwen3.5-flash-02-23",
         "openrouter/google/gemini-2.5-flash-lite",
     ])
-    max_rounds: int = council_cfg.get("max_rounds", 3)
+    max_rounds: int = council_cfg.get("max_rounds", 1)
     budget_usd: float = council_cfg.get("budget_usd", 0.10)
     task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
     protocol_name: str = council_cfg.get("protocol", "peer_review")
@@ -204,6 +204,12 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     protocol = _protocol_map.get(protocol_name, DirectAnswerProtocol(output_schema=_answer_schema))
     if protocol_name not in _protocol_map:
         logger.warning("Unknown protocol %r, falling back to 'direct'", protocol_name)
+
+    # max_rounds in the config means "deliberation cycles after initial generation."
+    # Translate to total raw rounds for FixedRounds:
+    #   total = 1 (generation) + max_rounds * protocol.cycle_length()
+    # E.g. PeerReview with max_rounds=1: 1 + 1*2 = 3 raw rounds (generate, critique, revise).
+    total_rounds = 1 + max_rounds * protocol.cycle_length()
 
     agents = [AgentConfig(id=f"agent-{i}", model=m) for i, m in enumerate(models)]
     # Convenience map for transcript formatting: agent-0 → full model string
@@ -238,7 +244,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     print(f"\n{'=' * 72}")
     print(f"Experiment: {cfg_name}  |  dataset: {dataset_name}  |  tasks: {task_limit or 'all'}")
     print(f"Models: {', '.join(m.split('/')[-1] for m in models)}")
-    print(f"Protocol: {protocol_name}  |  max_rounds: {max_rounds}")
+    print(f"Protocol: {protocol_name}  |  deliberation_cycles: {max_rounds}  |  total_rounds: {total_rounds}")
     print(f"{'=' * 72}\n")
 
     for task_idx, task in enumerate(tasks):
@@ -252,7 +258,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 topology=CompleteGraphTopology(len(agents)),
                 protocol=protocol,
                 aggregation=MajorityVote(normalizer=normalizer),
-                termination=FixedRounds(max_rounds),
+                termination=FixedRounds(total_rounds),
                 answer_response_format={"type": "json_object"},
             )
 
@@ -321,7 +327,8 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 "dataset": dataset_name,
                 "task_limit": task_limit,
                 "models": str(models),
-                "max_rounds": max_rounds,
+                "deliberation_cycles": max_rounds,
+                "total_rounds": total_rounds,
                 "protocol": protocol_name,
                 "budget_usd": budget_usd,
                 "git_sha": sha,

@@ -34,6 +34,18 @@ class Protocol(ABC):
         """
         return True
 
+    def cycle_length(self) -> int:
+        """Number of raw rounds per deliberation cycle.
+
+        A "cycle" is the smallest unit of deliberation the protocol defines.
+        For PeerReview: critique + revision = 2 rounds per cycle.
+        For DirectAnswer/Simultaneous: 1 round per cycle.
+
+        Used by the runner to translate config max_rounds (deliberation cycles)
+        to the total raw round count: total = 1 + max_rounds * cycle_length().
+        """
+        return 1
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -107,6 +119,9 @@ class PeerReviewProtocol(Protocol):
 
     def is_answer_round(self, round_index: int) -> bool:
         return round_index % 2 == 0
+
+    def cycle_length(self) -> int:
+        return 2
 
     def build_prompt(self, ctx: VisibilityContext) -> str:
         if ctx.round_index == 0:

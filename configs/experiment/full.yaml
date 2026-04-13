@@ -1,6 +1,9 @@
-# Full benchmark config — 2 rounds, full GSM8K test split, free models.
+# Full benchmark config — 1 deliberation cycle, full GSM8K test split, free models.
 # Runs in several hours depending on free-tier model latency.
 # Use with experiments/sweep.py for the 4x4x5x3 configuration sweep.
+#
+# max_rounds = deliberation cycles after initial generation.
+# With peer_review (default), 1 cycle = critique + revision = 3 total raw rounds.
 
 name: full
 
@@ -12,7 +15,7 @@ council:
     - "openrouter/google/gemma-3-27b-it:free"
     - "openrouter/openai/gpt-oss-20b:free"
     - "openrouter/minimax/minimax-m2.5:free"
-  max_rounds: 2
+  max_rounds: 1            # 1 deliberation cycle (generate → critique → revise)
   budget_usd: 1.00
 
 mlflow:

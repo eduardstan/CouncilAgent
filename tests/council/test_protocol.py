@@ -100,6 +100,36 @@ def test_peer_review_odd_rounds_are_critique_rounds() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Task 5.3 — cycle_length() contract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("protocol,expected", [
+    (DirectAnswerProtocol(), 1),
+    (SimultaneousProtocol(), 1),
+    (PeerReviewProtocol(), 2),
+], ids=["DirectAnswer", "Simultaneous", "PeerReview"])
+def test_cycle_length(protocol: Protocol, expected: int) -> None:
+    assert protocol.cycle_length() == expected
+
+
+def test_total_rounds_translation() -> None:
+    """Runner translates: total = 1 + max_rounds * cycle_length().
+
+    PeerReview with max_rounds=1 → 1 + 1*2 = 3 total raw rounds.
+    Direct with max_rounds=2 → 1 + 2*1 = 3 total raw rounds.
+    max_rounds=0 → 1 (generate only).
+    """
+    peer = PeerReviewProtocol()
+    direct = DirectAnswerProtocol()
+
+    assert 1 + 1 * peer.cycle_length() == 3
+    assert 1 + 2 * direct.cycle_length() == 3
+    assert 1 + 0 * peer.cycle_length() == 1
+    assert 1 + 0 * direct.cycle_length() == 1
+
+
+# ---------------------------------------------------------------------------
 # Regression Issue 6 — parametrized over all Protocol subclasses
 # ---------------------------------------------------------------------------
 
