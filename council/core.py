@@ -89,7 +89,7 @@ async def run_council(
         r0_responses = [r for r in state.round_history if r.round_index == 0 and not isinstance(r, ModelFailure)]
         if r0_responses:
             prefs_r0 = await _rank(state, ranking, agent_ids, 0)
-            state.interim_result = await aggregation.aggregate(r0_responses, prefs_r0)
+            state.interim_result = await aggregation.aggregate(r0_responses, prefs_r0, round_history=list(state.round_history))
 
     stop, reason = await termination.should_stop(state)
 
@@ -105,7 +105,7 @@ async def run_council(
             ]
             if answer_responses:
                 prefs = await _rank(state, ranking, agent_ids, round_just_completed)
-                state.interim_result = await aggregation.aggregate(answer_responses, prefs)
+                state.interim_result = await aggregation.aggregate(answer_responses, prefs, round_history=list(state.round_history))
         stop, reason = await termination.should_stop(state)
 
     state.termination_reason = reason
@@ -118,7 +118,7 @@ async def run_council(
         # Safety fallback: should not happen — aggregate whatever we have.
         all_responses = [r for r in state.round_history if not isinstance(r, ModelFailure)]
         prefs_fb = await _rank(state, ranking, agent_ids, state.current_round - 1)
-        agg_result = await aggregation.aggregate(all_responses, prefs_fb)
+        agg_result = await aggregation.aggregate(all_responses, prefs_fb, round_history=list(state.round_history))
 
     state.final_result = agg_result
 

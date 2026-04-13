@@ -195,6 +195,82 @@ class TestMetaJudge:
         assert result.final_answer == ""
         assert result.confidence == pytest.approx(0.0)
 
+    async def test_round_history_produces_phase_labelled_prompt(self) -> None:
+        """When round_history is provided, MetaJudge prompt contains phase labels."""
+        captured: list[str] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synthesized"
+
+        from council.context import AgentResponse
+        from council.models import FakeModelClient
+
+        history = [
+            AgentResponse("agent-0", "initial answer", 0, 5, 5, 0.0),
+            AgentResponse("agent-1", "initial answer", 0, 5, 5, 0.0),
+            AgentResponse("agent-0", "critique text", 1, 5, 5, 0.0),
+            AgentResponse("agent-1", "critique text", 1, 5, 5, 0.0),
+            AgentResponse("agent-0", "revised answer", 2, 5, 5, 0.0),
+            AgentResponse("agent-1", "revised answer", 2, 5, 5, 0.0),
+        ]
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient(factory))
+        final_responses = [r for r in history if r.round_index == 2]
+        await agg.aggregate(final_responses, round_history=history)
+
+        assert captured, "model was never called"
+        prompt = captured[0]
+        assert "Round 0" in prompt
+        assert "Round 1" in prompt
+        assert "Round 2" in prompt
+        # Phase labels present
+        assert "GENERATE" in prompt  # round 0 label
+        assert "CRITIQUE" in prompt  # odd round label
+
+    async def test_round_history_none_falls_back_to_flat_list(self) -> None:
+        """Without round_history, MetaJudge uses flat response list."""
+        captured: list[str] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synthesized"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient(factory))
+        await agg.aggregate([_resp("alpha"), _resp("beta")], round_history=None)
+
+        assert captured
+        prompt = captured[0]
+        assert "alpha" in prompt
+        assert "beta" in prompt
+
+    async def test_majority_vote_ignores_round_history(self) -> None:
+        """MajorityVote returns same result regardless of round_history."""
+        from council.context import AgentResponse
+        responses = [_resp("42"), _resp("42"), _resp("42")]
+        history = [AgentResponse("agent-0", "critique", 1, 5, 5, 0.0)]
+
+        agg = MajorityVote(normalizer=IdentityNormalizer())
+        result_with = await agg.aggregate(responses, round_history=history)
+        result_without = await agg.aggregate(responses, round_history=None)
+        assert result_with.final_answer == result_without.final_answer
+        assert result_with.confidence == pytest.approx(result_without.confidence)
+
+    async def test_all_aggregation_subclasses_accept_round_history_kwarg(self) -> None:
+        """Smoke test: all subclasses accept round_history=None without raising."""
+        from council.models import FakeModelClient
+        responses = [_resp("x", "agent-0")]
+        client = FakeModelClient({("meta-judge", 0): "x"})
+
+        for agg in [
+            MajorityVote(normalizer=IdentityNormalizer()),
+            BordaCount(),
+            CondorcetAggregation(),
+            MetaJudge(model="fake/m", model_client=client),
+        ]:
+            result = await agg.aggregate(responses, round_history=None)
+            assert isinstance(result, AggregationResult)
+
 
 # ---------------------------------------------------------------------------
 # Cross-layer isolation

@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections import Counter
+from collections import defaultdict
+from typing import Callable
 
 from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData, RichPreference
 from council.models import ModelClient, ModelFailure, ModelRequest
@@ -19,13 +21,20 @@ logger = logging.getLogger(__name__)
 
 
 class Aggregation(ABC):
-    """Reduce a list of agent responses (and optional preferences) to a single answer."""
+    """Reduce a list of agent responses (and optional preferences) to a single answer.
+
+    The optional round_history parameter carries the full deliberation history.
+    Blind aggregators (MajorityVote, BordaCount, Condorcet) ignore it.
+    Informed aggregators (MetaJudge) use it to trace how consensus formed.
+    See Issue 11 in LLMCouncil_Deep_Review.md for the design rationale.
+    """
 
     @abstractmethod
     async def aggregate(
         self,
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
+        round_history: list[AgentResponse] | None = None,
     ) -> AggregationResult: ...
 
 
@@ -46,6 +55,7 @@ class MajorityVote(Aggregation):
         self,
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
+        round_history: list[AgentResponse] | None = None,
     ) -> AggregationResult:
         if not responses:
             return AggregationResult(final_answer="", confidence=0.0, method="MajorityVote")
@@ -82,6 +92,7 @@ class BordaCount(Aggregation):
         self,
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
+        round_history: list[AgentResponse] | None = None,
     ) -> AggregationResult:
         if not responses or not preferences:
             return AggregationResult(final_answer="", confidence=0.0, method="BordaCount")
@@ -111,41 +122,89 @@ class BordaCount(Aggregation):
         )
 
 
-class MetaJudge(Aggregation):
-    """LLM-based synthesis aggregation.
+def _default_round_label(round_index: int) -> str:
+    """Label rounds by parity: even = ANSWER, odd = CRITIQUE.
 
-    Sends all agent responses to a synthesis model and returns its output as the
-    final answer. The synthesis model and ModelClient are injected at construction
-    — never hardcoded (Constitution §3).
+    This is a heuristic for PeerReviewProtocol-style alternation. For other
+    protocols, inject a custom round_label_fn at MetaJudge construction time.
+    MetaJudge intentionally does NOT import Protocol (cross-layer violation).
+    """
+    return "ANSWER" if round_index % 2 == 0 else "CRITIQUE"
+
+
+class MetaJudge(Aggregation):
+    """LLM-based synthesis aggregation — the "informed Area Chair" model.
+
+    When round_history is provided to aggregate(), MetaJudge builds a structured
+    debate transcript labelled by phase (GENERATE/CRITIQUE/REVISION) so the
+    synthesis model can trace how consensus formed. Without round_history it falls
+    back to a flat list of the final-round responses.
+
+    The synthesis model and ModelClient are injected at construction — never
+    hardcoded (Constitution §3). MetaJudge does NOT import Protocol; round labels
+    come from round_index alone via the injected round_label_fn.
 
     Confidence is fixed at 1.0 because MetaJudge produces one synthesized answer;
     agreement-based confidence lives at the CouncilAgent layer above.
     """
 
-    def __init__(self, model: str, model_client: ModelClient) -> None:
+    def __init__(
+        self,
+        model: str,
+        model_client: ModelClient,
+        round_label_fn: Callable[[int], str] | None = None,
+    ) -> None:
         self._model = model
         self._model_client = model_client
+        self._round_label_fn = round_label_fn or _default_round_label
+
+    def _format_debate(self, round_history: list[AgentResponse]) -> str:
+        """Format the full deliberation history as a phase-labelled transcript."""
+        by_round: dict[int, list[AgentResponse]] = defaultdict(list)
+        for r in round_history:
+            by_round[r.round_index].append(r)
+
+        sections: list[str] = []
+        for round_idx in sorted(by_round):
+            label = self._round_label_fn(round_idx)
+            phase_label = "GENERATE" if round_idx == 0 else label
+            sections.append(f"### Round {round_idx} — {phase_label}")
+            for i, r in enumerate(by_round[round_idx]):
+                sections.append(f"[Response {chr(65 + i)}]:\n{r.content}")
+        return "\n\n".join(sections)
 
     async def aggregate(
         self,
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
+        round_history: list[AgentResponse] | None = None,
     ) -> AggregationResult:
         if not responses:
             return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
 
-        # Use positional labels — never real agent_id — so the synthesis model
-        # cannot be influenced by agent identity (Constitution §10).
-        formatted = "\n\n".join(
-            f"[Response {chr(65 + i)}]:\n{r.content}"
-            for i, r in enumerate(responses)
-        )
-        prompt = (
-            "You are a synthesis judge. Below are responses from multiple agents "
-            "to a question. Synthesize them into a single best answer.\n\n"
-            f"Responses:\n{formatted}\n\n"
-            "Provide your synthesized answer:"
-        )
+        if round_history:
+            debate_section = self._format_debate(round_history)
+            prompt = (
+                "You are a synthesis judge reviewing a multi-round deliberation. "
+                "Below is the full debate transcript, organized by round. "
+                "Synthesize the best final answer, taking into account how the "
+                "agents' positions evolved through critique and revision.\n\n"
+                f"{debate_section}\n\n"
+                "Provide your synthesized final answer:"
+            )
+        else:
+            # Fallback: flat list of final-round responses only.
+            formatted = "\n\n".join(
+                f"[Response {chr(65 + i)}]:\n{r.content}"
+                for i, r in enumerate(responses)
+            )
+            prompt = (
+                "You are a synthesis judge. Below are responses from multiple agents "
+                "to a question. Synthesize them into a single best answer.\n\n"
+                f"Responses:\n{formatted}\n\n"
+                "Provide your synthesized answer:"
+            )
+
         outcome = await self._model_client.complete(
             ModelRequest(model=self._model, prompt=prompt),
             agent_id="meta-judge",
@@ -179,6 +238,7 @@ class CondorcetAggregation(Aggregation):
         self,
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
+        round_history: list[AgentResponse] | None = None,
     ) -> AggregationResult:
         if not responses or not preferences:
             return AggregationResult(final_answer="", confidence=0.0, method="Condorcet")
