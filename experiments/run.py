@@ -16,6 +16,7 @@ import asyncio
 import logging
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -90,10 +91,14 @@ def _format_task_transcript(
         rounds.setdefault(r.round_index, []).append(r)
 
     last_round = max(rounds) if rounds else 0
-    round_labels = {0: "GENERATE — Initial answers", 1: "DELIBERATE — Critiques", 2: "DELIBERATE — Revisions"}
+
+    def _round_label(idx: int) -> str:
+        if idx == 0:
+            return "GENERATE — Initial answers"
+        return "DELIBERATE — Critiques" if idx % 2 == 1 else "DELIBERATE — Revisions"
 
     for round_idx in sorted(rounds):
-        label = round_labels.get(round_idx, f"DELIBERATE — Round {round_idx}")
+        label = _round_label(round_idx)
         lines.append(f"### {label}")
         lines.append("")
         for resp in sorted(rounds[round_idx], key=lambda r: r.agent_id):
@@ -178,9 +183,19 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     protocol_name: str = council_cfg.get("protocol", "peer_review")
 
     # Ask models to produce structured JSON so MajorityVote can normalize cleanly.
+    # Two fields: reasoning (chain-of-thought) and answer (concise final value only).
+    # Separating them prevents models from stuffing full prose into the answer field,
+    # which would make every response unique and collapse confidence to 1/n.
     # Critique rounds (odd rounds in PeerReviewProtocol) intentionally ignore this
     # schema — free-text critique is correct there.
-    _answer_schema = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
+    _answer_schema = {
+        "type": "object",
+        "properties": {
+            "reasoning": {"type": "string", "description": "Step-by-step working"},
+            "answer": {"type": "string", "description": "Concise final answer only (e.g. a number or short phrase)"},
+        },
+        "required": ["reasoning", "answer"],
+    }
     _protocol_map = {
         "direct": DirectAnswerProtocol(output_schema=_answer_schema),
         "peer_review": PeerReviewProtocol(output_schema=_answer_schema),
@@ -238,6 +253,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 protocol=protocol,
                 aggregation=MajorityVote(normalizer=normalizer),
                 termination=FixedRounds(max_rounds),
+                answer_response_format={"type": "json_object"},
             )
 
             acc = await task_accuracy(

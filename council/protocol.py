@@ -25,6 +25,15 @@ class Protocol(ABC):
     @abstractmethod
     def build_prompt(self, ctx: VisibilityContext) -> str: ...
 
+    def is_answer_round(self, round_index: int) -> bool:
+        """Return True if agents produce a final answer this round.
+
+        Default: all rounds are answer rounds (correct for DirectAnswerProtocol
+        and SimultaneousProtocol). PeerReviewProtocol overrides to return False
+        for odd (critique) rounds.
+        """
+        return True
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -95,6 +104,9 @@ class PeerReviewProtocol(Protocol):
 
     def __init__(self, output_schema: dict[str, object] | None = None) -> None:
         self._schema = output_schema
+
+    def is_answer_round(self, round_index: int) -> bool:
+        return round_index % 2 == 0
 
     def build_prompt(self, ctx: VisibilityContext) -> str:
         if ctx.round_index == 0:
