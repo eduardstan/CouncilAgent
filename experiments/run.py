@@ -182,9 +182,19 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     protocol_name: str = council_cfg.get("protocol", "peer_review")
 
     # Ask models to produce structured JSON so MajorityVote can normalize cleanly.
+    # Two fields: reasoning (chain-of-thought) and answer (concise final value only).
+    # Separating them prevents models from stuffing full prose into the answer field,
+    # which would make every response unique and collapse confidence to 1/n.
     # Critique rounds (odd rounds in PeerReviewProtocol) intentionally ignore this
     # schema — free-text critique is correct there.
-    _answer_schema = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
+    _answer_schema = {
+        "type": "object",
+        "properties": {
+            "reasoning": {"type": "string", "description": "Step-by-step working"},
+            "answer": {"type": "string", "description": "Concise final answer only (e.g. a number or short phrase)"},
+        },
+        "required": ["reasoning", "answer"],
+    }
     _protocol_map = {
         "direct": DirectAnswerProtocol(output_schema=_answer_schema),
         "peer_review": PeerReviewProtocol(output_schema=_answer_schema),
