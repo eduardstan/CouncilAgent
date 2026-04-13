@@ -63,6 +63,7 @@ async def run_council(
     termination: TerminationStrategy,
     ranking: Ranking | None = None,
     anonymize: bool = True,
+    answer_response_format: dict[str, str] | None = None,
 ) -> CouncilResult:
     """Run the full council pipeline and return a final answer with confidence.
 
@@ -76,12 +77,12 @@ async def run_council(
     state = CouncilState.initial(prompt)
 
     # Round 0 — initial generation (no visibility, no adjacency filtering needed).
-    state = await _generate(state, agents, protocol, model_client)
+    state = await _generate(state, agents, protocol, model_client, answer_response_format)
     stop, reason = await termination.should_stop(state)
 
     # Deliberation rounds 1+ — loop until termination strategy halts.
     while not stop:
-        state = await _deliberate(state, agents, topology, protocol, model_client, anonymize)
+        state = await _deliberate(state, agents, topology, protocol, model_client, anonymize, answer_response_format)
         stop, reason = await termination.should_stop(state)
 
     state.termination_reason = reason
@@ -126,6 +127,7 @@ async def _generate(
     agents: list[AgentConfig],
     protocol: Protocol,
     model_client: ModelClient,
+    answer_response_format: dict[str, str] | None = None,
 ) -> CouncilState:
     """Round 0: all agents answer the original prompt simultaneously."""
     ctx_for_agent = [
@@ -140,9 +142,11 @@ async def _generate(
         )
         for agent in agents
     ]
+    # Round 0 is always an answer round — enforce structured output if requested.
+    rf = answer_response_format if protocol.is_answer_round(0) else None
     tasks = [
         model_client.complete(
-            ModelRequest(model=agent.model, prompt=protocol.build_prompt(ctx)),
+            ModelRequest(model=agent.model, prompt=protocol.build_prompt(ctx), response_format=rf),
             agent_id=agent.id,
             round_index=0,
         )
@@ -170,6 +174,7 @@ async def _deliberate(
     protocol: Protocol,
     model_client: ModelClient,
     anonymize: bool,
+    answer_response_format: dict[str, str] | None = None,
 ) -> CouncilState:
     """Rounds 1+: each agent sees a filtered, optionally anonymized view of prior responses."""
     round_index = state.current_round
@@ -202,9 +207,10 @@ async def _deliberate(
             original_prompt=state.question,
             anonymize=anonymize,
         )
+        rf = answer_response_format if protocol.is_answer_round(round_index) else None
         tasks.append(
             model_client.complete(
-                ModelRequest(model=agent.model, prompt=protocol.build_prompt(ctx)),
+                ModelRequest(model=agent.model, prompt=protocol.build_prompt(ctx), response_format=rf),
                 agent_id=agent.id,
                 round_index=round_index,
             )

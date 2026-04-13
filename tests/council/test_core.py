@@ -342,6 +342,95 @@ async def test_adjacency_correct_when_middle_agent_fails_in_round_0() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tasks 5.1+5.5 — response_format gating
+# ---------------------------------------------------------------------------
+
+
+async def test_response_format_passed_for_answer_rounds_with_peer_review() -> None:
+    """With PeerReview + answer_response_format set, round 0 and round 2 get the format;
+    round 1 (critique) gets None."""
+    captured: dict[tuple[str, int], dict | None] = {}
+
+    def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+        captured[(agent_id, round_index)] = request.response_format
+        return '{"answer": "42"}'
+
+    agents = _agents(3)
+    client = FakeModelClient(factory)
+    rf = {"type": "json_object"}
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=PeerReviewProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),
+        answer_response_format=rf,
+    )
+    # Rounds 0 and 2 are answer rounds → get response_format
+    for agent_id in [f"agent-{i}" for i in range(3)]:
+        assert captured.get((agent_id, 0)) == rf, f"{agent_id} round 0 missing response_format"
+        assert captured.get((agent_id, 2)) == rf, f"{agent_id} round 2 missing response_format"
+    # Round 1 is a critique round → must NOT get response_format
+    for agent_id in [f"agent-{i}" for i in range(3)]:
+        assert captured.get((agent_id, 1)) is None, (
+            f"{agent_id} round 1 (critique) should have response_format=None"
+        )
+
+
+async def test_response_format_none_when_not_set() -> None:
+    """Without answer_response_format, all requests have response_format=None."""
+    captured_formats: list[dict | None] = []
+
+    def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+        captured_formats.append(request.response_format)
+        return "42"
+
+    agents = _agents(2)
+    client = FakeModelClient(factory)
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=PeerReviewProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(2),
+        # answer_response_format not passed → defaults to None
+    )
+    assert all(rf is None for rf in captured_formats), (
+        "Expected all response_format values to be None when not set"
+    )
+
+
+async def test_response_format_all_rounds_for_direct_answer_protocol() -> None:
+    """DirectAnswerProtocol: all rounds are answer rounds, so all get response_format."""
+    captured_formats: list[dict | None] = []
+
+    def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+        captured_formats.append(request.response_format)
+        return "42"
+
+    agents = _agents(2)
+    client = FakeModelClient(factory)
+    rf = {"type": "json_object"}
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(2),
+        answer_response_format=rf,
+    )
+    assert all(f == rf for f in captured_formats), (
+        "DirectAnswerProtocol: every round should carry response_format"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Constitution §8 — zero framework imports in council.core
 # ---------------------------------------------------------------------------
 
