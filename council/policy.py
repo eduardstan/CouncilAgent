@@ -93,12 +93,14 @@ class CouncilPolicy:
         n = len(agents)
         topology = CompleteGraphTopology(n)
 
+        output_schema = task_profile.output_schema
+
         # Tier 1 — fast_vote: single round, majority vote regardless of task type.
         fast = CouncilConfig(
             name="fast_vote",
             agents=agents,
             topology=topology,
-            protocol=DirectAnswerProtocol(),
+            protocol=DirectAnswerProtocol(output_schema=output_schema),
             aggregation=MajorityVote(normalizer=task_profile.normalizer),
             termination=FixedRounds(1),
             estimated_cost_usd=0.0,
@@ -117,7 +119,7 @@ class CouncilPolicy:
             name="standard_deliberation",
             agents=agents,
             topology=topology,
-            protocol=PeerReviewProtocol(),
+            protocol=PeerReviewProtocol(output_schema=output_schema),
             aggregation=agg,
             termination=CompositeTermination(
                 AgreementThreshold(0.8, normalizer=task_profile.normalizer),
