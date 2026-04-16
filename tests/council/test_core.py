@@ -13,13 +13,13 @@ AgreementThreshold early exit, and zero framework imports.
 from __future__ import annotations
 
 from council.aggregation import MajorityVote
-from council.context import CouncilResult
+from council.context import CommunicationMode, CouncilResult
 from council.core import AgentConfig, run_council
 from council.models import FakeModelClient
 from council.normalizer import IdentityNormalizer
 from council.protocol import DirectAnswerProtocol, PeerReviewProtocol
 from council.termination import AgreementThreshold, CompositeTermination, FixedRounds
-from council.topology import CompleteGraphTopology, RingTopology
+from council.topology import BusTopology, CompleteGraphTopology, RingTopology
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -503,6 +503,39 @@ async def test_response_format_all_rounds_for_direct_answer_protocol() -> None:
     )
     assert all(f == rf for f in captured_formats), (
         "DirectAnswerProtocol: every round should carry response_format"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 6.2 — _generate() uses topology.communication_mode in round 0
+# ---------------------------------------------------------------------------
+
+
+async def test_generate_uses_topology_communication_mode() -> None:
+    """Round-0 VisibilityContext.communication_mode must come from the topology,
+    not be hardcoded to INDIVIDUAL."""
+    captured_modes: list[CommunicationMode] = []
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            if ctx.round_index == 0:
+                captured_modes.append(ctx.communication_mode)
+            return super().build_prompt(ctx)
+
+    agents = _agents(3)
+    client = _fake(3, "answer")
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=BusTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    assert captured_modes, "Expected round-0 prompts to be built"
+    assert all(m == CommunicationMode.BROADCAST for m in captured_modes), (
+        f"BusTopology round-0 contexts should carry BROADCAST, got: {captured_modes}"
     )
 
 

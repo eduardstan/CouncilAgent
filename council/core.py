@@ -79,7 +79,7 @@ async def run_council(
     agent_ids = [a.id for a in agents]
 
     # Round 0 — initial generation (no visibility, no adjacency filtering needed).
-    state = await _generate(state, agents, protocol, model_client, answer_response_format)
+    state = await _generate(state, agents, topology, protocol, model_client, answer_response_format)
 
     # After every answer round, compute an interim aggregation so termination
     # strategies check consensus on normalized answers — not on raw response text.
@@ -143,6 +143,7 @@ async def run_council(
 async def _generate(
     state: CouncilState,
     agents: list[AgentConfig],
+    topology: Topology,
     protocol: Protocol,
     model_client: ModelClient,
     answer_response_format: dict[str, str] | None = None,
@@ -155,7 +156,7 @@ async def _generate(
             visible_responses=[],
             own_previous_responses=[],
             total_agents=len(agents),
-            communication_mode=CommunicationMode.INDIVIDUAL,
+            communication_mode=topology.communication_mode,
             original_prompt=state.question,
         )
         for agent in agents
