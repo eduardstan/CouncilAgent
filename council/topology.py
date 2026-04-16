@@ -42,16 +42,19 @@ class CompleteGraphTopology(Topology):
 
 
 class StarTopology(Topology):
-    """Pure relay — equivalent to CompleteGraph in visibility terms.
+    """Pure relay — same adjacency as CompleteGraph, but RELAY communication mode.
 
     The hub is infrastructure only (not an agent). All peripherals see all
-    other peripherals via the hub relay. Adjacency is static across all rounds.
+    other peripherals via the 2-hop hub relay. Adjacency is static across all
+    rounds (architecture rule: no round-parity alternation — that lives in
+    DynamicStarTopology).
 
-    Architecture rule: StarTopology must NOT alternate on round parity.
-    Round-dependent visibility belongs in DynamicStarTopology.
+    The RELAY mode is semantically distinct from CompleteGraphTopology's
+    INDIVIDUAL mode: protocols receive the same visibility but know that
+    messages are routed rather than sent peer-to-peer.
     """
 
-    communication_mode = CommunicationMode.INDIVIDUAL
+    communication_mode = CommunicationMode.RELAY
 
     def get_adjacency_matrix(self, round_index: int) -> list[list[bool]]:
         # Pure relay: everyone sees everyone (2-hop via hub, same result as complete).

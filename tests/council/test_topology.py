@@ -102,8 +102,13 @@ class TestStarTopology:
         t = StarTopology(5)
         assert is_symmetric(t.get_adjacency_matrix(0))
 
-    def test_communication_mode_is_individual(self) -> None:
-        assert StarTopology.communication_mode == CommunicationMode.INDIVIDUAL
+    def test_communication_mode_is_relay(self) -> None:
+        # StarTopology uses 2-hop hub routing → RELAY, not INDIVIDUAL.
+        assert StarTopology.communication_mode == CommunicationMode.RELAY
+
+    def test_differs_from_complete_graph_in_communication_mode(self) -> None:
+        # Same adjacency, different mode — this is their only experimental distinction.
+        assert StarTopology.communication_mode != CompleteGraphTopology.communication_mode
 
     def test_no_privileged_agent(self) -> None:
         # No row should have a distinct pattern from any other — no "hub" with
