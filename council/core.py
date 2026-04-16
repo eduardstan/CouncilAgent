@@ -200,21 +200,20 @@ async def _deliberate(
     adjacency = topology.get_adjacency_matrix(round_index)
     communication_mode = topology.communication_mode
 
-    # Build a slot-aligned lookup for the previous round.
-    # Keyed by agent_id so that gaps from failed agents don't shift indices.
-    prev_by_agent = {
-        r.agent_id: r
-        for r in state.round_history
-        if r.round_index == round_index - 1
-    }
+    # Build a full history lookup keyed by agent_id, all prior rounds sorted ascending.
+    # This makes SimultaneousProtocol's sliding window live: protocols receive the
+    # complete visible history and apply their own window if needed.
+    history_by_agent: dict[str, list[AgentResponse]] = {}
+    for r in sorted(state.round_history, key=lambda x: x.round_index):
+        history_by_agent.setdefault(r.agent_id, []).append(r)
 
     tasks = []
     for i, agent in enumerate(agents):
-        visible_raw = [
-            prev_by_agent[agents[j].id]
-            for j in range(len(agents))
-            if adjacency[i][j] and agents[j].id in prev_by_agent
-        ]
+        # Collect all history from adjacency-permitted agents (in round order).
+        visible_raw: list[AgentResponse] = []
+        for j in range(len(agents)):
+            if adjacency[i][j] and agents[j].id in history_by_agent:
+                visible_raw.extend(history_by_agent[agents[j].id])
         own_prev = [r for r in state.round_history if r.agent_id == agent.id]
         ctx = _build_visibility_context(
             agent_id=agent.id,
