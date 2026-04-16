@@ -159,6 +159,7 @@ class CouncilAgent:
             termination=self._config.termination,
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
+            answer_response_format=self._config.answer_response_format,
         )
 
         response = _result_to_response(result)

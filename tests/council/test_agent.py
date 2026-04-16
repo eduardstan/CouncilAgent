@@ -207,6 +207,52 @@ class TestCouncilAgentEscalation:
 
 
 # ---------------------------------------------------------------------------
+# Task 6.5 — answer_response_format threaded through CouncilAgent.complete()
+# ---------------------------------------------------------------------------
+
+
+class TestAnswerResponseFormatThreading:
+    async def test_response_format_reaches_model_calls(self) -> None:
+        """When CouncilConfig.answer_response_format is set, every answer-round
+        ModelRequest must carry that format."""
+        captured: list[dict | None] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured.append(request.response_format)
+            return '{"answer": "42"}'
+
+        rf = {"type": "json_object"}
+        cfg = CouncilConfig(
+            name="test",
+            agents=[AgentConfig(id=f"agent-{i}", model=f"fake/m-{i}") for i in range(3)],
+            topology=CompleteGraphTopology(3),
+            protocol=DirectAnswerProtocol(),
+            aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+            termination=FixedRounds(1),
+            answer_response_format=rf,
+        )
+        agent = CouncilAgent(config=cfg, model_client=FakeModelClient(factory))
+        await agent.complete("Q")
+        assert captured, "Expected at least one model call"
+        assert all(f == rf for f in captured), (
+            f"Not all requests carried answer_response_format: {captured}"
+        )
+
+    async def test_no_response_format_when_config_field_is_none(self) -> None:
+        captured: list[dict | None] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured.append(request.response_format)
+            return "42"
+
+        agent = CouncilAgent(config=_config(3), model_client=FakeModelClient(factory))
+        await agent.complete("Q")
+        assert all(f is None for f in captured), (
+            "Expected response_format=None when CouncilConfig.answer_response_format is None"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Constitution §8 — no framework imports in council.agent
 # ---------------------------------------------------------------------------
 
