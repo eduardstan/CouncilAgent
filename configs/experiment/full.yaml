@@ -15,7 +15,11 @@ council:
     - "openrouter/google/gemma-3-27b-it:free"
     - "openrouter/openai/gpt-oss-20b:free"
     - "openrouter/minimax/minimax-m2.5:free"
-  max_rounds: 1            # 1 deliberation cycle (generate → critique → revise)
+  topology: complete        # complete | star | bus | ring | dynamic_star
+  protocol: peer_review     # direct | peer_review | simultaneous
+  aggregation: majority_vote  # majority_vote | borda | condorcet | meta_judge
+  termination: fixed        # fixed | agreement | budget | composite
+  max_rounds: 1             # 1 deliberation cycle (generate → critique → revise)
   budget_usd: 1.00
 
 mlflow:

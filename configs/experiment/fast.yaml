@@ -16,10 +16,13 @@ council:
     - "openrouter/openai/gpt-4.1-nano"
     - "openrouter/qwen/qwen3.5-flash-02-23"
     - "openrouter/google/gemini-2.5-flash-lite"
-  protocol: peer_review    # direct | peer_review | simultaneous
-  max_rounds: 1            # 1 deliberation cycle (generate → critique → revise)
+  topology: complete        # complete | star | bus | ring | dynamic_star
+  protocol: peer_review     # direct | peer_review | simultaneous
+  aggregation: majority_vote  # majority_vote | borda | condorcet | meta_judge
+  termination: fixed        # fixed | agreement | budget | composite
+  max_rounds: 1             # 1 deliberation cycle (generate → critique → revise)
   budget_usd: 0.10
-  task_delay_seconds: 1.0  # paid models need much less throttling
+  task_delay_seconds: 1.0   # paid models need much less throttling
 
 mlflow:
   tracking_uri: "mlruns"

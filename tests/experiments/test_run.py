@@ -1,4 +1,4 @@
-"""Tests for experiments/run.py — config loading, ExperimentSummary contract.
+"""Tests for experiments/run.py — config loading, ExperimentSummary contract, factories.
 
 Pipeline end-to-end experiments are integration tests gated by RUN_INTEGRATION=1.
 These unit tests cover the infrastructure layer only.
@@ -11,7 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from experiments.run import ExperimentSummary, load_config
+from experiments.run import (
+    ExperimentSummary,
+    _build_aggregation,
+    _build_termination,
+    _build_topology,
+    load_config,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -99,3 +105,116 @@ def test_git_sha_returns_string() -> None:
     sha = _git_sha()
     assert isinstance(sha, str)
     assert len(sha) > 0
+
+
+# ---------------------------------------------------------------------------
+# Task 6.1 — factory functions for topology, aggregation, termination
+# ---------------------------------------------------------------------------
+
+
+class TestBuildTopology:
+    def test_complete(self) -> None:
+        from council.topology import CompleteGraphTopology
+        t = _build_topology("complete", 3)
+        assert isinstance(t, CompleteGraphTopology)
+
+    def test_star(self) -> None:
+        from council.topology import StarTopology
+        t = _build_topology("star", 3)
+        assert isinstance(t, StarTopology)
+
+    def test_bus(self) -> None:
+        from council.topology import BusTopology
+        t = _build_topology("bus", 3)
+        assert isinstance(t, BusTopology)
+
+    def test_ring(self) -> None:
+        from council.topology import RingTopology
+        t = _build_topology("ring", 4)
+        assert isinstance(t, RingTopology)
+
+    def test_dynamic_star(self) -> None:
+        from council.topology import DynamicStarTopology
+        t = _build_topology("dynamic_star", 4)
+        assert isinstance(t, DynamicStarTopology)
+
+    def test_unknown_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Unknown topology"):
+            _build_topology("unknown_topology", 3)
+
+    def test_num_agents_passed_through(self) -> None:
+        t = _build_topology("complete", 5)
+        assert t.num_agents == 5
+
+
+class TestBuildAggregation:
+    def _normalizer(self):  # type: ignore[no-untyped-def]
+        from council.normalizer import IdentityNormalizer
+        return IdentityNormalizer()
+
+    def test_majority_vote(self) -> None:
+        from council.aggregation import MajorityVote
+        agg = _build_aggregation("majority_vote", self._normalizer(), None, [])
+        assert isinstance(agg, MajorityVote)
+
+    def test_borda(self) -> None:
+        from council.aggregation import BordaCount
+        agg = _build_aggregation("borda", self._normalizer(), None, [])
+        assert isinstance(agg, BordaCount)
+
+    def test_condorcet(self) -> None:
+        from council.aggregation import CondorcetAggregation
+        agg = _build_aggregation("condorcet", self._normalizer(), None, [])
+        assert isinstance(agg, CondorcetAggregation)
+
+    def test_unknown_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Unknown aggregation"):
+            _build_aggregation("unknown_agg", self._normalizer(), None, [])
+
+
+class TestBuildTermination:
+    def _normalizer(self):  # type: ignore[no-untyped-def]
+        from council.normalizer import IdentityNormalizer
+        return IdentityNormalizer()
+
+    def test_fixed(self) -> None:
+        from council.termination import FixedRounds
+        t = _build_termination("fixed", total_rounds=3, normalizer=self._normalizer(), budget_usd=1.0)
+        assert isinstance(t, FixedRounds)
+
+    def test_agreement(self) -> None:
+        from council.termination import CompositeTermination
+        t = _build_termination("agreement", total_rounds=3, normalizer=self._normalizer(), budget_usd=1.0)
+        assert isinstance(t, CompositeTermination)
+
+    def test_budget(self) -> None:
+        from council.termination import BudgetExhaustion
+        t = _build_termination("budget", total_rounds=3, normalizer=self._normalizer(), budget_usd=1.0)
+        assert isinstance(t, BudgetExhaustion)
+
+    def test_composite(self) -> None:
+        from council.termination import CompositeTermination
+        t = _build_termination("composite", total_rounds=3, normalizer=self._normalizer(), budget_usd=1.0)
+        assert isinstance(t, CompositeTermination)
+
+    def test_unknown_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Unknown termination"):
+            _build_termination("unknown_term", total_rounds=3, normalizer=self._normalizer(), budget_usd=1.0)
+
+
+class TestYamlConfigsHaveNewKeys:
+    def test_fast_config_has_topology(self) -> None:
+        cfg = load_config("configs/experiment/fast.yaml")
+        assert cfg["council"]["topology"] == "complete"
+
+    def test_fast_config_has_aggregation(self) -> None:
+        cfg = load_config("configs/experiment/fast.yaml")
+        assert cfg["council"]["aggregation"] == "majority_vote"
+
+    def test_fast_config_has_termination(self) -> None:
+        cfg = load_config("configs/experiment/fast.yaml")
+        assert cfg["council"]["termination"] == "fixed"
+
+    def test_full_config_has_topology(self) -> None:
+        cfg = load_config("configs/experiment/full.yaml")
+        assert cfg["council"]["topology"] == "complete"
