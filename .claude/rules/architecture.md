@@ -37,7 +37,9 @@ It is not a peer layer and is explicitly excluded from the peer-layer mutual-imp
 No `council/` module may import from `evaluation/` — the direction is one-way.
 
 ## Required contracts
-- `Protocol.build_prompt(ctx: VisibilityContext) -> str` — single method, no state.
+- `Protocol.build_prompt(ctx: VisibilityContext) -> str` — build the prompt for one agent in one round.
+- `Protocol.is_answer_round(round_index: int) -> bool` — True if agents produce a final answer this round. Default: all rounds are answer rounds. PeerReviewProtocol returns False for odd (critique) rounds. Core pipeline gates `response_format` and aggregation input on this predicate.
+- `Protocol.cycle_length() -> int` — number of raw rounds per deliberation cycle. DirectAnswer/Simultaneous = 1, PeerReview = 2 (critique + revision). Used by the runner to translate config `max_rounds` (deliberation cycles) to total raw rounds: `total = 1 + max_rounds * cycle_length()`.
 - `Topology.get_adjacency_matrix(round_index: int) -> list[list[bool]]` — pure function of round.
 - Every layer base class lives in its own module and uses `abc.ABC` with `@abstractmethod`.
 - `StarTopology` is a **pure relay** — it returns a complete graph or an explicit 2-hop relay. It must NOT alternate on round parity. Round-dependent visibility lives in `DynamicStarTopology`.

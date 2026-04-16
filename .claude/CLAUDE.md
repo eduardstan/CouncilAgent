@@ -56,13 +56,15 @@ tasks/              experiments/     analysis/        configs/         tests/
 Do not create these files until the corresponding Phase task (see the deep review, Part IV) is active.
 
 ## Phased Roadmap (from the Deep Review)
-- **Phase 0** — Foundation corrections (but we're building fresh, so this is merged into Phase 1)
-- **Phase 1** — Core abstractions: `VisibilityContext`, `CommunicationMode`, pure `core.py`, `AnswerNormalizer`, structured output, multi-round peer review
-- **Phase 2** — Termination & control: `TerminationStrategy`, `TaskProfile`, cost estimation
-- **Phase 3** — `CouncilAgent`, `CouncilPolicy`, `EscalationStrategy`, Condorcet/Copeland
-- **Phase 4** — Benchmark infrastructure: MLflow, AIPW, Hydra sweeps, Shapley
-- **Phase 5** — Hypothesis testing (H1, H3, H5, H6, H10 + council-vs-single-LLM)
-- **Phase 6** — Polish, demos, thesis integration
+- **Phase 0** — Foundation corrections (merged into Phase 1) ✅
+- **Phase 1** — Core abstractions: `VisibilityContext`, `CommunicationMode`, pure `core.py`, `AnswerNormalizer`, structured output, multi-round peer review ✅
+- **Phase 2** — Termination & control: `TerminationStrategy`, `TaskProfile`, cost estimation ✅
+- **Phase 3** — `CouncilAgent`, `CouncilPolicy`, `EscalationStrategy`, Condorcet/Copeland ✅
+- **Phase 4** — Benchmark infrastructure: MLflow, AIPW, Hydra sweeps, Shapley ✅
+- **Phase 5** — Pipeline hardening: `is_answer_round`, `cycle_length`, loop restructure, debate-aware aggregation, `response_format` threading ✅
+- **Phase 6** — Runner configurability & correctness fixes: configurable topology/aggregation/termination in runner, `_deliberate()` multi-round visibility, `task_accuracy` numeric extraction, StarTopology differentiation
+- **Phase 7** — Hypothesis testing (H1, H3, H5, H6, H10 + council-vs-single-LLM)
+- **Phase 8** — Polish, demos, thesis integration
 
 ## Git Workflow
 - `main` — protected, release-tagged only

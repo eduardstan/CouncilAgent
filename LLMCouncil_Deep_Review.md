@@ -1361,33 +1361,64 @@ These are not feature gaps — they are correctness issues that make hypothesis 
 
 ---
 
-### Phase 6: Hypothesis Testing (Week 11-12)
+### Phase 6: Runner Configurability & Correctness Fixes (Week 11-12)
+
+**Goal**: Make the experiment runner fully configurable so that Phase 7 hypothesis testing can sweep over topologies, aggregations, and termination strategies. Fix the correctness issues discovered during code review that would invalidate sweep results.
+
+**Why this phase exists.** Code review after Phase 5 revealed that `experiments/run.py` hardcodes `CompleteGraphTopology`, `MajorityVote`, `FixedRounds`, and `NullRanking` — the only varying dimension is protocol. The "4 topologies x 4 protocols x 5 aggregations x 3 datasets = 240 configurations" deliverable from Phase 4 is structurally impossible. Additionally, `_deliberate()` only passes round N-1 responses to the visibility context, which means `SimultaneousProtocol`'s sliding window is dead code. The `task_accuracy` smart matcher lacks numeric extraction (Issue 9 partial implementation), causing false negatives on currency/comma-formatted numbers. The `CouncilAgent` production path doesn't thread `answer_response_format`, so the structured output enforcement from Phase 5 only works via the benchmark runner. Finally, `StarTopology` is indistinguishable from `CompleteGraphTopology` (identical adjacency + identical communication mode), providing no experimental value.
+
+| # | Task | Files | Why |
+|---|------|-------|-----|
+| 6.1 | Make topology/aggregation/ranking/termination configurable from YAML in the experiment runner | `experiments/run.py`, all config YAMLs | Runner currently hardcodes CompleteGraph + MajorityVote + FixedRounds; sweeps can't vary these dimensions |
+| 6.2 | Fix `_deliberate()` to pass all prior-round responses (filtered by adjacency), not just round N-1 | `council/core.py` | SimultaneousProtocol sliding window receives only 1 round of history; windowing logic is dead code |
+| 6.3 | Fix `_generate()` to use `topology.communication_mode` instead of hardcoded `INDIVIDUAL` | `council/core.py` | BusTopology's BROADCAST mode is ignored in round 0 |
+| 6.4 | Add numeric extraction to `task_accuracy` smart matcher (Issue 9 completion) | `evaluation/metrics.py` | `$70,000` vs `70000` returns false negative; currency symbols and commas not handled |
+| 6.5 | Thread `answer_response_format` through `CouncilAgent` → `CouncilConfig` → `run_council()` | `council/agent.py`, `council/policy.py` | Production path (CouncilAgent.complete) doesn't enforce structured output at API level |
+| 6.6 | Inject `output_schema` from `TaskProfile` into protocols built by `CouncilPolicy` | `council/policy.py` | Policy builds protocols without output_schema; structured output prompt injection is missing in the agent path |
+| 6.7 | Differentiate `StarTopology` from `CompleteGraphTopology` via `CommunicationMode.RELAY` | `council/topology.py` | Star and Complete produce identical behavior; no experimental value for sweeps |
+
+**Deliverable**: `uv run python -m experiments.sweep --multirun council.topology=complete,star,bus,ring council.aggregation=majority_vote,borda,condorcet council.protocol=direct,peer_review` produces distinct results for each configuration. `SimultaneousProtocol` windowing works end-to-end. `task_accuracy("$70,000", "70000")` returns 1.0. `CouncilAgent.complete()` enforces structured output.
+
+**Validation**:
+- Test: `_deliberate()` passes responses from rounds 0..N-1 (not just N-1) to visibility context
+- Test: `_generate()` uses topology.communication_mode
+- Test: `task_accuracy("$70,000", "70000", method="smart")` returns 1.0
+- Test: `task_accuracy("$18", "18", method="smart")` returns 1.0
+- Test: Runner with `council.topology: ring` produces different visibility than `complete`
+- Test: Runner with `council.aggregation: condorcet` uses CondorcetAggregation
+- Test: `CouncilAgent.complete()` passes answer_response_format to run_council
+- Test: `StarTopology.communication_mode == CommunicationMode.RELAY`
+
+---
+
+### Phase 7: Hypothesis Testing (Week 13-14)
 
 **Goal**: Test the hypotheses from `plan.md` using the benchmark infrastructure.
 
 | # | Hypothesis | Config | What to measure |
 |---|-----------|--------|-----------------|
-| 6.1 | H1 (Diversity curve) | 1-model → 3-model → 5-model councils, same vs different families | Accuracy vs model diversity (non-monotonic?) |
-| 6.2 | H3 (Diminishing returns) | Same council, vary max_rounds from 0 to 5 | Accuracy gain per round (logarithmic decay?) |
-| 6.3 | H5 (Cardinal > Ordinal) | Borda vs WeightedVote vs Condorcet on same tasks | Which aggregation wins, and does Arrow's escape work? |
-| 6.4 | H6 (Anti-sycophancy) | Same config ± anti_sycophancy=true | Accuracy difference, convergence speed |
-| 6.5 | H10 (Adaptive termination) | FixedRounds vs AgreementThreshold vs BudgetExhaustion | Cost savings vs quality loss |
-| 6.6 | NEW: Council-as-agent vs single LLM | `CouncilAgent.complete()` vs best single model | Accuracy, variance, confidence calibration |
+| 7.1 | H1 (Diversity curve) | 1-model → 3-model → 5-model councils, same vs different families | Accuracy vs model diversity (non-monotonic?) |
+| 7.2 | H3 (Diminishing returns) | Same council, vary max_rounds from 0 to 5 | Accuracy gain per round (logarithmic decay?) |
+| 7.3 | H5 (Cardinal > Ordinal) | Borda vs WeightedVote vs Condorcet on same tasks | Which aggregation wins, and does Arrow's escape work? |
+| 7.4 | H6 (Anti-sycophancy) | Same config ± anti_sycophancy=true | Accuracy difference, convergence speed |
+| 7.5 | H10 (Adaptive termination) | FixedRounds vs AgreementThreshold vs BudgetExhaustion | Cost savings vs quality loss |
+| 7.6 | NEW: Council-as-agent vs single LLM | `CouncilAgent.complete()` vs best single model | Accuracy, variance, confidence calibration |
 
 **Deliverable**: Results tables with Wilcoxon p-values and bootstrap CIs. At least 3 confirmed/rejected hypotheses.
 
 ---
 
-### Phase 7: Polish, Thesis Integration, and Production Demo (Week 13-14)
+### Phase 8: Polish, Thesis Integration, and Production Demo (Week 15-16)
 
 | # | Task | Why |
 |---|------|-----|
-| 7.1 | Streamlit dashboard for interactive exploration of benchmark results | Thesis defense demo |
-| 7.2 | Production demo: PDF summarization via `CouncilAgent` | Shows the vision |
-| 7.3 | Production demo: Code review via `CouncilAgent` | Another application |
-| 7.4 | API reference documentation | Usability |
-| 7.5 | Thesis chapter: architectural decisions with empirical justification | The payoff |
-| 7.6 | Package publication to PyPI as `llm-council` | Community contribution |
+| 8.1 | Streamlit dashboard for interactive exploration of benchmark results | Thesis defense demo |
+| 8.2 | Production demo: PDF summarization via `CouncilAgent` | Shows the vision |
+| 8.3 | Production demo: Code review via `CouncilAgent` | Another application |
+| 8.4 | API reference documentation | Usability |
+| 8.5 | Thesis chapter: architectural decisions with empirical justification | The payoff |
+| 8.6 | Package publication to PyPI as `llm-council` | Community contribution |
+| 8.7 | `CouncilAgent` as LiteLLM-compatible custom provider | `council/litellm_provider.py` — ultimate composability (deferred from Phase 3.6) |
 
 ---
 
