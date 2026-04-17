@@ -71,6 +71,9 @@ class TestLoadConfig:
             dataset: gsm8k
             task_limit: 5
             council:
+              models:
+                - fake/model-a
+                - fake/model-b
               max_rounds: 1
         """))
         cfg = load_config(cfg_file)
@@ -171,6 +174,29 @@ class TestBuildAggregation:
         with pytest.raises(ValueError, match="Unknown aggregation"):
             _build_aggregation("unknown_agg", self._normalizer(), None, [])
 
+    def test_meta_judge_uses_explicit_model_when_set(self) -> None:
+        from council.aggregation import MetaJudge
+        from council.models import FakeModelClient
+        client = FakeModelClient({})
+        agg = _build_aggregation(
+            "meta_judge", self._normalizer(), client,
+            models=["fallback/model"],
+            meta_judge_model="explicit/judge-model",
+        )
+        assert isinstance(agg, MetaJudge)
+        assert agg._model == "explicit/judge-model"  # type: ignore[attr-defined]
+
+    def test_meta_judge_falls_back_to_models_0_when_no_explicit(self) -> None:
+        from council.aggregation import MetaJudge
+        from council.models import FakeModelClient
+        client = FakeModelClient({})
+        agg = _build_aggregation(
+            "meta_judge", self._normalizer(), client,
+            models=["primary/model", "secondary/model"],
+        )
+        assert isinstance(agg, MetaJudge)
+        assert agg._model == "primary/model"  # type: ignore[attr-defined]
+
 
 class TestBuildTermination:
     def _normalizer(self):  # type: ignore[no-untyped-def]
@@ -200,6 +226,25 @@ class TestBuildTermination:
     def test_unknown_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="Unknown termination"):
             _build_termination("unknown_term", total_rounds=3, normalizer=self._normalizer(), budget_usd=1.0)
+
+
+class TestMissingModelsRaises:
+    async def test_run_experiment_raises_when_models_absent(self, tmp_path: Path) -> None:
+        """council.models is now required; omitting it must raise ValueError, not silently
+        fall back to hardcoded model strings."""
+        cfg = {
+            "name": "no_models",
+            "dataset": "gsm8k",
+            "task_limit": 1,
+            "council": {
+                "protocol": "direct",
+                "max_rounds": 0,
+                # "models" key intentionally absent
+            },
+        }
+        from experiments.run import run_experiment
+        with pytest.raises(ValueError, match="council.models must be specified"):
+            await run_experiment(cfg)
 
 
 class TestYamlConfigsHaveNewKeys:

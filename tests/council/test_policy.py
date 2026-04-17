@@ -146,3 +146,27 @@ class TestCouncilPolicy:
         tiers = policy._build_tiers(profile)  # type: ignore[attr-defined]
         fast = next(t for t in tiers if t.name == "fast_vote")
         assert fast.protocol._schema == schema  # type: ignore[attr-defined]
+
+    # --- Fix 1: meta_judge_model configurable ---
+
+    def test_meta_judge_model_explicit_used_when_set(self) -> None:
+        dedicated = "openrouter/anthropic/claude-opus-4"
+        policy = CouncilPolicy(
+            model_client=FakeModelClient({}),
+            default_models=["fake/a", "fake/b"],
+            meta_judge_model=dedicated,
+        )
+        cfg = policy.plan("Write a poem.", _profile_open_ended())
+        assert isinstance(cfg.aggregation, MetaJudge)
+        assert cfg.aggregation._model == dedicated  # type: ignore[attr-defined]
+
+    def test_meta_judge_model_falls_back_to_models_0_when_none(self) -> None:
+        models = ["fake/primary", "fake/secondary"]
+        policy = CouncilPolicy(
+            model_client=FakeModelClient({}),
+            default_models=models,
+            meta_judge_model=None,
+        )
+        cfg = policy.plan("Write a poem.", _profile_open_ended())
+        assert isinstance(cfg.aggregation, MetaJudge)
+        assert cfg.aggregation._model == "fake/primary"  # type: ignore[attr-defined]

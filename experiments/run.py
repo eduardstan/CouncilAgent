@@ -80,8 +80,18 @@ def _build_topology(name: str, n_agents: int) -> Any:
     return cls(n_agents)
 
 
-def _build_aggregation(name: str, normalizer: Any, model_client: Any, models: list[str]) -> Any:
-    """Factory: aggregation name → Aggregation instance. Raises ValueError on unknown name."""
+def _build_aggregation(
+    name: str,
+    normalizer: Any,
+    model_client: Any,
+    models: list[str],
+    meta_judge_model: str | None = None,
+) -> Any:
+    """Factory: aggregation name → Aggregation instance. Raises ValueError on unknown name.
+
+    meta_judge_model: explicit synthesis model for MetaJudge. Falls back to
+    models[0] when None so existing configs without the key keep working.
+    """
     from council.aggregation import BordaCount, CondorcetAggregation, MajorityVote, MetaJudge
 
     if name == "majority_vote":
@@ -91,7 +101,8 @@ def _build_aggregation(name: str, normalizer: Any, model_client: Any, models: li
     if name == "condorcet":
         return CondorcetAggregation()
     if name == "meta_judge":
-        return MetaJudge(model=models[0], model_client=model_client)
+        judge_model = meta_judge_model if meta_judge_model else models[0]
+        return MetaJudge(model=judge_model, model_client=model_client)
     raise ValueError(
         f"Unknown aggregation {name!r}. Valid options: majority_vote, borda, condorcet, meta_judge"
     )
@@ -214,8 +225,17 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         name:           Experiment config name (used in MLflow experiment name).
         dataset:        Task dataset name (key in tasks.registry.REGISTRY).
         task_limit:     Max tasks to evaluate (None = full dataset).
-        council:        Council config dict with keys: models, protocol,
-                        max_rounds, budget_usd, task_delay_seconds.
+        council:        Council config dict. Required keys:
+                          models           — list of model strings (≥2).
+                        Optional keys (all have defaults):
+                          protocol         — direct | peer_review | simultaneous (default: peer_review)
+                          topology         — complete | star | bus | ring | dynamic_star (default: complete)
+                          aggregation      — majority_vote | borda | condorcet | meta_judge (default: majority_vote)
+                          termination      — fixed | agreement | budget | composite (default: fixed)
+                          meta_judge_model — synthesis model for meta_judge (default: models[0])
+                          max_rounds       — deliberation cycles after initial generation (default: 1)
+                          budget_usd       — cost cap in USD (default: 0.10)
+                          task_delay_seconds — sleep between tasks (default: 2.0)
         mlflow:         MLflow config dict with keys: tracking_uri, experiment_name.
                         Optional — if absent, MLflow logging is skipped.
     """
@@ -242,11 +262,12 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     mlflow_cfg: dict[str, Any] = config.get("mlflow", {})
 
     # --- Build components from YAML ----------------------------------------
-    models: list[str] = council_cfg.get("models", [
-        "openrouter/openai/gpt-4.1-nano",
-        "openrouter/qwen/qwen3.5-flash-02-23",
-        "openrouter/google/gemini-2.5-flash-lite",
-    ])
+    models: list[str] = council_cfg.get("models", [])
+    if not models:
+        raise ValueError(
+            "council.models must be specified in the experiment config. "
+            "Example:\n  council:\n    models:\n      - openrouter/openai/gpt-4.1-nano"
+        )
     max_rounds: int = council_cfg.get("max_rounds", 1)
     budget_usd: float = council_cfg.get("budget_usd", 0.10)
     task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
@@ -254,6 +275,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     topology_name: str = council_cfg.get("topology", "complete")
     aggregation_name: str = council_cfg.get("aggregation", "majority_vote")
     termination_name: str = council_cfg.get("termination", "fixed")
+    meta_judge_model: str | None = council_cfg.get("meta_judge_model")  # None → models[0]
 
     # Ask models to produce structured JSON so MajorityVote can normalize cleanly.
     # Two fields: reasoning (chain-of-thought) and answer (concise final value only).
@@ -291,7 +313,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     model_client = LiteLLMClient()
 
     topology = _build_topology(topology_name, len(agents))
-    aggregation = _build_aggregation(aggregation_name, normalizer, model_client, models)
+    aggregation = _build_aggregation(aggregation_name, normalizer, model_client, models, meta_judge_model)
     termination = _build_termination(termination_name, total_rounds, normalizer, budget_usd)
 
     # --- Load tasks -------------------------------------------------------
@@ -412,6 +434,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 "topology": topology_name,
                 "aggregation": aggregation_name,
                 "termination": termination_name,
+                "meta_judge_model": meta_judge_model or models[0],
                 "budget_usd": budget_usd,
                 "git_sha": sha,
             })
