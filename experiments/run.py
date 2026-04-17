@@ -56,6 +56,78 @@ def load_config(path: str | Path) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def _build_topology(name: str, n_agents: int) -> Any:
+    """Factory: topology name → Topology instance. Raises ValueError on unknown name."""
+    from council.topology import (
+        BusTopology,
+        CompleteGraphTopology,
+        DynamicStarTopology,
+        RingTopology,
+        StarTopology,
+    )
+    _map = {
+        "complete": CompleteGraphTopology,
+        "star": StarTopology,
+        "bus": BusTopology,
+        "ring": RingTopology,
+        "dynamic_star": DynamicStarTopology,
+    }
+    cls = _map.get(name)
+    if cls is None:
+        raise ValueError(
+            f"Unknown topology {name!r}. Valid options: {sorted(_map)}"
+        )
+    return cls(n_agents)
+
+
+def _build_aggregation(name: str, normalizer: Any, model_client: Any, models: list[str]) -> Any:
+    """Factory: aggregation name → Aggregation instance. Raises ValueError on unknown name."""
+    from council.aggregation import BordaCount, CondorcetAggregation, MajorityVote, MetaJudge
+
+    if name == "majority_vote":
+        return MajorityVote(normalizer=normalizer)
+    if name == "borda":
+        return BordaCount()
+    if name == "condorcet":
+        return CondorcetAggregation()
+    if name == "meta_judge":
+        return MetaJudge(model=models[0], model_client=model_client)
+    raise ValueError(
+        f"Unknown aggregation {name!r}. Valid options: majority_vote, borda, condorcet, meta_judge"
+    )
+
+
+def _build_termination(
+    name: str,
+    total_rounds: int,
+    normalizer: Any,
+    budget_usd: float,
+) -> Any:
+    """Factory: termination name → TerminationStrategy instance. Raises ValueError on unknown name."""
+    from council.termination import AgreementThreshold, BudgetExhaustion, CompositeTermination, FixedRounds
+
+    if name == "fixed":
+        return FixedRounds(total_rounds)
+    if name == "agreement":
+        # AgreementThreshold with a FixedRounds safety cap.
+        return CompositeTermination(
+            AgreementThreshold(0.8, normalizer=normalizer),
+            FixedRounds(total_rounds),
+        )
+    if name == "budget":
+        return BudgetExhaustion(budget_usd)
+    if name == "composite":
+        # Agreement OR budget exhausted OR fixed cap — whichever fires first.
+        return CompositeTermination(
+            AgreementThreshold(0.8, normalizer=normalizer),
+            BudgetExhaustion(budget_usd),
+            FixedRounds(total_rounds),
+        )
+    raise ValueError(
+        f"Unknown termination {name!r}. Valid options: fixed, agreement, budget, composite"
+    )
+
+
 def _format_task_transcript(
     task_idx: int,
     task_id: str,
@@ -67,6 +139,7 @@ def _format_task_transcript(
     accuracy: float,
     model_map: dict[str, str],
     final_round_normalized: dict[str, str],  # agent_id → normalized answer
+    aggregation_name: str = "MajorityVote",
 ) -> str:
     """Format the full round-by-round debate for one task as a readable string.
 
@@ -110,8 +183,8 @@ def _format_task_transcript(
             lines.append(content)
             lines.append("")
 
-    # AGGREGATE section — show MajorityVote ballot
-    lines.append("### AGGREGATE — MajorityVote on final-round responses")
+    # AGGREGATE section — show per-agent normalized votes
+    lines.append(f"### AGGREGATE — {aggregation_name} on final-round responses")
     lines.append("")
     lines.append("| Agent | Model | Normalized answer |")
     lines.append("|-------|-------|-------------------|")
@@ -154,13 +227,10 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         logger.warning("mlflow not installed — results will not be logged. "
                        "Install with: uv pip install 'council-agent[benchmark]'")
 
-    from council.aggregation import MajorityVote
     from council.core import AgentConfig, run_council
     from council.models import LiteLLMClient
     from council.normalizer import StructuredOutputNormalizer
     from council.protocol import DirectAnswerProtocol, PeerReviewProtocol, SimultaneousProtocol
-    from council.termination import FixedRounds
-    from council.topology import CompleteGraphTopology
     from evaluation.baselines import majority_vote_no_deliberation
     from evaluation.metrics import task_accuracy
     from tasks.registry import REGISTRY
@@ -181,6 +251,9 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     budget_usd: float = council_cfg.get("budget_usd", 0.10)
     task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
     protocol_name: str = council_cfg.get("protocol", "peer_review")
+    topology_name: str = council_cfg.get("topology", "complete")
+    aggregation_name: str = council_cfg.get("aggregation", "majority_vote")
+    termination_name: str = council_cfg.get("termination", "fixed")
 
     # Ask models to produce structured JSON so MajorityVote can normalize cleanly.
     # Two fields: reasoning (chain-of-thought) and answer (concise final value only).
@@ -217,6 +290,10 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     normalizer = StructuredOutputNormalizer()
     model_client = LiteLLMClient()
 
+    topology = _build_topology(topology_name, len(agents))
+    aggregation = _build_aggregation(aggregation_name, normalizer, model_client, models)
+    termination = _build_termination(termination_name, total_rounds, normalizer, budget_usd)
+
     # --- Load tasks -------------------------------------------------------
     loader = REGISTRY[dataset_name]
     tasks = loader.load(limit=task_limit)
@@ -245,6 +322,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     print(f"Experiment: {cfg_name}  |  dataset: {dataset_name}  |  tasks: {task_limit or 'all'}")
     print(f"Models: {', '.join(m.split('/')[-1] for m in models)}")
     print(f"Protocol: {protocol_name}  |  deliberation_cycles: {max_rounds}  |  total_rounds: {total_rounds}")
+    print(f"Topology: {topology_name}  |  aggregation: {aggregation_name}  |  termination: {termination_name}")
     print(f"{'=' * 72}\n")
 
     for task_idx, task in enumerate(tasks):
@@ -255,10 +333,10 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 prompt=task.question,
                 agents=agents,
                 model_client=model_client,
-                topology=CompleteGraphTopology(len(agents)),
+                topology=topology,
                 protocol=protocol,
-                aggregation=MajorityVote(normalizer=normalizer),
-                termination=FixedRounds(total_rounds),
+                aggregation=aggregation,
+                termination=termination,
                 answer_response_format={"type": "json_object"},
             )
 
@@ -296,6 +374,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 accuracy=acc,
                 model_map=model_map,
                 final_round_normalized=final_round_normalized,
+                aggregation_name=type(aggregation).__name__,
             )
             print(transcript)
             all_transcripts.append(transcript)
@@ -330,6 +409,9 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 "deliberation_cycles": max_rounds,
                 "total_rounds": total_rounds,
                 "protocol": protocol_name,
+                "topology": topology_name,
+                "aggregation": aggregation_name,
+                "termination": termination_name,
                 "budget_usd": budget_usd,
                 "git_sha": sha,
             })

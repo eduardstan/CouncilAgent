@@ -120,3 +120,29 @@ class TestCouncilPolicy:
         policy = self._policy()
         cfg = policy.plan("Q", _profile_factual())
         assert len(cfg.agents) == 3
+
+    # --- Task 6.6: output_schema injection ---
+
+    def test_plan_injects_output_schema_into_protocol(self) -> None:
+        schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+        profile = TaskProfile(name="structured", normalizer=IdentityNormalizer(), output_schema=schema)
+        policy = self._policy()
+        cfg = policy.plan("Q", profile)
+        # The returned protocol is PeerReviewProtocol (standard_deliberation tier).
+        assert isinstance(cfg.protocol, PeerReviewProtocol)
+        assert cfg.protocol._schema == schema  # type: ignore[attr-defined]
+
+    def test_plan_no_output_schema_leaves_protocol_schema_none(self) -> None:
+        profile = TaskProfile(name="plain", normalizer=IdentityNormalizer(), output_schema=None)
+        policy = self._policy()
+        cfg = policy.plan("Q", profile)
+        assert cfg.protocol._schema is None  # type: ignore[attr-defined]
+
+    def test_plan_fast_tier_also_gets_output_schema(self) -> None:
+        schema = {"type": "object"}
+        profile = TaskProfile(name="structured", normalizer=IdentityNormalizer(), output_schema=schema)
+        # Use zero budget so we can inspect the fast tier
+        policy = self._policy(budget=100.0)
+        tiers = policy._build_tiers(profile)  # type: ignore[attr-defined]
+        fast = next(t for t in tiers if t.name == "fast_vote")
+        assert fast.protocol._schema == schema  # type: ignore[attr-defined]

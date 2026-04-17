@@ -13,13 +13,13 @@ AgreementThreshold early exit, and zero framework imports.
 from __future__ import annotations
 
 from council.aggregation import MajorityVote
-from council.context import CouncilResult
+from council.context import CommunicationMode, CouncilResult
 from council.core import AgentConfig, run_council
 from council.models import FakeModelClient
 from council.normalizer import IdentityNormalizer
 from council.protocol import DirectAnswerProtocol, PeerReviewProtocol
 from council.termination import AgreementThreshold, CompositeTermination, FixedRounds
-from council.topology import CompleteGraphTopology, RingTopology
+from council.topology import BusTopology, CompleteGraphTopology, RingTopology
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -503,6 +503,82 @@ async def test_response_format_all_rounds_for_direct_answer_protocol() -> None:
     )
     assert all(f == rf for f in captured_formats), (
         "DirectAnswerProtocol: every round should carry response_format"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 6.3 — _deliberate() passes full prior history, not just round N-1
+# ---------------------------------------------------------------------------
+
+
+async def test_deliberate_passes_full_history_to_later_rounds() -> None:
+    """In round 2, each agent must see responses from both round 0 and round 1,
+    not just round 1. This makes SimultaneousProtocol's sliding window live."""
+    # round_index → list of (ctx.agent_id, [visible response round_indexes])
+    captured_visible_rounds: dict[int, list[list[int]]] = {}
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            if ctx.round_index >= 1:
+                round_idxs = [r.round_index for r in ctx.visible_responses]
+                captured_visible_rounds.setdefault(ctx.round_index, []).append(round_idxs)
+            return super().build_prompt(ctx)
+
+    agents = _agents(3)
+    client = _fake(3, "answer")
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),
+        anonymize=False,
+    )
+    # Round-1 agents see round-0 history (2 other agents in complete graph)
+    assert 1 in captured_visible_rounds, "Expected round-1 spy captures"
+    # Round-2 agents must see BOTH round-0 and round-1 history from each peer
+    assert 2 in captured_visible_rounds, "Expected round-2 spy captures"
+    for visible_round_idxs in captured_visible_rounds[2]:
+        assert 0 in visible_round_idxs, (
+            f"Round-2 context missing round-0 history: {visible_round_idxs}"
+        )
+        assert 1 in visible_round_idxs, (
+            f"Round-2 context missing round-1 history: {visible_round_idxs}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 6.2 — _generate() uses topology.communication_mode in round 0
+# ---------------------------------------------------------------------------
+
+
+async def test_generate_uses_topology_communication_mode() -> None:
+    """Round-0 VisibilityContext.communication_mode must come from the topology,
+    not be hardcoded to INDIVIDUAL."""
+    captured_modes: list[CommunicationMode] = []
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            if ctx.round_index == 0:
+                captured_modes.append(ctx.communication_mode)
+            return super().build_prompt(ctx)
+
+    agents = _agents(3)
+    client = _fake(3, "answer")
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=BusTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    assert captured_modes, "Expected round-0 prompts to be built"
+    assert all(m == CommunicationMode.BROADCAST for m in captured_modes), (
+        f"BusTopology round-0 contexts should carry BROADCAST, got: {captured_modes}"
     )
 
 

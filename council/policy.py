@@ -52,6 +52,7 @@ class CouncilConfig:
     ranking: Ranking | None = None
     anonymize: bool = True
     estimated_cost_usd: float = 0.0
+    answer_response_format: dict[str, str] | None = None
 
 
 class CouncilPolicy:
@@ -93,15 +94,21 @@ class CouncilPolicy:
         n = len(agents)
         topology = CompleteGraphTopology(n)
 
+        output_schema = task_profile.output_schema
+        # When the task declares a structured output schema, request JSON from the
+        # model on every answer round. None means free-text (no format enforcement).
+        rf: dict[str, str] | None = {"type": "json_object"} if output_schema else None
+
         # Tier 1 — fast_vote: single round, majority vote regardless of task type.
         fast = CouncilConfig(
             name="fast_vote",
             agents=agents,
             topology=topology,
-            protocol=DirectAnswerProtocol(),
+            protocol=DirectAnswerProtocol(output_schema=output_schema),
             aggregation=MajorityVote(normalizer=task_profile.normalizer),
             termination=FixedRounds(1),
             estimated_cost_usd=0.0,
+            answer_response_format=rf,
         )
 
         # Tier 2 — standard_deliberation: peer review, agreement-gated, task-aware agg.
@@ -117,13 +124,14 @@ class CouncilPolicy:
             name="standard_deliberation",
             agents=agents,
             topology=topology,
-            protocol=PeerReviewProtocol(),
+            protocol=PeerReviewProtocol(output_schema=output_schema),
             aggregation=agg,
             termination=CompositeTermination(
                 AgreementThreshold(0.8, normalizer=task_profile.normalizer),
                 FixedRounds(2),
             ),
             estimated_cost_usd=0.0,
+            answer_response_format=rf,
         )
 
         return [fast, standard]
