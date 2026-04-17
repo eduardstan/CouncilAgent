@@ -80,8 +80,18 @@ def _build_topology(name: str, n_agents: int) -> Any:
     return cls(n_agents)
 
 
-def _build_aggregation(name: str, normalizer: Any, model_client: Any, models: list[str]) -> Any:
-    """Factory: aggregation name → Aggregation instance. Raises ValueError on unknown name."""
+def _build_aggregation(
+    name: str,
+    normalizer: Any,
+    model_client: Any,
+    models: list[str],
+    meta_judge_model: str | None = None,
+) -> Any:
+    """Factory: aggregation name → Aggregation instance. Raises ValueError on unknown name.
+
+    meta_judge_model: explicit synthesis model for MetaJudge. Falls back to
+    models[0] when None so existing configs without the key keep working.
+    """
     from council.aggregation import BordaCount, CondorcetAggregation, MajorityVote, MetaJudge
 
     if name == "majority_vote":
@@ -91,7 +101,8 @@ def _build_aggregation(name: str, normalizer: Any, model_client: Any, models: li
     if name == "condorcet":
         return CondorcetAggregation()
     if name == "meta_judge":
-        return MetaJudge(model=models[0], model_client=model_client)
+        judge_model = meta_judge_model if meta_judge_model else models[0]
+        return MetaJudge(model=judge_model, model_client=model_client)
     raise ValueError(
         f"Unknown aggregation {name!r}. Valid options: majority_vote, borda, condorcet, meta_judge"
     )
@@ -254,6 +265,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     topology_name: str = council_cfg.get("topology", "complete")
     aggregation_name: str = council_cfg.get("aggregation", "majority_vote")
     termination_name: str = council_cfg.get("termination", "fixed")
+    meta_judge_model: str | None = council_cfg.get("meta_judge_model")  # None → models[0]
 
     # Ask models to produce structured JSON so MajorityVote can normalize cleanly.
     # Two fields: reasoning (chain-of-thought) and answer (concise final value only).
@@ -291,7 +303,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     model_client = LiteLLMClient()
 
     topology = _build_topology(topology_name, len(agents))
-    aggregation = _build_aggregation(aggregation_name, normalizer, model_client, models)
+    aggregation = _build_aggregation(aggregation_name, normalizer, model_client, models, meta_judge_model)
     termination = _build_termination(termination_name, total_rounds, normalizer, budget_usd)
 
     # --- Load tasks -------------------------------------------------------
@@ -412,6 +424,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 "topology": topology_name,
                 "aggregation": aggregation_name,
                 "termination": termination_name,
+                "meta_judge_model": meta_judge_model or models[0],
                 "budget_usd": budget_usd,
                 "git_sha": sha,
             })

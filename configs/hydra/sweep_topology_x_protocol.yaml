@@ -31,6 +31,8 @@ council:
   topology: complete       # complete | star
   protocol: peer_review    # direct_answer | peer_review
   aggregation: majority_vote  # majority_vote | meta_judge | condorcet
+  # meta_judge_model: "openrouter/..."  # optional: dedicated synthesis model for meta_judge
+  #                                     # defaults to models[0] when omitted
   max_rounds: 1            # deliberation cycles (not raw rounds)
   budget_usd: 1.00
 

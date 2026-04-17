@@ -73,10 +73,14 @@ class CouncilPolicy:
         model_client: ModelClient,
         default_models: list[str] | None = None,
         budget_usd: float = 0.10,
+        meta_judge_model: str | None = None,
     ) -> None:
         self._model_client = model_client
         self._models = default_models if default_models is not None else _FREE_MODELS
         self._budget = budget_usd
+        # Explicit synthesis model for MetaJudge. Falls back to self._models[0]
+        # so callers that don't need a dedicated judge model get sensible behaviour.
+        self._meta_judge_model = meta_judge_model
 
     def plan(self, prompt: str, task_profile: TaskProfile) -> CouncilConfig:
         """Return the most capable affordable config for the given task profile."""
@@ -113,8 +117,9 @@ class CouncilPolicy:
 
         # Tier 2 — standard_deliberation: peer review, agreement-gated, task-aware agg.
         if task_profile.recommended_aggregation == "meta_judge":
+            judge_model = self._meta_judge_model if self._meta_judge_model else self._models[0]
             agg: Aggregation = MetaJudge(
-                model=self._models[0],
+                model=judge_model,
                 model_client=self._model_client,
             )
         else:
