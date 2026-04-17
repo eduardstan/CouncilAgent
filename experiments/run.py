@@ -225,8 +225,17 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         name:           Experiment config name (used in MLflow experiment name).
         dataset:        Task dataset name (key in tasks.registry.REGISTRY).
         task_limit:     Max tasks to evaluate (None = full dataset).
-        council:        Council config dict with keys: models, protocol,
-                        max_rounds, budget_usd, task_delay_seconds.
+        council:        Council config dict. Required keys:
+                          models           — list of model strings (≥2).
+                        Optional keys (all have defaults):
+                          protocol         — direct | peer_review | simultaneous (default: peer_review)
+                          topology         — complete | star | bus | ring | dynamic_star (default: complete)
+                          aggregation      — majority_vote | borda | condorcet | meta_judge (default: majority_vote)
+                          termination      — fixed | agreement | budget | composite (default: fixed)
+                          meta_judge_model — synthesis model for meta_judge (default: models[0])
+                          max_rounds       — deliberation cycles after initial generation (default: 1)
+                          budget_usd       — cost cap in USD (default: 0.10)
+                          task_delay_seconds — sleep between tasks (default: 2.0)
         mlflow:         MLflow config dict with keys: tracking_uri, experiment_name.
                         Optional — if absent, MLflow logging is skipped.
     """
@@ -253,11 +262,12 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     mlflow_cfg: dict[str, Any] = config.get("mlflow", {})
 
     # --- Build components from YAML ----------------------------------------
-    models: list[str] = council_cfg.get("models", [
-        "openrouter/openai/gpt-4.1-nano",
-        "openrouter/qwen/qwen3.5-flash-02-23",
-        "openrouter/google/gemini-2.5-flash-lite",
-    ])
+    models: list[str] = council_cfg.get("models", [])
+    if not models:
+        raise ValueError(
+            "council.models must be specified in the experiment config. "
+            "Example:\n  council:\n    models:\n      - openrouter/openai/gpt-4.1-nano"
+        )
     max_rounds: int = council_cfg.get("max_rounds", 1)
     budget_usd: float = council_cfg.get("budget_usd", 0.10)
     task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
