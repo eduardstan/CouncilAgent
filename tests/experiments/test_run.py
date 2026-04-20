@@ -254,7 +254,9 @@ class TestYamlConfigsHaveNewKeys:
 
     def test_fast_config_has_aggregation(self) -> None:
         cfg = load_config("configs/experiment/fast.yaml")
-        assert cfg["council"]["aggregation"] == "majority_vote"
+        # fast.yaml uses meta_judge: the integration baseline exercises the
+        # full informed-aggregation path (debate transcript + synthesis).
+        assert cfg["council"]["aggregation"] == "meta_judge"
 
     def test_fast_config_has_termination(self) -> None:
         cfg = load_config("configs/experiment/fast.yaml")

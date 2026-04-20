@@ -18,7 +18,7 @@ council:
     - "openrouter/google/gemini-2.5-flash-lite"
   topology: complete        # complete | star | bus | ring | dynamic_star
   protocol: peer_review     # direct | peer_review | simultaneous
-  aggregation: majority_vote  # majority_vote | borda | condorcet | meta_judge
+  aggregation: meta_judge  # majority_vote | borda | condorcet | meta_judge
   # meta_judge_model: "openrouter/..."  # optional: dedicated synthesis model for meta_judge
   #                                     # defaults to models[0] when omitted
   termination: fixed        # fixed | agreement | budget | composite
