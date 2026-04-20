@@ -19,7 +19,6 @@ from council.context import AgentResponse, CouncilResult
 from council.core import run_council
 from council.models import ModelClient
 from council.policy import CouncilConfig
-from council.task_profile import TaskProfile
 
 logger = logging.getLogger(__name__)
 
@@ -143,11 +142,7 @@ class CouncilAgent:
         self._escalation = escalation
         self._escalation_threshold = escalation_threshold
 
-    async def complete(
-        self,
-        prompt: str,
-        task_profile: TaskProfile | None = None,
-    ) -> AgentResponse:
+    async def complete(self, prompt: str) -> AgentResponse:
         """Run the council and return an AgentResponse with council metadata."""
         result = await run_council(
             prompt=prompt,
