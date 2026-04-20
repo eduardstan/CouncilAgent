@@ -18,6 +18,7 @@ from council.models import (
     LiteLLMClient,
     ModelFailure,
     ModelRequest,
+    ModelResponse,
 )
 
 # ---------------------------------------------------------------------------
@@ -145,6 +146,35 @@ class TestFakeModelClient:
         assert r0.content == "first"
         assert r1.content == "second"
 
+    async def test_call_with_string_handler_returns_model_response(self) -> None:
+        client = FakeModelClient({}, call_handler="synthesized")
+        result = await client.call(self._req())
+        assert isinstance(result, ModelResponse)
+        assert result.content == "synthesized"
+        assert result.tokens_in > 0
+        assert result.tokens_out > 0
+        assert result.cost == 0.0
+
+    async def test_call_with_callable_handler_receives_request(self) -> None:
+        seen: list[ModelRequest] = []
+
+        def handler(req: ModelRequest) -> str:
+            seen.append(req)
+            return f"model={req.model}"
+
+        client = FakeModelClient({}, call_handler=handler)
+        result = await client.call(self._req("fake/judge"))
+        assert isinstance(result, ModelResponse)
+        assert result.content == "model=fake/judge"
+        assert len(seen) == 1
+        assert seen[0].model == "fake/judge"
+
+    async def test_call_without_handler_returns_failure(self) -> None:
+        client = FakeModelClient({("a", 0): "x"})  # no call_handler set
+        result = await client.call(self._req())
+        assert isinstance(result, ModelFailure)
+        assert "call_handler" in result.error
+
 
 # ---------------------------------------------------------------------------
 # LiteLLMClient — all providers via mocked litellm.acompletion
@@ -260,6 +290,31 @@ class TestLiteLLMClient:
         cost = await client.estimate_cost("openai/gpt-4o-mini", prompt_tokens=100)
         assert isinstance(cost, float)
         assert cost >= 0.0
+
+    async def test_call_returns_model_response_without_identity(self, mocker: pytest.FixtureRequest) -> None:
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = "synthesis"
+        mock_resp.usage.prompt_tokens = 7
+        mock_resp.usage.completion_tokens = 3
+        mock_resp._hidden_params = {"response_cost": 0.001}
+
+        mocker.patch("litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp)
+
+        client = LiteLLMClient()
+        result = await client.call(ModelRequest(model="openai/gpt-4o-mini", prompt="judge this"))
+        assert isinstance(result, ModelResponse)
+        assert result.content == "synthesis"
+        assert result.tokens_in == 7
+        assert result.tokens_out == 3
+        assert result.cost == pytest.approx(0.001)
+
+    async def test_call_returns_failure_on_exception(self, mocker: pytest.FixtureRequest) -> None:
+        mocker.patch("litellm.acompletion", side_effect=Exception("synthesis failed"))
+        client = LiteLLMClient()
+        result = await client.call(ModelRequest(model="openai/gpt-4o-mini", prompt="hi"))
+        assert isinstance(result, ModelFailure)
+        assert "synthesis failed" in result.error.lower()
 
 
 # ---------------------------------------------------------------------------
