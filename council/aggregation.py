@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections import Counter
-from collections import defaultdict
-from typing import Callable
+from collections import Counter, defaultdict
+from collections.abc import Callable
 
-from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData, RichPreference
+from council.context import (
+    AgentResponse,
+    AggregationResult,
+    AnswerNormalizer,
+    PreferenceData,
+    RichPreference,
+)
 from council.models import ModelClient, ModelFailure, ModelRequest
 
 logger = logging.getLogger(__name__)

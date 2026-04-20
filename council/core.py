@@ -23,11 +23,11 @@ from council.context import (
     CommunicationMode,
     CouncilResult,
     CouncilState,
+    PreferenceData,
     VisibilityContext,
 )
 from council.models import ModelClient, ModelFailure, ModelRequest
 from council.protocol import Protocol
-from council.context import PreferenceData
 from council.ranking import NullRanking, Ranking
 from council.termination import TerminationStrategy
 from council.topology import Topology

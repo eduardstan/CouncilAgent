@@ -212,7 +212,7 @@ class LiteLLMClient(ModelClient):
         # Load .env so OPENROUTER_API_KEY and other provider keys are available
         # to LiteLLM without requiring the caller to set them manually.
         try:
-            from dotenv import load_dotenv  # type: ignore[import-untyped]
+            from dotenv import load_dotenv
             load_dotenv(override=False)  # don't override already-set env vars
         except ImportError:
             pass  # python-dotenv not installed; assume env is already set
@@ -220,9 +220,9 @@ class LiteLLMClient(ModelClient):
         # Suppress litellm's verbose "Provider List" error banners — they are
         # printed for any exception including rate limits and add no signal.
         try:
-            import litellm as _litellm  # type: ignore[import-untyped]
+            import litellm as _litellm
             _litellm.suppress_debug_info = True
-            _litellm.set_verbose = False
+            _litellm.set_verbose = False  # type: ignore[attr-defined]
         except Exception as exc:
             logger.debug("litellm debug-suppression setup skipped: %s", exc)
 
@@ -272,12 +272,12 @@ class LiteLLMClient(ModelClient):
                     tokens_out=tokens_out,
                     cost=cost,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 last_error = f"timeout after {self._timeout}s"
                 logger.warning("LiteLLMClient: %s timed out (attempt %d/%d)",
                                request.model, attempt + 1, self._max_retries)
                 break
-            except litellm.RateLimitError as exc:
+            except litellm.RateLimitError as exc:  # type: ignore[attr-defined]
                 last_error = str(exc)
                 if attempt < self._max_retries - 1:
                     backoff = 2.0 ** attempt
