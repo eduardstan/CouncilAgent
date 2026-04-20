@@ -53,6 +53,7 @@ class CouncilConfig:
     anonymize: bool = True
     estimated_cost_usd: float = 0.0
     answer_response_format: dict[str, object] | None = None
+    prompt_hint: str = ""
 
 
 class CouncilPolicy:
@@ -113,6 +114,7 @@ class CouncilPolicy:
             termination=FixedRounds(1),
             estimated_cost_usd=0.0,
             answer_response_format=rf,
+            prompt_hint=task_profile.prompt_hint,
         )
 
         # Tier 2 — standard_deliberation: peer review, agreement-gated, task-aware agg.
@@ -148,6 +150,7 @@ class CouncilPolicy:
             ),
             estimated_cost_usd=0.0,
             answer_response_format=rf,
+            prompt_hint=task_profile.prompt_hint,
         )
 
         return [fast, standard]

@@ -583,6 +583,70 @@ async def test_generate_uses_topology_communication_mode() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Task 6.12 — prompt_hint threads to VisibilityContext and Protocol prompts
+# ---------------------------------------------------------------------------
+
+
+async def test_task_hint_appears_in_answer_round_prompts() -> None:
+    """When task_hint is set, it must appear in answer-round prompts only."""
+    captured: list[tuple[int, str]] = []  # (round_index, prompt)
+
+    class SpyProtocol(PeerReviewProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            p = super().build_prompt(ctx)
+            captured.append((ctx.round_index, p))
+            return p
+
+    agents = _agents(3)
+    client = _fake(3, "42")
+    hint = "Return only the final numeric answer, no units or prose."
+    await run_council(
+        prompt="Q?",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),  # rounds 0, 1, 2 — PeerReview: 0=answer, 1=critique, 2=answer
+        task_hint=hint,
+    )
+    answer_prompts = [p for r, p in captured if r in (0, 2)]
+    critique_prompts = [p for r, p in captured if r == 1]
+    assert answer_prompts, "expected at least one answer-round prompt"
+    for p in answer_prompts:
+        assert hint in p, f"answer-round prompt missing hint: {p[:200]}"
+    for p in critique_prompts:
+        assert hint not in p, f"critique-round prompt should NOT contain hint: {p[:200]}"
+
+
+async def test_empty_task_hint_is_noop() -> None:
+    """An empty task_hint must not change the prompt at all."""
+    captured: list[str] = []
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            p = super().build_prompt(ctx)
+            captured.append(p)
+            return p
+
+    agents = _agents(2)
+    client = _fake(2, "7")
+    await run_council(
+        prompt="What?",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+        task_hint="",
+    )
+    assert captured
+    for p in captured:
+        assert p.strip() == "What?"
+
+
+# ---------------------------------------------------------------------------
 # Task 6.11 — per-agent temperature / max_tokens overrides on AgentConfig
 # ---------------------------------------------------------------------------
 

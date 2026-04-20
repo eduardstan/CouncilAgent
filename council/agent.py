@@ -81,6 +81,7 @@ class UpgradeModels(EscalationStrategy):
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
             answer_response_format=self._config.answer_response_format,
+            task_hint=self._config.prompt_hint,
         )
         return _result_to_response(result, base_cost=response.cost, escalated=True)
 
@@ -112,6 +113,7 @@ class AddDeliberation(EscalationStrategy):
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
             answer_response_format=self._config.answer_response_format,
+            task_hint=self._config.prompt_hint,
         )
         return _result_to_response(result, base_cost=response.cost, escalated=True)
 
@@ -157,6 +159,7 @@ class CouncilAgent:
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
             answer_response_format=self._config.answer_response_format,
+            task_hint=self._config.prompt_hint,
         )
 
         response = _result_to_response(result)

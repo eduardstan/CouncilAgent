@@ -77,6 +77,7 @@ async def run_council(
     ranking: Ranking = _NULL_RANKING,
     anonymize: bool = True,
     answer_response_format: dict[str, object] | None = None,
+    task_hint: str = "",
 ) -> CouncilResult:
     """Run the full council pipeline and return a final answer with confidence.
 
@@ -89,7 +90,7 @@ async def run_council(
     agent_ids = [a.id for a in agents]
 
     # Round 0 — initial generation (no visibility, no adjacency filtering needed).
-    state = await _generate(state, agents, topology, protocol, model_client, answer_response_format)
+    state = await _generate(state, agents, topology, protocol, model_client, answer_response_format, task_hint)
 
     # After every answer round, compute an interim aggregation so termination
     # strategies check consensus on normalized answers — not on raw response text.
@@ -106,7 +107,7 @@ async def run_council(
     # Deliberation rounds 1+ — rank+aggregate run inside the loop so that
     # termination can check aggregated consensus after each answer round.
     while not stop:
-        state = await _deliberate(state, agents, topology, protocol, model_client, anonymize, answer_response_format)
+        state = await _deliberate(state, agents, topology, protocol, model_client, anonymize, answer_response_format, task_hint)
         round_just_completed = state.current_round - 1
         if protocol.is_answer_round(round_just_completed):
             answer_responses = [
@@ -175,6 +176,7 @@ async def _generate(
     protocol: Protocol,
     model_client: ModelClient,
     answer_response_format: dict[str, object] | None = None,
+    task_hint: str = "",
 ) -> CouncilState:
     """Round 0: all agents answer the original prompt simultaneously."""
     ctx_for_agent = [
@@ -186,6 +188,7 @@ async def _generate(
             total_agents=len(agents),
             communication_mode=topology.communication_mode,
             original_prompt=state.question,
+            task_hint=task_hint,
         )
         for agent in agents
     ]
@@ -222,6 +225,7 @@ async def _deliberate(
     model_client: ModelClient,
     anonymize: bool,
     answer_response_format: dict[str, object] | None = None,
+    task_hint: str = "",
 ) -> CouncilState:
     """Rounds 1+: each agent sees a filtered, optionally anonymized view of prior responses."""
     round_index = state.current_round
@@ -252,6 +256,7 @@ async def _deliberate(
             communication_mode=communication_mode,
             original_prompt=state.question,
             anonymize=anonymize,
+            task_hint=task_hint,
         )
         rf = answer_response_format if protocol.is_answer_round(round_index) else None
         tasks.append(
@@ -302,6 +307,7 @@ def _build_visibility_context(
     communication_mode: CommunicationMode,
     original_prompt: str,
     anonymize: bool,
+    task_hint: str = "",
 ) -> VisibilityContext:
     """Build a VisibilityContext, anonymizing agent IDs if requested.
 
@@ -322,6 +328,7 @@ def _build_visibility_context(
             total_agents=total_agents,
             communication_mode=communication_mode,
             original_prompt=original_prompt,
+            task_hint=task_hint,
         )
 
     # Build a stable mapping: real_id → "Response A/B/C/…" by sorted order.
@@ -361,4 +368,5 @@ def _build_visibility_context(
         total_agents=total_agents,
         communication_mode=communication_mode,
         original_prompt=original_prompt,
+        task_hint=task_hint,
     )

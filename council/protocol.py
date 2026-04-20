@@ -56,6 +56,13 @@ def _format_schema(schema: dict[str, object]) -> str:
     return f"\n\nRespond with valid JSON matching this schema:\n{json.dumps(schema, indent=2)}"
 
 
+def _append_hint(prompt: str, hint: str) -> str:
+    """Append a task-level formatting hint to a prompt. No-op when hint is empty."""
+    if not hint:
+        return prompt
+    return f"{prompt}\n\n{hint}"
+
+
 def _format_responses(ctx: VisibilityContext) -> str:
     """Format visible_responses according to communication_mode."""
     if not ctx.visible_responses:
@@ -98,7 +105,8 @@ class DirectAnswerProtocol(Protocol):
         prompt = ctx.original_prompt
         if self._schema:
             prompt += _format_schema(self._schema)
-        return prompt
+        # DirectAnswer: every round is an answer round — always inject hint.
+        return _append_hint(prompt, ctx.task_hint)
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +142,7 @@ class PeerReviewProtocol(Protocol):
         prompt = ctx.original_prompt
         if self._schema:
             prompt += _format_schema(self._schema)
-        return prompt
+        return _append_hint(prompt, ctx.task_hint)
 
     def _critique_prompt(self, ctx: VisibilityContext) -> str:
         formatted = _format_responses(ctx)
@@ -168,7 +176,8 @@ class PeerReviewProtocol(Protocol):
         ]
         if self._schema:
             parts.append(_format_schema(self._schema))
-        return "\n".join(parts)
+        # Revision rounds are answer rounds — inject the hint here too.
+        return _append_hint("\n".join(parts), ctx.task_hint)
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +205,7 @@ class SimultaneousProtocol(Protocol):
             prompt = ctx.original_prompt
             if self._schema:
                 prompt += _format_schema(self._schema)
-            return prompt
+            return _append_hint(prompt, ctx.task_hint)
 
         windowed = _filter_window(ctx, self._window_size)
         temp_ctx = VisibilityContext(
@@ -207,6 +216,7 @@ class SimultaneousProtocol(Protocol):
             total_agents=ctx.total_agents,
             communication_mode=ctx.communication_mode,
             original_prompt=ctx.original_prompt,
+            task_hint=ctx.task_hint,
         )
         formatted = _format_responses(temp_ctx)
         parts = [
@@ -219,4 +229,4 @@ class SimultaneousProtocol(Protocol):
         ]
         if self._schema:
             parts.append(_format_schema(self._schema))
-        return "\n".join(parts)
+        return _append_hint("\n".join(parts), ctx.task_hint)
