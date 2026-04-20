@@ -257,6 +257,41 @@ class TestMetaJudge:
         )
         assert agg._temperature < 0.5  # type: ignore[attr-defined]
 
+    async def test_system_prompt_threaded_into_request(self) -> None:
+        """system_prompt is forwarded to ModelRequest so LiteLLMClient prepends it."""
+        from council.models import FakeModelClient, ModelRequest
+        captured: list[ModelRequest] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request)
+            return "synth"
+
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            system_prompt="You are the synthesis judge.",
+        )
+        await agg.aggregate([_resp("a")])
+        assert captured
+        assert captured[0].system_prompt == "You are the synthesis judge."
+
+    async def test_system_prompt_defaults_to_none(self) -> None:
+        """Absent system_prompt yields None on the request (no system turn prepended)."""
+        from council.models import FakeModelClient, ModelRequest
+        captured: list[ModelRequest] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request)
+            return "synth"
+
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+        )
+        await agg.aggregate([_resp("a")])
+        assert captured
+        assert captured[0].system_prompt is None
+
     async def test_confidence_from_normalizer_agreement_when_injected(self) -> None:
         """Constitution §5: with a normalizer, confidence = fraction of agents matching synthesis."""
         from council.models import FakeModelClient

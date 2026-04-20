@@ -53,6 +53,14 @@ No `council/` module may import from `evaluation/` — the direction is one-way.
 
 None means "use the model default" — these fields are additive overrides, not replacements.
 
+## YAML runner schema (`experiments/run.py`)
+`experiments/run.py` is the fast-mode benchmark runner. Its YAML contract:
+- `council.models` — list of entries; each is either a bare model string or a dict `{model, temperature?, max_tokens?, system_prompt?}`. Dict fields map 1:1 onto `AgentConfig`. Parsed by `_parse_agents()` into `list[AgentConfig]`.
+- `council.meta_judge` — optional dict `{model?, temperature?, max_tokens?, system_prompt?}` for the synthesis judge. `model` falls back to `models[0]` when absent.
+- `council.meta_judge_model` — legacy bare-string form; internally lifted to `{"model": ...}`. Kept for backward compatibility; `meta_judge` wins when both are present.
+
+`MetaJudge.__init__` accepts `system_prompt: str | None = None` and forwards it to its internal `ModelRequest`. `_build_aggregation()` wires the YAML dict into that kwarg.
+
 ## Task-aware prompting (`TaskProfile.prompt_hint` and `VisibilityContext.task_hint`)
 `TaskProfile.prompt_hint` (defined in `council/task_profile.py`) is the per-dataset answer-format instruction. It flows: `TaskProfile` → `CouncilConfig.prompt_hint` → `run_council(task_hint=...)` → `VisibilityContext.task_hint` → appended to Protocol prompts on answer rounds only. Critique rounds deliberately omit the hint. YAML configs may override via `council.prompt_hint`; the TaskProfile default is the fallback. Per-dataset TaskProfile presets live in `tasks/profiles.py` (not in `council/`).
 

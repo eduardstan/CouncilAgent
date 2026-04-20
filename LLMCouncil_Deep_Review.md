@@ -1389,8 +1389,9 @@ These are not feature gaps — they are correctness issues that make hypothesis 
 | 6.13 | `MetaJudge` receives `original_prompt` to anchor synthesis | `council/aggregation.py`, `council/core.py` |
 | 6.14 | Benchmark runner routes via per-dataset `TaskProfile` registry (`tasks/profiles.py`) | `tasks/profiles.py`, `experiments/run.py` |
 | 6.15 | Per-agent `system_prompt` threaded through `AgentConfig` → `ModelRequest` → `LiteLLMClient` | `council/core.py`, `council/models.py` |
+| 6.16 | YAML schema extension: each `council.models` entry is a bare string OR `{model, temperature?, max_tokens?, system_prompt?}` dict; `council.meta_judge` nested dict carries synthesis-judge overrides (`{model?, temperature?, max_tokens?, system_prompt?}`). Legacy `meta_judge_model: "..."` still works. `MetaJudge` accepts `system_prompt` kwarg, forwarded to its `ModelRequest`. | `experiments/run.py`, `council/aggregation.py`, `configs/experiment/fast.yaml` |
 
-**Deliverable achieved**: runner accepts all topology/aggregation/termination/protocol combinations; `SimultaneousProtocol` windowing works end-to-end; `task_accuracy("$70,000", "70000")` → 1.0; `CouncilAgent.complete()` enforces structured output; per-dataset `TaskProfile` drives normalizer, output schema, and prompt hint from `tasks/profiles.py`.
+**Deliverable achieved**: runner accepts all topology/aggregation/termination/protocol combinations; `SimultaneousProtocol` windowing works end-to-end; `task_accuracy("$70,000", "70000")` → 1.0; `CouncilAgent.complete()` enforces structured output; per-dataset `TaskProfile` drives normalizer, output schema, and prompt hint from `tasks/profiles.py`. YAML configs expose the full per-agent and per-judge knob set (temperature, max_tokens, system_prompt) — `fast.yaml` is the canonical example.
 
 ---
 

@@ -171,6 +171,7 @@ class MetaJudge(Aggregation):
         normalizer: AnswerNormalizer | None = None,
         temperature: float = 0.2,
         max_tokens: int = 2048,
+        system_prompt: str | None = None,
     ) -> None:
         self._model = model
         self._model_client = model_client
@@ -179,6 +180,7 @@ class MetaJudge(Aggregation):
         self._normalizer = normalizer
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._system_prompt = system_prompt
 
     def _format_debate(self, round_history: list[AgentResponse]) -> str:
         """Format the full deliberation history as a phase-labelled transcript.
@@ -254,6 +256,7 @@ class MetaJudge(Aggregation):
                 response_format=self._response_format,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
+                system_prompt=self._system_prompt,
             ),
         )
         if isinstance(outcome, ModelFailure):
