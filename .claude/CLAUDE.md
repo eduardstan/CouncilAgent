@@ -52,6 +52,8 @@ council/
 evaluation/
   metrics.py  baselines.py  shapley.py  statistical.py
 tasks/              experiments/     analysis/        configs/         tests/
+  tasks/profiles.py  — per-dataset TaskProfile registry (single source of truth for normalizer,
+                        output_schema, recommended_aggregation, prompt_hint)
 ```
 Do not create these files until the corresponding Phase task (see the deep review, Part IV) is active.
 
@@ -62,7 +64,7 @@ Do not create these files until the corresponding Phase task (see the deep revie
 - **Phase 3** — `CouncilAgent`, `CouncilPolicy`, `EscalationStrategy`, Condorcet/Copeland ✅
 - **Phase 4** — Benchmark infrastructure: MLflow, AIPW, Hydra sweeps, Shapley ✅
 - **Phase 5** — Pipeline hardening: `is_answer_round`, `cycle_length`, loop restructure, debate-aware aggregation, `response_format` threading ✅
-- **Phase 6** — Runner configurability & correctness fixes: configurable topology/aggregation/termination in runner, `_deliberate()` multi-round visibility, `task_accuracy` numeric extraction, StarTopology differentiation
+- **Phase 6** — Runner configurability & correctness fixes: configurable topology/aggregation/termination in runner, `_deliberate()` multi-round visibility, `task_accuracy` numeric extraction, StarTopology differentiation. Extended with per-agent config (`temperature`, `max_tokens`, `system_prompt`), `TaskProfile.prompt_hint` → Protocol injection on answer rounds, `MetaJudge` `original_prompt` threading, per-dataset `tasks/profiles.py` registry ✅
 - **Phase 7** — Hypothesis testing (H1, H3, H5, H6, H10 + council-vs-single-LLM)
 - **Phase 8** — Polish, demos, thesis integration
 

@@ -23,6 +23,7 @@ council:
   termination: fixed        # fixed | agreement | budget | composite
   max_rounds: 1             # 1 deliberation cycle (generate → critique → revise)
   budget_usd: 1.00
+  task_delay_seconds: 2.0   # free-tier models are heavily rate-limited
 
 mlflow:
   tracking_uri: "mlruns"
