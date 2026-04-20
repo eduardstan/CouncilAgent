@@ -47,10 +47,18 @@ _NULL_RANKING: Ranking = NullRanking()
 
 @dataclass(frozen=True, slots=True)
 class AgentConfig:
-    """Identity and model assignment for one council member."""
+    """Identity and per-agent model parameters for one council member.
+
+    temperature and max_tokens default to None, meaning the ModelRequest
+    defaults apply. Per-agent overrides let the policy layer shape the
+    ensemble — e.g. a "creative" agent at 0.9 alongside a "conservative"
+    one at 0.2 for calibrated disagreement.
+    """
 
     id: str
     model: str
+    temperature: float | None = None
+    max_tokens: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +150,24 @@ async def run_council(
 # ---------------------------------------------------------------------------
 
 
+def _build_request(
+    agent: AgentConfig,
+    prompt: str,
+    response_format: dict[str, object] | None,
+) -> ModelRequest:
+    """Construct a ModelRequest, applying per-agent overrides only when set."""
+    kwargs: dict[str, object] = {
+        "model": agent.model,
+        "prompt": prompt,
+        "response_format": response_format,
+    }
+    if agent.temperature is not None:
+        kwargs["temperature"] = agent.temperature
+    if agent.max_tokens is not None:
+        kwargs["max_tokens"] = agent.max_tokens
+    return ModelRequest(**kwargs)  # type: ignore[arg-type]
+
+
 async def _generate(
     state: CouncilState,
     agents: list[AgentConfig],
@@ -167,7 +193,7 @@ async def _generate(
     rf = answer_response_format if protocol.is_answer_round(0) else None
     tasks = [
         model_client.complete(
-            ModelRequest(model=agent.model, prompt=protocol.build_prompt(ctx), response_format=rf),
+            _build_request(agent, protocol.build_prompt(ctx), rf),
             agent_id=agent.id,
             round_index=0,
         )
@@ -230,7 +256,7 @@ async def _deliberate(
         rf = answer_response_format if protocol.is_answer_round(round_index) else None
         tasks.append(
             model_client.complete(
-                ModelRequest(model=agent.model, prompt=protocol.build_prompt(ctx), response_format=rf),
+                _build_request(agent, protocol.build_prompt(ctx), rf),
                 agent_id=agent.id,
                 round_index=round_index,
             )

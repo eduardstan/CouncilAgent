@@ -583,6 +583,46 @@ async def test_generate_uses_topology_communication_mode() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Task 6.11 — per-agent temperature / max_tokens overrides on AgentConfig
+# ---------------------------------------------------------------------------
+
+
+async def test_per_agent_temperature_override_reaches_model_request() -> None:
+    """AgentConfig.temperature/max_tokens, when set, must override ModelRequest defaults."""
+    from council.models import FakeModelClient, ModelFailure, ModelRequest
+
+    seen: list[ModelRequest] = []
+
+    class SpyClient(FakeModelClient):
+        async def complete(self, request, agent_id, round_index):  # type: ignore[override]
+            seen.append(request)
+            return await super().complete(request, agent_id, round_index)
+
+    agents = [
+        AgentConfig(id="cold", model="fake/a", temperature=0.1, max_tokens=128),
+        AgentConfig(id="warm", model="fake/b", temperature=0.9),
+        AgentConfig(id="default", model="fake/c"),
+    ]
+    client = SpyClient({(a.id, r): "42" for a in agents for r in range(3)})
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    by_model = {req.model: req for req in seen if not isinstance(req, ModelFailure)}
+    assert by_model["fake/a"].temperature == 0.1
+    assert by_model["fake/a"].max_tokens == 128
+    assert by_model["fake/b"].temperature == 0.9
+    assert by_model["fake/b"].max_tokens == 2048  # ModelRequest default
+    assert by_model["fake/c"].temperature == 0.7  # ModelRequest default
+    assert by_model["fake/c"].max_tokens == 2048
+
+
+# ---------------------------------------------------------------------------
 # Constitution §8 — zero framework imports in council.core
 # ---------------------------------------------------------------------------
 
