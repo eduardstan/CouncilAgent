@@ -157,12 +157,16 @@ class MetaJudge(Aggregation):
         round_label_fn: Callable[[int], str] | None = None,
         response_format: dict[str, object] | None = None,
         normalizer: AnswerNormalizer | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2048,
     ) -> None:
         self._model = model
         self._model_client = model_client
         self._round_label_fn = round_label_fn or _default_round_label
         self._response_format = response_format
         self._normalizer = normalizer
+        self._temperature = temperature
+        self._max_tokens = max_tokens
 
     def _format_debate(self, round_history: list[AgentResponse]) -> str:
         """Format the full deliberation history as a phase-labelled transcript."""
@@ -216,6 +220,8 @@ class MetaJudge(Aggregation):
                 model=self._model,
                 prompt=prompt,
                 response_format=self._response_format,
+                temperature=self._temperature,
+                max_tokens=self._max_tokens,
             ),
         )
         if isinstance(outcome, ModelFailure):

@@ -227,6 +227,36 @@ class TestMetaJudge:
         assert "GENERATE" in prompt  # round 0 label
         assert "CRITIQUE" in prompt  # odd round label
 
+    async def test_temperature_and_max_tokens_threaded_into_request(self) -> None:
+        """Synthesis temperature and max_tokens are configurable per-MetaJudge."""
+        from council.models import ModelRequest
+        captured: list[ModelRequest] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request)
+            return "synth"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            temperature=0.0,
+            max_tokens=512,
+        )
+        await agg.aggregate([_resp("a")])
+        assert captured
+        assert captured[0].temperature == 0.0
+        assert captured[0].max_tokens == 512
+
+    async def test_temperature_default_favours_consistency(self) -> None:
+        """MetaJudge defaults to low temperature (synthesis should be deterministic)."""
+        from council.models import FakeModelClient
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler="x"),
+        )
+        assert agg._temperature < 0.5  # type: ignore[attr-defined]
+
     async def test_confidence_from_normalizer_agreement_when_injected(self) -> None:
         """Constitution §5: with a normalizer, confidence = fraction of agents matching synthesis."""
         from council.models import FakeModelClient
