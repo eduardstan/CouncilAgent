@@ -205,10 +205,8 @@ class MetaJudge(Aggregation):
                 "Provide your synthesized answer:"
             )
 
-        outcome = await self._model_client.complete(
+        outcome = await self._model_client.call(
             ModelRequest(model=self._model, prompt=prompt),
-            agent_id="meta-judge",
-            round_index=0,
         )
         if isinstance(outcome, ModelFailure):
             logger.warning("MetaJudge model call failed: %s", outcome.error)
