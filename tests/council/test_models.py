@@ -42,6 +42,14 @@ class TestModelRequest:
         with pytest.raises((AttributeError, TypeError)):
             req.prompt = "changed"  # type: ignore[misc]
 
+    def test_response_format_accepts_nested_schema(self) -> None:
+        schema: dict[str, object] = {
+            "type": "json_schema",
+            "schema": {"type": "object", "properties": {"answer": {"type": "string"}}},
+        }
+        req = ModelRequest(model="m", prompt="p", response_format=schema)
+        assert req.response_format == schema
+
 
 # ---------------------------------------------------------------------------
 # ModelFailure

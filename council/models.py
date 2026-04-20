@@ -41,7 +41,7 @@ class ModelRequest:
 
     model: str
     prompt: str
-    response_format: dict[str, str] | None = None
+    response_format: dict[str, object] | None = None
     max_tokens: int = 2048
     temperature: float = 0.7
 

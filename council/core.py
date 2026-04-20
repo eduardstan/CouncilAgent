@@ -63,7 +63,7 @@ async def run_council(
     termination: TerminationStrategy,
     ranking: Ranking | None = None,
     anonymize: bool = True,
-    answer_response_format: dict[str, str] | None = None,
+    answer_response_format: dict[str, object] | None = None,
 ) -> CouncilResult:
     """Run the full council pipeline and return a final answer with confidence.
 
@@ -146,7 +146,7 @@ async def _generate(
     topology: Topology,
     protocol: Protocol,
     model_client: ModelClient,
-    answer_response_format: dict[str, str] | None = None,
+    answer_response_format: dict[str, object] | None = None,
 ) -> CouncilState:
     """Round 0: all agents answer the original prompt simultaneously."""
     ctx_for_agent = [
@@ -193,7 +193,7 @@ async def _deliberate(
     protocol: Protocol,
     model_client: ModelClient,
     anonymize: bool,
-    answer_response_format: dict[str, str] | None = None,
+    answer_response_format: dict[str, object] | None = None,
 ) -> CouncilState:
     """Rounds 1+: each agent sees a filtered, optionally anonymized view of prior responses."""
     round_index = state.current_round
