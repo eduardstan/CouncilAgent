@@ -247,6 +247,122 @@ class TestMissingModelsRaises:
             await run_experiment(cfg)
 
 
+class TestTaskProfileDrivenRunner:
+    def test_registry_exposes_gsm8k_profile(self) -> None:
+        from tasks.profiles import get_profile
+        p = get_profile("gsm8k")
+        assert p.name == "gsm8k"
+        assert p.output_schema is not None
+        assert p.prompt_hint  # non-empty
+
+    def test_unknown_dataset_raises(self) -> None:
+        from tasks.profiles import get_profile
+        with pytest.raises(ValueError, match="Unknown dataset"):
+            get_profile("nonexistent_dataset")
+
+    @pytest.mark.filterwarnings("ignore::FutureWarning")
+    async def test_config_prompt_hint_overrides_profile(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """When council.prompt_hint is set in YAML, it wins over the profile default."""
+        import council.core
+        import experiments.run as runmod
+        from tasks.loader import BenchmarkTask, TaskLoader
+        from tasks.registry import REGISTRY
+
+        captured: dict[str, object] = {}
+
+        class _StubResult:
+            final_answer = "42"
+            confidence = 1.0
+            total_cost = 0.0
+            rounds_used = 1
+            tokens_in = 0
+            tokens_out = 0
+            round_history: list[object] = []
+
+        async def fake_run_council(**kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return _StubResult()
+
+        class _StubLoader(TaskLoader):
+            def load(self, limit=None):  # type: ignore[override, no-untyped-def]
+                return [BenchmarkTask(id="t1", question="Q?", ground_truth="42", domain="math")]
+
+            @property
+            def name(self) -> str:
+                return "gsm8k"
+
+        monkeypatch.setattr(council.core, "run_council", fake_run_council)
+        monkeypatch.setitem(REGISTRY, "gsm8k", _StubLoader())
+
+        cfg = {
+            "name": "hint_override",
+            "dataset": "gsm8k",
+            "task_limit": 1,
+            "council": {
+                "models": ["fake/a", "fake/b"],
+                "max_rounds": 0,
+                "protocol": "direct",
+                "aggregation": "majority_vote",
+                "termination": "fixed",
+                "task_delay_seconds": 0,
+                "prompt_hint": "CUSTOM OVERRIDE HINT",
+            },
+        }
+        await runmod.run_experiment(cfg)
+        assert captured.get("task_hint") == "CUSTOM OVERRIDE HINT"
+
+    @pytest.mark.filterwarnings("ignore::FutureWarning")
+    async def test_profile_prompt_hint_used_when_config_absent(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """Without config override, the TaskProfile's prompt_hint is used."""
+        import council.core
+        import experiments.run as runmod
+        from tasks.loader import BenchmarkTask, TaskLoader
+        from tasks.profiles import get_profile
+        from tasks.registry import REGISTRY
+
+        captured: dict[str, object] = {}
+
+        class _StubResult:
+            final_answer = "42"
+            confidence = 1.0
+            total_cost = 0.0
+            rounds_used = 1
+            tokens_in = 0
+            tokens_out = 0
+            round_history: list[object] = []
+
+        async def fake_run_council(**kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return _StubResult()
+
+        class _StubLoader(TaskLoader):
+            def load(self, limit=None):  # type: ignore[override, no-untyped-def]
+                return [BenchmarkTask(id="t1", question="Q?", ground_truth="42", domain="math")]
+
+            @property
+            def name(self) -> str:
+                return "gsm8k"
+
+        monkeypatch.setattr(council.core, "run_council", fake_run_council)
+        monkeypatch.setitem(REGISTRY, "gsm8k", _StubLoader())
+
+        cfg = {
+            "name": "profile_default",
+            "dataset": "gsm8k",
+            "task_limit": 1,
+            "council": {
+                "models": ["fake/a", "fake/b"],
+                "max_rounds": 0,
+                "protocol": "direct",
+                "aggregation": "majority_vote",
+                "termination": "fixed",
+                "task_delay_seconds": 0,
+            },
+        }
+        await runmod.run_experiment(cfg)
+        assert captured.get("task_hint") == get_profile("gsm8k").prompt_hint
+
+
 class TestYamlConfigsHaveNewKeys:
     def test_fast_config_has_topology(self) -> None:
         cfg = load_config("configs/experiment/fast.yaml")

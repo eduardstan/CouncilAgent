@@ -138,7 +138,12 @@ def _build_termination(
     budget_usd: float,
 ) -> Any:
     """Factory: termination name → TerminationStrategy instance. Raises ValueError on unknown name."""
-    from council.termination import AgreementThreshold, BudgetExhaustion, CompositeTermination, FixedRounds
+    from council.termination import (
+        AgreementThreshold,
+        BudgetExhaustion,
+        CompositeTermination,
+        FixedRounds,
+    )
 
     if name == "fixed":
         return FixedRounds(total_rounds)
@@ -196,8 +201,6 @@ def _format_task_transcript(
     rounds: dict[int, list[Any]] = {}
     for r in round_history:
         rounds.setdefault(r.round_index, []).append(r)
-
-    last_round = max(rounds) if rounds else 0
 
     def _round_label(idx: int) -> str:
         if idx == 0:
@@ -272,10 +275,10 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
 
     from council.core import AgentConfig, run_council
     from council.models import LiteLLMClient
-    from council.normalizer import StructuredOutputNormalizer
     from council.protocol import DirectAnswerProtocol, PeerReviewProtocol, SimultaneousProtocol
     from evaluation.baselines import majority_vote_no_deliberation
     from evaluation.metrics import task_accuracy
+    from tasks.profiles import get_profile
     from tasks.registry import REGISTRY
 
     cfg_name: str = config.get("name", "unnamed")
@@ -300,26 +303,19 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     termination_name: str = council_cfg.get("termination", "fixed")
     meta_judge_model: str | None = council_cfg.get("meta_judge_model")  # None → models[0]
 
-    # Ask models to produce structured JSON so MajorityVote can normalize cleanly.
-    # Two fields: reasoning (chain-of-thought) and answer (concise final value only).
-    # Separating them prevents models from stuffing full prose into the answer field,
-    # which would make every response unique and collapse confidence to 1/n.
-    # Critique rounds (odd rounds in PeerReviewProtocol) intentionally ignore this
-    # schema — free-text critique is correct there.
-    _answer_schema = {
-        "type": "object",
-        "properties": {
-            "reasoning": {"type": "string", "description": "Step-by-step working"},
-            "answer": {"type": "string", "description": "Concise final answer only (e.g. a number or short phrase)"},
-        },
-        "required": ["reasoning", "answer"],
-    }
+    # TaskProfile drives normalizer, output schema, and the answer-format hint.
+    # YAML-level overrides win: council.prompt_hint, if set, replaces the profile hint.
+    profile = get_profile(dataset_name)
+    normalizer = profile.normalizer
+    output_schema = profile.output_schema
+    prompt_hint = council_cfg.get("prompt_hint", profile.prompt_hint)
+
     _protocol_map = {
-        "direct": DirectAnswerProtocol(output_schema=_answer_schema),
-        "peer_review": PeerReviewProtocol(output_schema=_answer_schema),
-        "simultaneous": SimultaneousProtocol(output_schema=_answer_schema),
+        "direct": DirectAnswerProtocol(output_schema=output_schema),
+        "peer_review": PeerReviewProtocol(output_schema=output_schema),
+        "simultaneous": SimultaneousProtocol(output_schema=output_schema),
     }
-    protocol = _protocol_map.get(protocol_name, DirectAnswerProtocol(output_schema=_answer_schema))
+    protocol = _protocol_map.get(protocol_name, DirectAnswerProtocol(output_schema=output_schema))
     if protocol_name not in _protocol_map:
         logger.warning("Unknown protocol %r, falling back to 'direct'", protocol_name)
 
@@ -332,10 +328,14 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     agents = [AgentConfig(id=f"agent-{i}", model=m) for i, m in enumerate(models)]
     # Convenience map for transcript formatting: agent-0 → full model string
     model_map = {f"agent-{i}": m for i, m in enumerate(models)}
-    normalizer = StructuredOutputNormalizer()
     model_client = LiteLLMClient()
 
     topology = _build_topology(topology_name, len(agents))
+    # Request structured JSON only when the profile declares an output schema.
+    # Free-text tasks (future) will have output_schema=None and no response_format.
+    answer_rf: dict[str, object] | None = (
+        {"type": "json_object"} if output_schema else None
+    )
     aggregation = _build_aggregation(
         aggregation_name,
         normalizer,
@@ -343,7 +343,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         models,
         meta_judge_model,
         protocol=protocol,
-        response_format={"type": "json_object"},
+        response_format=answer_rf,
     )
     termination = _build_termination(termination_name, total_rounds, normalizer, budget_usd)
 
@@ -390,7 +390,8 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 protocol=protocol,
                 aggregation=aggregation,
                 termination=termination,
-                answer_response_format={"type": "json_object"},
+                answer_response_format=answer_rf,
+                task_hint=prompt_hint,
             )
 
             acc = await task_accuracy(
