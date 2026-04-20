@@ -46,9 +46,10 @@ class TestCouncilConfig:
         with pytest.raises((AttributeError, TypeError)):
             cfg.name = "changed"  # type: ignore[misc]
 
-    def test_ranking_defaults_to_none(self) -> None:
+    def test_ranking_defaults_to_null_ranking(self) -> None:
+        from council.ranking import NullRanking
         cfg = self._minimal_config()
-        assert cfg.ranking is None
+        assert isinstance(cfg.ranking, NullRanking)
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ prototyping and integration testing without API cost.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from council.aggregation import Aggregation, MajorityVote, MetaJudge
 from council.core import AgentConfig
@@ -49,7 +49,7 @@ class CouncilConfig:
     protocol: Protocol
     aggregation: Aggregation
     termination: TerminationStrategy
-    ranking: Ranking | None = None
+    ranking: Ranking = field(default_factory=NullRanking)
     anonymize: bool = True
     estimated_cost_usd: float = 0.0
     answer_response_format: dict[str, object] | None = None

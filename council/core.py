@@ -34,6 +34,11 @@ from council.topology import Topology
 
 logger = logging.getLogger(__name__)
 
+# Module-level singleton used as the default `ranking` argument to run_council.
+# NullRanking is stateless; sharing one instance avoids a mutable-default pitfall
+# while keeping the signature honest (Ranking, not Ranking | None).
+_NULL_RANKING: Ranking = NullRanking()
+
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -61,7 +66,7 @@ async def run_council(
     protocol: Protocol,
     aggregation: Aggregation,
     termination: TerminationStrategy,
-    ranking: Ranking | None = None,
+    ranking: Ranking = _NULL_RANKING,
     anonymize: bool = True,
     answer_response_format: dict[str, object] | None = None,
 ) -> CouncilResult:
@@ -71,9 +76,6 @@ async def run_council(
     each round, termination.should_stop() is checked. Deliberation continues
     until the strategy signals True.
     """
-    if ranking is None:
-        ranking = NullRanking()
-
     state = CouncilState.initial(prompt)
 
     agent_ids = [a.id for a in agents]
