@@ -15,7 +15,6 @@ from typing import Protocol
 from council.context import AnswerNormalizer, CouncilState
 from council.normalizer import IdentityNormalizer
 
-
 # ---------------------------------------------------------------------------
 # Embedder protocol (injected for diversity_trajectory)
 # ---------------------------------------------------------------------------
@@ -266,7 +265,7 @@ def _mean_pairwise_cosine_distance(vecs: list[list[float]]) -> float:
     count = 0
     for i in range(n):
         for j in range(i + 1, n):
-            dot = sum(a * b for a, b in zip(vecs[i], vecs[j]))
+            dot = sum(a * b for a, b in zip(vecs[i], vecs[j], strict=True))
             norm_i = math.sqrt(sum(a * a for a in vecs[i]))
             norm_j = math.sqrt(sum(a * a for a in vecs[j]))
             if norm_i > 0 and norm_j > 0:
