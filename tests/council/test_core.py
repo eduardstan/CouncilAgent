@@ -387,7 +387,7 @@ async def test_aggregation_receives_only_last_answer_round_responses() -> None:
     from council.context import AggregationResult as AR
 
     class SpyAggregation(Aggregation):
-        async def aggregate(self, responses, preferences=None, round_history=None):
+        async def aggregate(self, responses, preferences=None, round_history=None, original_prompt=None):
             seen_responses.append([r.content for r in responses])
             return AggregationResult(final_answer=responses[0].content if responses else "", confidence=1.0, method="spy")
 

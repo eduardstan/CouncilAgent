@@ -294,6 +294,38 @@ class TestMetaJudge:
         assert result.final_answer == "100"
         assert result.confidence == pytest.approx(0.0)
 
+    async def test_original_prompt_anchors_synthesis(self) -> None:
+        """When original_prompt is supplied, it appears in the synthesis prompt."""
+        captured: list[str] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synth"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}, call_handler=handler))
+        await agg.aggregate(
+            [_resp("alpha"), _resp("beta")],
+            original_prompt="What is the capital of France?",
+        )
+        assert captured
+        assert "What is the capital of France?" in captured[0]
+        assert "Original question" in captured[0]
+
+    async def test_original_prompt_omitted_when_none(self) -> None:
+        """When original_prompt is None (legacy callers), no task section appears."""
+        captured: list[str] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synth"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}, call_handler=handler))
+        await agg.aggregate([_resp("alpha")])
+        assert captured
+        assert "Original question" not in captured[0]
+
     async def test_response_format_is_passed_to_model_call(self) -> None:
         """MetaJudge threads response_format into the ModelRequest for its synthesis call."""
         captured: list[dict[str, object] | None] = []

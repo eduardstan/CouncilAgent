@@ -32,6 +32,10 @@ class Aggregation(ABC):
     Blind aggregators (MajorityVote, BordaCount, Condorcet) ignore it.
     Informed aggregators (MetaJudge) use it to trace how consensus formed.
     See Issue 11 in LLMCouncil_Deep_Review.md for the design rationale.
+
+    The optional original_prompt parameter carries the user's question. MetaJudge
+    uses it to anchor the synthesis prompt so the judge answers the actual task
+    rather than guessing it from the debate. Blind aggregators ignore it.
     """
 
     @abstractmethod
@@ -40,6 +44,7 @@ class Aggregation(ABC):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult: ...
 
 
@@ -61,6 +66,7 @@ class MajorityVote(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult:
         if not responses:
             return AggregationResult(final_answer="", confidence=0.0, method="MajorityVote")
@@ -98,6 +104,7 @@ class BordaCount(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult:
         if not responses or not preferences:
             return AggregationResult(final_answer="", confidence=0.0, method="BordaCount")
@@ -204,9 +211,16 @@ class MetaJudge(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult:
         if not responses:
             return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
+
+        # Anchor the synthesis on the original question so the judge answers
+        # the actual task rather than inferring it from the transcript.
+        task_section = (
+            f"## Original question\n{original_prompt}\n\n" if original_prompt else ""
+        )
 
         if round_history:
             debate_section = self._format_debate(round_history)
@@ -215,7 +229,8 @@ class MetaJudge(Aggregation):
                 "Below is the full debate transcript, organized by round. "
                 "Synthesize the best final answer, taking into account how the "
                 "agents' positions evolved through critique and revision.\n\n"
-                f"{debate_section}\n\n"
+                f"{task_section}"
+                f"## Debate transcript\n{debate_section}\n\n"
                 "Provide your synthesized final answer:"
             )
         else:
@@ -227,7 +242,8 @@ class MetaJudge(Aggregation):
             prompt = (
                 "You are a synthesis judge. Below are responses from multiple agents "
                 "to a question. Synthesize them into a single best answer.\n\n"
-                f"Responses:\n{formatted}\n\n"
+                f"{task_section}"
+                f"## Responses\n{formatted}\n\n"
                 "Provide your synthesized answer:"
             )
 
@@ -279,6 +295,7 @@ class CondorcetAggregation(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult:
         if not responses or not preferences:
             return AggregationResult(final_answer="", confidence=0.0, method="Condorcet")
