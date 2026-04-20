@@ -227,6 +227,43 @@ class TestMetaJudge:
         assert "GENERATE" in prompt  # round 0 label
         assert "CRITIQUE" in prompt  # odd round label
 
+    async def test_confidence_from_normalizer_agreement_when_injected(self) -> None:
+        """Constitution §5: with a normalizer, confidence = fraction of agents matching synthesis."""
+        from council.models import FakeModelClient
+        # Synthesis answer matches 2/3 of the final-round agents after normalization.
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler="42"),
+            normalizer=IdentityNormalizer(),
+        )
+        responses = [_resp("42"), _resp("42"), _resp("99")]
+        result = await agg.aggregate(responses)
+        assert result.final_answer == "42"
+        assert result.confidence == pytest.approx(2 / 3)
+
+    async def test_confidence_defaults_to_one_without_normalizer(self) -> None:
+        """Without a normalizer, MetaJudge confidence stays at sentinel 1.0."""
+        from council.models import FakeModelClient
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler="synth"),
+        )
+        result = await agg.aggregate([_resp("a"), _resp("b"), _resp("c")])
+        assert result.final_answer == "synth"
+        assert result.confidence == pytest.approx(1.0)
+
+    async def test_confidence_is_zero_when_synthesis_disagrees_with_all(self) -> None:
+        """If no agent matches the synthesis, confidence is 0/n."""
+        from council.models import FakeModelClient
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler="100"),
+            normalizer=IdentityNormalizer(),
+        )
+        result = await agg.aggregate([_resp("42"), _resp("99")])
+        assert result.final_answer == "100"
+        assert result.confidence == pytest.approx(0.0)
+
     async def test_response_format_is_passed_to_model_call(self) -> None:
         """MetaJudge threads response_format into the ModelRequest for its synthesis call."""
         captured: list[dict[str, object] | None] = []

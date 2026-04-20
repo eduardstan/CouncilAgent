@@ -131,6 +131,7 @@ class CouncilPolicy:
                 model_client=self._model_client,
                 round_label_fn=_round_label,
                 response_format=rf,
+                normalizer=task_profile.normalizer,
             )
         else:
             agg = MajorityVote(normalizer=task_profile.normalizer)

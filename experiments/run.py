@@ -118,11 +118,13 @@ def _build_aggregation(
                 model_client=model_client,
                 round_label_fn=_round_label,
                 response_format=response_format,
+                normalizer=normalizer,
             )
         return MetaJudge(
             model=judge_model,
             model_client=model_client,
             response_format=response_format,
+            normalizer=normalizer,
         )
     raise ValueError(
         f"Unknown aggregation {name!r}. Valid options: majority_vote, borda, condorcet, meta_judge"

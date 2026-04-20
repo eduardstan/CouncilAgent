@@ -144,8 +144,10 @@ class MetaJudge(Aggregation):
     hardcoded (Constitution §3). MetaJudge does NOT import Protocol; round labels
     come from round_index alone via the injected round_label_fn.
 
-    Confidence is fixed at 1.0 because MetaJudge produces one synthesized answer;
-    agreement-based confidence lives at the CouncilAgent layer above.
+    Confidence (Constitution §5): when a normalizer is injected, confidence is
+    the fraction of final-round agent responses whose canonical form matches
+    the synthesized answer's canonical form. Without a normalizer, confidence
+    falls back to 1.0 (sentinel — the synthesis model spoke, no calibration).
     """
 
     def __init__(
@@ -154,11 +156,13 @@ class MetaJudge(Aggregation):
         model_client: ModelClient,
         round_label_fn: Callable[[int], str] | None = None,
         response_format: dict[str, object] | None = None,
+        normalizer: AnswerNormalizer | None = None,
     ) -> None:
         self._model = model
         self._model_client = model_client
         self._round_label_fn = round_label_fn or _default_round_label
         self._response_format = response_format
+        self._normalizer = normalizer
 
     def _format_debate(self, round_history: list[AgentResponse]) -> str:
         """Format the full deliberation history as a phase-labelled transcript."""
@@ -218,9 +222,19 @@ class MetaJudge(Aggregation):
             logger.warning("MetaJudge model call failed: %s", outcome.error)
             return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
 
+        confidence = 1.0
+        if self._normalizer is not None:
+            synth_canonical = await self._normalizer.normalize(outcome.content)
+            matches = 0
+            for r in responses:
+                agent_canonical = await self._normalizer.normalize(r.content)
+                if agent_canonical == synth_canonical:
+                    matches += 1
+            confidence = matches / len(responses) if responses else 0.0
+
         return AggregationResult(
             final_answer=outcome.content,
-            confidence=1.0,
+            confidence=confidence,
             method="MetaJudge",
         )
 
