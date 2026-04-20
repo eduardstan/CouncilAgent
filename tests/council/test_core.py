@@ -686,6 +686,36 @@ async def test_per_agent_temperature_override_reaches_model_request() -> None:
     assert by_model["fake/c"].max_tokens == 2048
 
 
+async def test_per_agent_system_prompt_reaches_model_request() -> None:
+    """AgentConfig.system_prompt, when set, must appear on the ModelRequest."""
+    from council.models import FakeModelClient, ModelFailure, ModelRequest
+
+    seen: list[ModelRequest] = []
+
+    class SpyClient(FakeModelClient):
+        async def complete(self, request, agent_id, round_index):  # type: ignore[override]
+            seen.append(request)
+            return await super().complete(request, agent_id, round_index)
+
+    agents = [
+        AgentConfig(id="persona", model="fake/a", system_prompt="You are a careful reasoner."),
+        AgentConfig(id="default", model="fake/b"),
+    ]
+    client = SpyClient({(a.id, r): "42" for a in agents for r in range(3)})
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    by_model = {req.model: req for req in seen if not isinstance(req, ModelFailure)}
+    assert by_model["fake/a"].system_prompt == "You are a careful reasoner."
+    assert by_model["fake/b"].system_prompt is None
+
+
 # ---------------------------------------------------------------------------
 # Constitution §8 — zero framework imports in council.core
 # ---------------------------------------------------------------------------

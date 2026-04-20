@@ -44,6 +44,7 @@ class ModelRequest:
     response_format: dict[str, object] | None = None
     max_tokens: int = 2048
     temperature: float = 0.7
+    system_prompt: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,9 +233,14 @@ class LiteLLMClient(ModelClient):
 
         import litellm  # local import keeps council/core.py framework-free
 
+        messages: list[dict[str, str]] = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": request.prompt})
+
         kwargs: dict[str, object] = {
             "model": request.model,
-            "messages": [{"role": "user", "content": request.prompt}],
+            "messages": messages,
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
         }

@@ -37,6 +37,7 @@ class TestModelRequest:
         assert req.response_format is None
         assert req.max_tokens == 2048
         assert req.temperature == 0.7
+        assert req.system_prompt is None
 
     def test_is_frozen(self) -> None:
         req = ModelRequest(model="m", prompt="p")
@@ -315,6 +316,52 @@ class TestLiteLLMClient:
         result = await client.call(ModelRequest(model="openai/gpt-4o-mini", prompt="hi"))
         assert isinstance(result, ModelFailure)
         assert "synthesis failed" in result.error.lower()
+
+    async def test_system_prompt_prepends_system_message(self, mocker: pytest.FixtureRequest) -> None:
+        """When system_prompt is set, it must appear as the first message with role=system."""
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = "ok"
+        mock_resp.usage.prompt_tokens = 3
+        mock_resp.usage.completion_tokens = 1
+        mock_resp._hidden_params = {"response_cost": 0.0}
+
+        mock_acompletion = mocker.patch(
+            "litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp
+        )
+
+        client = LiteLLMClient()
+        req = ModelRequest(
+            model="openai/gpt-4o-mini",
+            prompt="Question?",
+            system_prompt="You are concise.",
+        )
+        await client.complete(req, agent_id="a", round_index=0)
+
+        messages = mock_acompletion.call_args.kwargs["messages"]
+        assert messages[0] == {"role": "system", "content": "You are concise."}
+        assert messages[1] == {"role": "user", "content": "Question?"}
+
+    async def test_no_system_prompt_emits_only_user_message(self, mocker: pytest.FixtureRequest) -> None:
+        """Default: no system_prompt → messages contains only the user turn."""
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = "ok"
+        mock_resp.usage.prompt_tokens = 3
+        mock_resp.usage.completion_tokens = 1
+        mock_resp._hidden_params = {"response_cost": 0.0}
+
+        mock_acompletion = mocker.patch(
+            "litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp
+        )
+
+        client = LiteLLMClient()
+        await client.complete(
+            ModelRequest(model="openai/gpt-4o-mini", prompt="Q"), agent_id="a", round_index=0
+        )
+
+        messages = mock_acompletion.call_args.kwargs["messages"]
+        assert messages == [{"role": "user", "content": "Q"}]
 
 
 # ---------------------------------------------------------------------------

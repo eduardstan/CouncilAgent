@@ -59,6 +59,7 @@ class AgentConfig:
     model: str
     temperature: float | None = None
     max_tokens: int | None = None
+    system_prompt: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +182,8 @@ def _build_request(
         kwargs["temperature"] = agent.temperature
     if agent.max_tokens is not None:
         kwargs["max_tokens"] = agent.max_tokens
+    if agent.system_prompt is not None:
+        kwargs["system_prompt"] = agent.system_prompt
     return ModelRequest(**kwargs)  # type: ignore[arg-type]
 
 
