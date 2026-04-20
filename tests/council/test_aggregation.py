@@ -227,6 +227,49 @@ class TestMetaJudge:
         assert "GENERATE" in prompt  # round 0 label
         assert "CRITIQUE" in prompt  # odd round label
 
+    async def test_response_format_is_passed_to_model_call(self) -> None:
+        """MetaJudge threads response_format into the ModelRequest for its synthesis call."""
+        captured: list[dict[str, object] | None] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.response_format)
+            return "synth"
+
+        from council.models import FakeModelClient
+        schema: dict[str, object] = {"type": "json_object"}
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            response_format=schema,
+        )
+        await agg.aggregate([_resp("a"), _resp("b")])
+        assert captured == [schema]
+
+    async def test_round_label_fn_overrides_default_phase_labels(self) -> None:
+        """A custom round_label_fn renames phase markers in the synthesis prompt."""
+        captured: list[str] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synth"
+
+        from council.context import AgentResponse
+        from council.models import FakeModelClient
+
+        history = [
+            AgentResponse("agent-0", "x", 0, 5, 5, 0.0),
+            AgentResponse("agent-0", "y", 1, 5, 5, 0.0),
+        ]
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            round_label_fn=lambda i: f"CUSTOM-{i}",
+        )
+        await agg.aggregate([history[-1]], round_history=history)
+        assert captured
+        # Round 0 is always GENERATE; round 1 uses the custom label.
+        assert "CUSTOM-1" in captured[0]
+
     async def test_round_history_none_falls_back_to_flat_list(self) -> None:
         """Without round_history, MetaJudge uses flat response list."""
         captured: list[str] = []

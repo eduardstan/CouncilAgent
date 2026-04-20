@@ -116,11 +116,21 @@ class CouncilPolicy:
         )
 
         # Tier 2 — standard_deliberation: peer review, agreement-gated, task-aware agg.
+        standard_protocol = PeerReviewProtocol(output_schema=output_schema)
         if task_profile.recommended_aggregation == "meta_judge":
             judge_model = self._meta_judge_model if self._meta_judge_model else self._models[0]
+            # Label rounds via the protocol's own answer/critique predicate, so
+            # MetaJudge stays protocol-agnostic while tracking phase correctly.
+            def _round_label(round_index: int, _p: Protocol = standard_protocol) -> str:
+                if round_index == 0:
+                    return "GENERATE"
+                return "ANSWER" if _p.is_answer_round(round_index) else "CRITIQUE"
+
             agg: Aggregation = MetaJudge(
                 model=judge_model,
                 model_client=self._model_client,
+                round_label_fn=_round_label,
+                response_format=rf,
             )
         else:
             agg = MajorityVote(normalizer=task_profile.normalizer)
@@ -129,7 +139,7 @@ class CouncilPolicy:
             name="standard_deliberation",
             agents=agents,
             topology=topology,
-            protocol=PeerReviewProtocol(output_schema=output_schema),
+            protocol=standard_protocol,
             aggregation=agg,
             termination=CompositeTermination(
                 AgreementThreshold(0.8, normalizer=task_profile.normalizer),

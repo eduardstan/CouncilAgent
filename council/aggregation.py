@@ -153,10 +153,12 @@ class MetaJudge(Aggregation):
         model: str,
         model_client: ModelClient,
         round_label_fn: Callable[[int], str] | None = None,
+        response_format: dict[str, object] | None = None,
     ) -> None:
         self._model = model
         self._model_client = model_client
         self._round_label_fn = round_label_fn or _default_round_label
+        self._response_format = response_format
 
     def _format_debate(self, round_history: list[AgentResponse]) -> str:
         """Format the full deliberation history as a phase-labelled transcript."""
@@ -206,7 +208,11 @@ class MetaJudge(Aggregation):
             )
 
         outcome = await self._model_client.call(
-            ModelRequest(model=self._model, prompt=prompt),
+            ModelRequest(
+                model=self._model,
+                prompt=prompt,
+                response_format=self._response_format,
+            ),
         )
         if isinstance(outcome, ModelFailure):
             logger.warning("MetaJudge model call failed: %s", outcome.error)

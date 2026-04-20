@@ -86,11 +86,16 @@ def _build_aggregation(
     model_client: Any,
     models: list[str],
     meta_judge_model: str | None = None,
+    protocol: Any = None,
+    response_format: dict[str, object] | None = None,
 ) -> Any:
     """Factory: aggregation name → Aggregation instance. Raises ValueError on unknown name.
 
     meta_judge_model: explicit synthesis model for MetaJudge. Falls back to
     models[0] when None so existing configs without the key keep working.
+    protocol / response_format: wired into MetaJudge so synthesis labels rounds
+    via the protocol's answer/critique predicate and returns the same JSON
+    shape as the deliberation rounds.
     """
     from council.aggregation import BordaCount, CondorcetAggregation, MajorityVote, MetaJudge
 
@@ -102,7 +107,23 @@ def _build_aggregation(
         return CondorcetAggregation()
     if name == "meta_judge":
         judge_model = meta_judge_model if meta_judge_model else models[0]
-        return MetaJudge(model=judge_model, model_client=model_client)
+
+        if protocol is not None:
+            def _round_label(round_index: int) -> str:
+                if round_index == 0:
+                    return "GENERATE"
+                return "ANSWER" if protocol.is_answer_round(round_index) else "CRITIQUE"
+            return MetaJudge(
+                model=judge_model,
+                model_client=model_client,
+                round_label_fn=_round_label,
+                response_format=response_format,
+            )
+        return MetaJudge(
+            model=judge_model,
+            model_client=model_client,
+            response_format=response_format,
+        )
     raise ValueError(
         f"Unknown aggregation {name!r}. Valid options: majority_vote, borda, condorcet, meta_judge"
     )
@@ -313,7 +334,15 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     model_client = LiteLLMClient()
 
     topology = _build_topology(topology_name, len(agents))
-    aggregation = _build_aggregation(aggregation_name, normalizer, model_client, models, meta_judge_model)
+    aggregation = _build_aggregation(
+        aggregation_name,
+        normalizer,
+        model_client,
+        models,
+        meta_judge_model,
+        protocol=protocol,
+        response_format={"type": "json_object"},
+    )
     termination = _build_termination(termination_name, total_rounds, normalizer, budget_usd)
 
     # --- Load tasks -------------------------------------------------------
