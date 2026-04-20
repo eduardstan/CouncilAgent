@@ -312,6 +312,47 @@ class TestMetaJudge:
         await agg.aggregate([_resp("a"), _resp("b")])
         assert captured == [schema]
 
+    async def test_agent_labels_are_stable_across_rounds(self) -> None:
+        """Same agent_id maps to the same 'Response X' marker in every round.
+
+        This lets the synthesis model trace position evolution; if labels
+        shifted round-to-round, the transcript would silently permute speakers.
+        """
+        captured: list[str] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synth"
+
+        from council.context import AgentResponse
+        from council.models import FakeModelClient
+
+        # Deliberately shuffle the history ordering within rounds so that naive
+        # positional labelling would produce inconsistent labels.
+        history = [
+            AgentResponse("agent-1", "r0-1", 0, 5, 5, 0.0),
+            AgentResponse("agent-0", "r0-0", 0, 5, 5, 0.0),
+            AgentResponse("agent-0", "r1-0", 1, 5, 5, 0.0),
+            AgentResponse("agent-1", "r1-1", 1, 5, 5, 0.0),
+        ]
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+        )
+        final_responses = [r for r in history if r.round_index == 1]
+        await agg.aggregate(final_responses, round_history=history)
+
+        assert captured
+        prompt = captured[0]
+        # agent-0 → Response A; agent-1 → Response B (sorted order).
+        # Both rounds must use the same mapping.
+        r0_section = prompt.split("### Round 1")[0]
+        r1_section = prompt.split("### Round 1")[1]
+        assert "[Response A]:\nr0-0" in r0_section
+        assert "[Response B]:\nr0-1" in r0_section
+        assert "[Response A]:\nr1-0" in r1_section
+        assert "[Response B]:\nr1-1" in r1_section
+
     async def test_round_label_fn_overrides_default_phase_labels(self) -> None:
         """A custom round_label_fn renames phase markers in the synthesis prompt."""
         captured: list[str] = []

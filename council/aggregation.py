@@ -169,18 +169,29 @@ class MetaJudge(Aggregation):
         self._max_tokens = max_tokens
 
     def _format_debate(self, round_history: list[AgentResponse]) -> str:
-        """Format the full deliberation history as a phase-labelled transcript."""
+        """Format the full deliberation history as a phase-labelled transcript.
+
+        Agent labels are stable across rounds: the same agent_id is always
+        rendered as the same "Response X" marker, derived from a sort over
+        the union of agent_ids seen in the history. This lets the synthesis
+        model track how each participant's position evolved — critical for
+        the "informed Area Chair" reading of the debate.
+        """
         by_round: dict[int, list[AgentResponse]] = defaultdict(list)
         for r in round_history:
             by_round[r.round_index].append(r)
+
+        # Stable label mapping: sorted agent_ids → A, B, C, …
+        all_agent_ids = sorted({r.agent_id for r in round_history})
+        label_map = {aid: chr(65 + i) for i, aid in enumerate(all_agent_ids)}
 
         sections: list[str] = []
         for round_idx in sorted(by_round):
             label = self._round_label_fn(round_idx)
             phase_label = "GENERATE" if round_idx == 0 else label
             sections.append(f"### Round {round_idx} — {phase_label}")
-            for i, r in enumerate(by_round[round_idx]):
-                sections.append(f"[Response {chr(65 + i)}]:\n{r.content}")
+            for r in sorted(by_round[round_idx], key=lambda x: x.agent_id):
+                sections.append(f"[Response {label_map[r.agent_id]}]:\n{r.content}")
         return "\n\n".join(sections)
 
     async def aggregate(
