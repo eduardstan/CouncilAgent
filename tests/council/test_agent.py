@@ -251,6 +251,87 @@ class TestAnswerResponseFormatThreading:
             "Expected response_format=None when CouncilConfig.answer_response_format is None"
         )
 
+    async def test_upgrade_models_escalation_preserves_response_format(self) -> None:
+        """UpgradeModels must pass CouncilConfig.answer_response_format through
+        to the escalated run_council call — otherwise structured-output
+        enforcement is silently dropped."""
+        captured_rf: list[dict | None] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured_rf.append(request.response_format)
+            return '{"answer": "x"}'
+
+        rf = {"type": "json_object"}
+        cfg = CouncilConfig(
+            name="test",
+            agents=[AgentConfig(id=f"agent-{i}", model=f"fake/m-{i}") for i in range(3)],
+            topology=CompleteGraphTopology(3),
+            protocol=DirectAnswerProtocol(),
+            aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+            termination=FixedRounds(1),
+            answer_response_format=rf,
+        )
+        # Escalation triggers on low confidence — craft a disagreement client.
+        initial_client = FakeModelClient({
+            ("agent-0", 0): '{"answer": "A"}',
+            ("agent-1", 0): '{"answer": "B"}',
+            ("agent-2", 0): '{"answer": "C"}',
+        })
+        upgrade_client = FakeModelClient(factory)
+        strategy = UpgradeModels(
+            upgraded_models=["fake/strong-0", "fake/strong-1", "fake/strong-2"],
+            model_client=upgrade_client,
+            config=cfg,
+        )
+        agent = CouncilAgent(
+            config=cfg, model_client=initial_client,
+            escalation=strategy, escalation_threshold=0.5,
+        )
+        await agent.complete("Q")
+        assert captured_rf, "escalated path was never exercised"
+        assert all(f == rf for f in captured_rf), (
+            f"UpgradeModels dropped answer_response_format: {captured_rf}"
+        )
+
+    async def test_add_deliberation_escalation_preserves_response_format(self) -> None:
+        """AddDeliberation must also preserve answer_response_format."""
+        captured_rf: list[dict | None] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured_rf.append(request.response_format)
+            return '{"answer": "x"}'
+
+        rf = {"type": "json_object"}
+        cfg = CouncilConfig(
+            name="test",
+            agents=[AgentConfig(id=f"agent-{i}", model=f"fake/m-{i}") for i in range(3)],
+            topology=CompleteGraphTopology(3),
+            protocol=DirectAnswerProtocol(),
+            aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+            termination=FixedRounds(1),
+            answer_response_format=rf,
+        )
+        strategy = AddDeliberation(
+            extra_rounds=1,
+            model_client=FakeModelClient(factory),
+            config=cfg,
+        )
+        # Low confidence → escalation fires.
+        initial_client = FakeModelClient({
+            ("agent-0", 0): '{"answer": "A"}',
+            ("agent-1", 0): '{"answer": "B"}',
+            ("agent-2", 0): '{"answer": "C"}',
+        })
+        agent = CouncilAgent(
+            config=cfg, model_client=initial_client,
+            escalation=strategy, escalation_threshold=0.5,
+        )
+        await agent.complete("Q")
+        assert captured_rf, "escalated path was never exercised"
+        assert all(f == rf for f in captured_rf), (
+            f"AddDeliberation dropped answer_response_format: {captured_rf}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Constitution §8 — no framework imports in council.agent

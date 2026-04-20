@@ -80,6 +80,7 @@ class UpgradeModels(EscalationStrategy):
             termination=self._config.termination,
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
+            answer_response_format=self._config.answer_response_format,
         )
         return _result_to_response(result, base_cost=response.cost, escalated=True)
 
@@ -110,6 +111,7 @@ class AddDeliberation(EscalationStrategy):
             termination=FixedRounds(self._extra_rounds + 1),
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
+            answer_response_format=self._config.answer_response_format,
         )
         return _result_to_response(result, base_cost=response.cost, escalated=True)
 
