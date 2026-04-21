@@ -88,15 +88,17 @@ def _build_aggregation(
     meta_judge: dict[str, Any] | None = None,
     protocol: Any = None,
     response_format: dict[str, object] | None = None,
+    output_schema: dict[str, object] | None = None,
 ) -> Any:
     """Factory: aggregation name → Aggregation instance. Raises ValueError on unknown name.
 
     meta_judge: optional dict carrying the synthesis-judge overrides —
         {model?, temperature?, max_tokens?, system_prompt?}. `model` falls back
         to `models[0]` when absent. Unset keys leave MetaJudge defaults in place.
-    protocol / response_format: wired into MetaJudge so synthesis labels rounds
-        via the protocol's answer/critique predicate and returns the same JSON
-        shape as the deliberation rounds.
+    protocol / response_format / output_schema: wired into MetaJudge so synthesis
+        labels rounds via the protocol's answer/critique predicate, returns the
+        same JSON shape as the deliberation rounds, and includes the schema in
+        its synthesis prompt.
     """
     from council.aggregation import BordaCount, CondorcetAggregation, MajorityVote, MetaJudge
 
@@ -115,6 +117,7 @@ def _build_aggregation(
             "model_client": model_client,
             "response_format": response_format,
             "normalizer": normalizer,
+            "output_schema": output_schema,
         }
         for key in ("temperature", "max_tokens", "system_prompt"):
             if key in cfg:
@@ -308,9 +311,6 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                           meta_judge       — dict of synthesis-judge overrides:
                               {model?, temperature?, max_tokens?, system_prompt?}.
                               `model` falls back to `models[0]` when absent.
-                          meta_judge_model — legacy bare-string form; internally
-                              lifted to {"model": ...}. `meta_judge` wins when both
-                              are present.
                           max_rounds       — deliberation cycles after initial generation (default: 1)
                           budget_usd       — cost cap in USD (default: 0.10)
                           task_delay_seconds — sleep between tasks (default: 2.0)
@@ -356,11 +356,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     aggregation_name: str = council_cfg.get("aggregation", "majority_vote")
     termination_name: str = council_cfg.get("termination", "fixed")
     # meta_judge: structured dict of synthesis-judge overrides.
-    # Backward-compat: `meta_judge_model: "..."` (bare string) becomes {"model": "..."}.
     meta_judge_cfg: dict[str, Any] | None = council_cfg.get("meta_judge")
-    legacy_judge_model: str | None = council_cfg.get("meta_judge_model")
-    if meta_judge_cfg is None and legacy_judge_model is not None:
-        meta_judge_cfg = {"model": legacy_judge_model}
 
     # TaskProfile drives normalizer, output schema, and the answer-format hint.
     # YAML-level overrides win: council.prompt_hint, if set, replaces the profile hint.
@@ -402,6 +398,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         meta_judge=meta_judge_cfg,
         protocol=protocol,
         response_format=answer_rf,
+        output_schema=output_schema,
     )
     termination = _build_termination(termination_name, total_rounds, normalizer, budget_usd)
 

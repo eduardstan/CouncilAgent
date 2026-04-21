@@ -8,6 +8,7 @@ Phase 3 work — stubs raise NotImplementedError.
 
 from __future__ import annotations
 
+import json
 import logging
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
@@ -172,6 +173,7 @@ class MetaJudge(Aggregation):
         temperature: float = 0.2,
         max_tokens: int = 2048,
         system_prompt: str | None = None,
+        output_schema: dict[str, object] | None = None,
     ) -> None:
         self._model = model
         self._model_client = model_client
@@ -181,6 +183,7 @@ class MetaJudge(Aggregation):
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._system_prompt = system_prompt
+        self._output_schema = output_schema
 
     def _format_debate(self, round_history: list[AgentResponse]) -> str:
         """Format the full deliberation history as a phase-labelled transcript.
@@ -249,6 +252,17 @@ class MetaJudge(Aggregation):
                 "Provide your synthesized answer:"
             )
 
+        # When response_format requests JSON, the prompt MUST mention "JSON"
+        # (OpenAI API requirement). Inject the task output schema when available
+        # so the synthesis model knows the expected shape.
+        if self._response_format and self._output_schema:
+            prompt += (
+                "\n\nRespond with valid JSON matching this schema:\n"
+                + json.dumps(self._output_schema, indent=2)
+            )
+        elif self._response_format:
+            prompt += "\n\nRespond with valid JSON."
+
         outcome = await self._model_client.call(
             ModelRequest(
                 model=self._model,
@@ -263,9 +277,13 @@ class MetaJudge(Aggregation):
             logger.warning("MetaJudge model call failed: %s", outcome.error)
             return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
 
+        # Normalize the synthesis output so final_answer is the canonical form,
+        # consistent with MajorityVote (both return e.g. "18", not raw JSON).
+        final_answer = outcome.content
         confidence = 1.0
         if self._normalizer is not None:
             synth_canonical = await self._normalizer.normalize(outcome.content)
+            final_answer = synth_canonical
             matches = 0
             for r in responses:
                 agent_canonical = await self._normalizer.normalize(r.content)
@@ -274,7 +292,7 @@ class MetaJudge(Aggregation):
             confidence = matches / len(responses) if responses else 0.0
 
         return AggregationResult(
-            final_answer=outcome.content,
+            final_answer=final_answer,
             confidence=confidence,
             method="MetaJudge",
         )

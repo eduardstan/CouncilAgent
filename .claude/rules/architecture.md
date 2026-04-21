@@ -57,7 +57,6 @@ None means "use the model default" — these fields are additive overrides, not 
 `experiments/run.py` is the fast-mode benchmark runner. Its YAML contract:
 - `council.models` — list of entries; each is either a bare model string or a dict `{model, temperature?, max_tokens?, system_prompt?}`. Dict fields map 1:1 onto `AgentConfig`. Parsed by `_parse_agents()` into `list[AgentConfig]`.
 - `council.meta_judge` — optional dict `{model?, temperature?, max_tokens?, system_prompt?}` for the synthesis judge. `model` falls back to `models[0]` when absent.
-- `council.meta_judge_model` — legacy bare-string form; internally lifted to `{"model": ...}`. Kept for backward compatibility; `meta_judge` wins when both are present.
 
 `MetaJudge.__init__` accepts `system_prompt: str | None = None` and forwards it to its internal `ModelRequest`. `_build_aggregation()` wires the YAML dict into that kwarg.
 

@@ -585,8 +585,8 @@ class TestRichYamlThreadsToCouncil:
         assert agg._system_prompt == "You are the synthesis judge."  # type: ignore[attr-defined]
 
     @pytest.mark.filterwarnings("ignore::FutureWarning")
-    async def test_legacy_meta_judge_model_string_still_works(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-        """Backward-compat: `meta_judge_model: "..."` (bare string) keeps working."""
+    async def test_meta_judge_receives_output_schema(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """output_schema is forwarded to MetaJudge so it can inject JSON instructions."""
         import council.core
         import experiments.run as runmod
         from council.aggregation import MetaJudge
@@ -620,7 +620,7 @@ class TestRichYamlThreadsToCouncil:
         monkeypatch.setitem(REGISTRY, "gsm8k", _StubLoader())
 
         cfg = {
-            "name": "legacy_judge",
+            "name": "schema_test",
             "dataset": "gsm8k",
             "task_limit": 1,
             "council": {
@@ -628,7 +628,7 @@ class TestRichYamlThreadsToCouncil:
                 "max_rounds": 0,
                 "protocol": "direct",
                 "aggregation": "meta_judge",
-                "meta_judge_model": "legacy/judge",
+                "meta_judge": {"model": "fake/judge"},
                 "termination": "fixed",
                 "task_delay_seconds": 0,
             },
@@ -636,7 +636,9 @@ class TestRichYamlThreadsToCouncil:
         await runmod.run_experiment(cfg)
         agg = captured["aggregation"]
         assert isinstance(agg, MetaJudge)
-        assert agg._model == "legacy/judge"  # type: ignore[attr-defined]
+        # GSM8K profile has an output_schema — it must be forwarded to MetaJudge.
+        assert agg._output_schema is not None  # type: ignore[attr-defined]
+        assert "answer" in str(agg._output_schema)  # type: ignore[attr-defined]
 
 
 class TestYamlConfigsHaveNewKeys:
