@@ -23,16 +23,21 @@ from council.context import (
     CommunicationMode,
     CouncilResult,
     CouncilState,
+    PreferenceData,
     VisibilityContext,
 )
 from council.models import ModelClient, ModelFailure, ModelRequest
 from council.protocol import Protocol
-from council.context import PreferenceData
 from council.ranking import NullRanking, Ranking
 from council.termination import TerminationStrategy
 from council.topology import Topology
 
 logger = logging.getLogger(__name__)
+
+# Module-level singleton used as the default `ranking` argument to run_council.
+# NullRanking is stateless; sharing one instance avoids a mutable-default pitfall
+# while keeping the signature honest (Ranking, not Ranking | None).
+_NULL_RANKING: Ranking = NullRanking()
 
 
 # ---------------------------------------------------------------------------
@@ -42,10 +47,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class AgentConfig:
-    """Identity and model assignment for one council member."""
+    """Identity and per-agent model parameters for one council member.
+
+    temperature and max_tokens default to None, meaning the ModelRequest
+    defaults apply. Per-agent overrides let the policy layer shape the
+    ensemble — e.g. a "creative" agent at 0.9 alongside a "conservative"
+    one at 0.2 for calibrated disagreement.
+    """
 
     id: str
     model: str
+    temperature: float | None = None
+    max_tokens: int | None = None
+    system_prompt: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -61,9 +75,10 @@ async def run_council(
     protocol: Protocol,
     aggregation: Aggregation,
     termination: TerminationStrategy,
-    ranking: Ranking | None = None,
+    ranking: Ranking = _NULL_RANKING,
     anonymize: bool = True,
-    answer_response_format: dict[str, str] | None = None,
+    answer_response_format: dict[str, object] | None = None,
+    task_hint: str = "",
 ) -> CouncilResult:
     """Run the full council pipeline and return a final answer with confidence.
 
@@ -71,15 +86,12 @@ async def run_council(
     each round, termination.should_stop() is checked. Deliberation continues
     until the strategy signals True.
     """
-    if ranking is None:
-        ranking = NullRanking()
-
     state = CouncilState.initial(prompt)
 
     agent_ids = [a.id for a in agents]
 
     # Round 0 — initial generation (no visibility, no adjacency filtering needed).
-    state = await _generate(state, agents, topology, protocol, model_client, answer_response_format)
+    state = await _generate(state, agents, topology, protocol, model_client, answer_response_format, task_hint)
 
     # After every answer round, compute an interim aggregation so termination
     # strategies check consensus on normalized answers — not on raw response text.
@@ -89,14 +101,19 @@ async def run_council(
         r0_responses = [r for r in state.round_history if r.round_index == 0 and not isinstance(r, ModelFailure)]
         if r0_responses:
             prefs_r0 = await _rank(state, ranking, agent_ids, 0)
-            state.interim_result = await aggregation.aggregate(r0_responses, prefs_r0, round_history=list(state.round_history))
+            state.interim_result = await aggregation.aggregate(
+                r0_responses,
+                prefs_r0,
+                round_history=list(state.round_history),
+                original_prompt=state.question,
+            )
 
     stop, reason = await termination.should_stop(state)
 
     # Deliberation rounds 1+ — rank+aggregate run inside the loop so that
     # termination can check aggregated consensus after each answer round.
     while not stop:
-        state = await _deliberate(state, agents, topology, protocol, model_client, anonymize, answer_response_format)
+        state = await _deliberate(state, agents, topology, protocol, model_client, anonymize, answer_response_format, task_hint)
         round_just_completed = state.current_round - 1
         if protocol.is_answer_round(round_just_completed):
             answer_responses = [
@@ -105,7 +122,12 @@ async def run_council(
             ]
             if answer_responses:
                 prefs = await _rank(state, ranking, agent_ids, round_just_completed)
-                state.interim_result = await aggregation.aggregate(answer_responses, prefs, round_history=list(state.round_history))
+                state.interim_result = await aggregation.aggregate(
+                    answer_responses,
+                    prefs,
+                    round_history=list(state.round_history),
+                    original_prompt=state.question,
+                )
         stop, reason = await termination.should_stop(state)
 
     state.termination_reason = reason
@@ -118,7 +140,12 @@ async def run_council(
         # Safety fallback: should not happen — aggregate whatever we have.
         all_responses = [r for r in state.round_history if not isinstance(r, ModelFailure)]
         prefs_fb = await _rank(state, ranking, agent_ids, state.current_round - 1)
-        agg_result = await aggregation.aggregate(all_responses, prefs_fb, round_history=list(state.round_history))
+        agg_result = await aggregation.aggregate(
+            all_responses,
+            prefs_fb,
+            round_history=list(state.round_history),
+            original_prompt=state.question,
+        )
 
     state.final_result = agg_result
 
@@ -140,13 +167,34 @@ async def run_council(
 # ---------------------------------------------------------------------------
 
 
+def _build_request(
+    agent: AgentConfig,
+    prompt: str,
+    response_format: dict[str, object] | None,
+) -> ModelRequest:
+    """Construct a ModelRequest, applying per-agent overrides only when set."""
+    kwargs: dict[str, object] = {
+        "model": agent.model,
+        "prompt": prompt,
+        "response_format": response_format,
+    }
+    if agent.temperature is not None:
+        kwargs["temperature"] = agent.temperature
+    if agent.max_tokens is not None:
+        kwargs["max_tokens"] = agent.max_tokens
+    if agent.system_prompt is not None:
+        kwargs["system_prompt"] = agent.system_prompt
+    return ModelRequest(**kwargs)  # type: ignore[arg-type]
+
+
 async def _generate(
     state: CouncilState,
     agents: list[AgentConfig],
     topology: Topology,
     protocol: Protocol,
     model_client: ModelClient,
-    answer_response_format: dict[str, str] | None = None,
+    answer_response_format: dict[str, object] | None = None,
+    task_hint: str = "",
 ) -> CouncilState:
     """Round 0: all agents answer the original prompt simultaneously."""
     ctx_for_agent = [
@@ -158,6 +206,7 @@ async def _generate(
             total_agents=len(agents),
             communication_mode=topology.communication_mode,
             original_prompt=state.question,
+            task_hint=task_hint,
         )
         for agent in agents
     ]
@@ -165,7 +214,7 @@ async def _generate(
     rf = answer_response_format if protocol.is_answer_round(0) else None
     tasks = [
         model_client.complete(
-            ModelRequest(model=agent.model, prompt=protocol.build_prompt(ctx), response_format=rf),
+            _build_request(agent, protocol.build_prompt(ctx), rf),
             agent_id=agent.id,
             round_index=0,
         )
@@ -193,7 +242,8 @@ async def _deliberate(
     protocol: Protocol,
     model_client: ModelClient,
     anonymize: bool,
-    answer_response_format: dict[str, str] | None = None,
+    answer_response_format: dict[str, object] | None = None,
+    task_hint: str = "",
 ) -> CouncilState:
     """Rounds 1+: each agent sees a filtered, optionally anonymized view of prior responses."""
     round_index = state.current_round
@@ -224,11 +274,12 @@ async def _deliberate(
             communication_mode=communication_mode,
             original_prompt=state.question,
             anonymize=anonymize,
+            task_hint=task_hint,
         )
         rf = answer_response_format if protocol.is_answer_round(round_index) else None
         tasks.append(
             model_client.complete(
-                ModelRequest(model=agent.model, prompt=protocol.build_prompt(ctx), response_format=rf),
+                _build_request(agent, protocol.build_prompt(ctx), rf),
                 agent_id=agent.id,
                 round_index=round_index,
             )
@@ -274,6 +325,7 @@ def _build_visibility_context(
     communication_mode: CommunicationMode,
     original_prompt: str,
     anonymize: bool,
+    task_hint: str = "",
 ) -> VisibilityContext:
     """Build a VisibilityContext, anonymizing agent IDs if requested.
 
@@ -294,6 +346,7 @@ def _build_visibility_context(
             total_agents=total_agents,
             communication_mode=communication_mode,
             original_prompt=original_prompt,
+            task_hint=task_hint,
         )
 
     # Build a stable mapping: real_id → "Response A/B/C/…" by sorted order.
@@ -333,4 +386,5 @@ def _build_visibility_context(
         total_agents=total_agents,
         communication_mode=communication_mode,
         original_prompt=original_prompt,
+        task_hint=task_hint,
     )

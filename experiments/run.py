@@ -85,12 +85,20 @@ def _build_aggregation(
     normalizer: Any,
     model_client: Any,
     models: list[str],
-    meta_judge_model: str | None = None,
+    meta_judge: dict[str, Any] | None = None,
+    protocol: Any = None,
+    response_format: dict[str, object] | None = None,
+    output_schema: dict[str, object] | None = None,
 ) -> Any:
     """Factory: aggregation name → Aggregation instance. Raises ValueError on unknown name.
 
-    meta_judge_model: explicit synthesis model for MetaJudge. Falls back to
-    models[0] when None so existing configs without the key keep working.
+    meta_judge: optional dict carrying the synthesis-judge overrides —
+        {model?, temperature?, max_tokens?, system_prompt?}. `model` falls back
+        to `models[0]` when absent. Unset keys leave MetaJudge defaults in place.
+    protocol / response_format / output_schema: wired into MetaJudge so synthesis
+        labels rounds via the protocol's answer/critique predicate, returns the
+        same JSON shape as the deliberation rounds, and includes the schema in
+        its synthesis prompt.
     """
     from council.aggregation import BordaCount, CondorcetAggregation, MajorityVote, MetaJudge
 
@@ -101,11 +109,73 @@ def _build_aggregation(
     if name == "condorcet":
         return CondorcetAggregation()
     if name == "meta_judge":
-        judge_model = meta_judge_model if meta_judge_model else models[0]
-        return MetaJudge(model=judge_model, model_client=model_client)
+        cfg = meta_judge or {}
+        judge_model = cfg.get("model") or models[0]
+
+        kwargs: dict[str, Any] = {
+            "model": judge_model,
+            "model_client": model_client,
+            "response_format": response_format,
+            "normalizer": normalizer,
+            "output_schema": output_schema,
+        }
+        for key in ("temperature", "max_tokens", "system_prompt"):
+            if key in cfg:
+                kwargs[key] = cfg[key]
+
+        if protocol is not None:
+            def _round_label(round_index: int) -> str:
+                if round_index == 0:
+                    return "GENERATE"
+                return "ANSWER" if protocol.is_answer_round(round_index) else "CRITIQUE"
+            kwargs["round_label_fn"] = _round_label
+
+        return MetaJudge(**kwargs)
     raise ValueError(
         f"Unknown aggregation {name!r}. Valid options: majority_vote, borda, condorcet, meta_judge"
     )
+
+
+def _parse_agents(models_cfg: list[Any]) -> tuple[list[Any], list[str]]:
+    """Parse YAML `council.models` into AgentConfig objects + a flat model-string list.
+
+    Each entry is either a bare string (model identifier) or a dict:
+        {model: str, temperature?: float, max_tokens?: int, system_prompt?: str}
+
+    The returned `model_strings` list preserves input order and is used for the
+    transcript header and MLflow params. Per-agent fields absent from the YAML
+    stay as AgentConfig defaults (None → ModelRequest defaults apply).
+    """
+    from council.core import AgentConfig
+
+    agents: list[AgentConfig] = []
+    model_strings: list[str] = []
+    for i, entry in enumerate(models_cfg):
+        if isinstance(entry, str):
+            agents.append(AgentConfig(id=f"agent-{i}", model=entry))
+            model_strings.append(entry)
+        elif isinstance(entry, dict):
+            model = entry.get("model")
+            if not isinstance(model, str) or not model:
+                raise ValueError(
+                    f"council.models[{i}] is a dict but missing or empty 'model' key. "
+                    "Use either a bare string or {model: ..., temperature?, max_tokens?, system_prompt?}."
+                )
+            agents.append(
+                AgentConfig(
+                    id=f"agent-{i}",
+                    model=model,
+                    temperature=entry.get("temperature"),
+                    max_tokens=entry.get("max_tokens"),
+                    system_prompt=entry.get("system_prompt"),
+                )
+            )
+            model_strings.append(model)
+        else:
+            raise ValueError(
+                f"council.models[{i}] must be a string or dict, got {type(entry).__name__}."
+            )
+    return agents, model_strings
 
 
 def _build_termination(
@@ -115,7 +185,12 @@ def _build_termination(
     budget_usd: float,
 ) -> Any:
     """Factory: termination name → TerminationStrategy instance. Raises ValueError on unknown name."""
-    from council.termination import AgreementThreshold, BudgetExhaustion, CompositeTermination, FixedRounds
+    from council.termination import (
+        AgreementThreshold,
+        BudgetExhaustion,
+        CompositeTermination,
+        FixedRounds,
+    )
 
     if name == "fixed":
         return FixedRounds(total_rounds)
@@ -174,8 +249,6 @@ def _format_task_transcript(
     for r in round_history:
         rounds.setdefault(r.round_index, []).append(r)
 
-    last_round = max(rounds) if rounds else 0
-
     def _round_label(idx: int) -> str:
         if idx == 0:
             return "GENERATE — Initial answers"
@@ -226,16 +299,22 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         dataset:        Task dataset name (key in tasks.registry.REGISTRY).
         task_limit:     Max tasks to evaluate (None = full dataset).
         council:        Council config dict. Required keys:
-                          models           — list of model strings (≥2).
+                          models — list (≥2). Each entry is either a bare model
+                              string OR a dict with `model` plus optional
+                              `temperature`, `max_tokens`, `system_prompt` that
+                              override the ModelRequest defaults for that agent.
                         Optional keys (all have defaults):
                           protocol         — direct | peer_review | simultaneous (default: peer_review)
                           topology         — complete | star | bus | ring | dynamic_star (default: complete)
                           aggregation      — majority_vote | borda | condorcet | meta_judge (default: majority_vote)
                           termination      — fixed | agreement | budget | composite (default: fixed)
-                          meta_judge_model — synthesis model for meta_judge (default: models[0])
+                          meta_judge       — dict of synthesis-judge overrides:
+                              {model?, temperature?, max_tokens?, system_prompt?}.
+                              `model` falls back to `models[0]` when absent.
                           max_rounds       — deliberation cycles after initial generation (default: 1)
                           budget_usd       — cost cap in USD (default: 0.10)
                           task_delay_seconds — sleep between tasks (default: 2.0)
+                          prompt_hint      — overrides the TaskProfile answer-format hint.
         mlflow:         MLflow config dict with keys: tracking_uri, experiment_name.
                         Optional — if absent, MLflow logging is skipped.
     """
@@ -247,12 +326,12 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         logger.warning("mlflow not installed — results will not be logged. "
                        "Install with: uv pip install 'council-agent[benchmark]'")
 
-    from council.core import AgentConfig, run_council
+    from council.core import run_council
     from council.models import LiteLLMClient
-    from council.normalizer import StructuredOutputNormalizer
     from council.protocol import DirectAnswerProtocol, PeerReviewProtocol, SimultaneousProtocol
     from evaluation.baselines import majority_vote_no_deliberation
     from evaluation.metrics import task_accuracy
+    from tasks.profiles import get_profile
     from tasks.registry import REGISTRY
 
     cfg_name: str = config.get("name", "unnamed")
@@ -262,12 +341,13 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     mlflow_cfg: dict[str, Any] = config.get("mlflow", {})
 
     # --- Build components from YAML ----------------------------------------
-    models: list[str] = council_cfg.get("models", [])
-    if not models:
+    models_cfg: list[Any] = council_cfg.get("models", [])
+    if not models_cfg:
         raise ValueError(
             "council.models must be specified in the experiment config. "
             "Example:\n  council:\n    models:\n      - openrouter/openai/gpt-4.1-nano"
         )
+    agents, models = _parse_agents(models_cfg)
     max_rounds: int = council_cfg.get("max_rounds", 1)
     budget_usd: float = council_cfg.get("budget_usd", 0.10)
     task_delay: float = council_cfg.get("task_delay_seconds", 2.0)
@@ -275,28 +355,22 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     topology_name: str = council_cfg.get("topology", "complete")
     aggregation_name: str = council_cfg.get("aggregation", "majority_vote")
     termination_name: str = council_cfg.get("termination", "fixed")
-    meta_judge_model: str | None = council_cfg.get("meta_judge_model")  # None → models[0]
+    # meta_judge: structured dict of synthesis-judge overrides.
+    meta_judge_cfg: dict[str, Any] | None = council_cfg.get("meta_judge")
 
-    # Ask models to produce structured JSON so MajorityVote can normalize cleanly.
-    # Two fields: reasoning (chain-of-thought) and answer (concise final value only).
-    # Separating them prevents models from stuffing full prose into the answer field,
-    # which would make every response unique and collapse confidence to 1/n.
-    # Critique rounds (odd rounds in PeerReviewProtocol) intentionally ignore this
-    # schema — free-text critique is correct there.
-    _answer_schema = {
-        "type": "object",
-        "properties": {
-            "reasoning": {"type": "string", "description": "Step-by-step working"},
-            "answer": {"type": "string", "description": "Concise final answer only (e.g. a number or short phrase)"},
-        },
-        "required": ["reasoning", "answer"],
-    }
+    # TaskProfile drives normalizer, output schema, and the answer-format hint.
+    # YAML-level overrides win: council.prompt_hint, if set, replaces the profile hint.
+    profile = get_profile(dataset_name)
+    normalizer = profile.normalizer
+    output_schema = profile.output_schema
+    prompt_hint = council_cfg.get("prompt_hint", profile.prompt_hint)
+
     _protocol_map = {
-        "direct": DirectAnswerProtocol(output_schema=_answer_schema),
-        "peer_review": PeerReviewProtocol(output_schema=_answer_schema),
-        "simultaneous": SimultaneousProtocol(output_schema=_answer_schema),
+        "direct": DirectAnswerProtocol(output_schema=output_schema),
+        "peer_review": PeerReviewProtocol(output_schema=output_schema),
+        "simultaneous": SimultaneousProtocol(output_schema=output_schema),
     }
-    protocol = _protocol_map.get(protocol_name, DirectAnswerProtocol(output_schema=_answer_schema))
+    protocol = _protocol_map.get(protocol_name, DirectAnswerProtocol(output_schema=output_schema))
     if protocol_name not in _protocol_map:
         logger.warning("Unknown protocol %r, falling back to 'direct'", protocol_name)
 
@@ -306,14 +380,26 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     # E.g. PeerReview with max_rounds=1: 1 + 1*2 = 3 raw rounds (generate, critique, revise).
     total_rounds = 1 + max_rounds * protocol.cycle_length()
 
-    agents = [AgentConfig(id=f"agent-{i}", model=m) for i, m in enumerate(models)]
     # Convenience map for transcript formatting: agent-0 → full model string
     model_map = {f"agent-{i}": m for i, m in enumerate(models)}
-    normalizer = StructuredOutputNormalizer()
     model_client = LiteLLMClient()
 
     topology = _build_topology(topology_name, len(agents))
-    aggregation = _build_aggregation(aggregation_name, normalizer, model_client, models, meta_judge_model)
+    # Request structured JSON only when the profile declares an output schema.
+    # Free-text tasks (future) will have output_schema=None and no response_format.
+    answer_rf: dict[str, object] | None = (
+        {"type": "json_object"} if output_schema else None
+    )
+    aggregation = _build_aggregation(
+        aggregation_name,
+        normalizer,
+        model_client,
+        models,
+        meta_judge=meta_judge_cfg,
+        protocol=protocol,
+        response_format=answer_rf,
+        output_schema=output_schema,
+    )
     termination = _build_termination(termination_name, total_rounds, normalizer, budget_usd)
 
     # --- Load tasks -------------------------------------------------------
@@ -359,7 +445,8 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 protocol=protocol,
                 aggregation=aggregation,
                 termination=termination,
-                answer_response_format={"type": "json_object"},
+                answer_response_format=answer_rf,
+                task_hint=prompt_hint,
             )
 
             acc = await task_accuracy(
@@ -434,7 +521,10 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 "topology": topology_name,
                 "aggregation": aggregation_name,
                 "termination": termination_name,
-                "meta_judge_model": meta_judge_model or models[0],
+                "meta_judge_model": (meta_judge_cfg or {}).get("model") or models[0],
+                "meta_judge_temperature": (meta_judge_cfg or {}).get("temperature", ""),
+                "meta_judge_max_tokens": (meta_judge_cfg or {}).get("max_tokens", ""),
+                "meta_judge_system_prompt": (meta_judge_cfg or {}).get("system_prompt", ""),
                 "budget_usd": budget_usd,
                 "git_sha": sha,
             })

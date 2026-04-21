@@ -16,6 +16,7 @@ from experiments.run import (
     _build_aggregation,
     _build_termination,
     _build_topology,
+    _parse_agents,
     load_config,
 )
 
@@ -181,7 +182,7 @@ class TestBuildAggregation:
         agg = _build_aggregation(
             "meta_judge", self._normalizer(), client,
             models=["fallback/model"],
-            meta_judge_model="explicit/judge-model",
+            meta_judge={"model": "explicit/judge-model"},
         )
         assert isinstance(agg, MetaJudge)
         assert agg._model == "explicit/judge-model"  # type: ignore[attr-defined]
@@ -196,6 +197,41 @@ class TestBuildAggregation:
         )
         assert isinstance(agg, MetaJudge)
         assert agg._model == "primary/model"  # type: ignore[attr-defined]
+
+    def test_meta_judge_threads_overrides_from_dict(self) -> None:
+        """YAML `meta_judge:` dict overrides flow to MetaJudge: model, temp, max_tokens, system_prompt."""
+        from council.aggregation import MetaJudge
+        from council.models import FakeModelClient
+        client = FakeModelClient({})
+        agg = _build_aggregation(
+            "meta_judge", self._normalizer(), client,
+            models=["fallback/model"],
+            meta_judge={
+                "model": "explicit/judge-model",
+                "temperature": 0.05,
+                "max_tokens": 4096,
+                "system_prompt": "You are the final arbiter.",
+            },
+        )
+        assert isinstance(agg, MetaJudge)
+        assert agg._model == "explicit/judge-model"  # type: ignore[attr-defined]
+        assert agg._temperature == 0.05  # type: ignore[attr-defined]
+        assert agg._max_tokens == 4096  # type: ignore[attr-defined]
+        assert agg._system_prompt == "You are the final arbiter."  # type: ignore[attr-defined]
+
+    def test_meta_judge_empty_dict_uses_defaults(self) -> None:
+        """Empty meta_judge dict falls back to models[0] and MetaJudge defaults."""
+        from council.aggregation import MetaJudge
+        from council.models import FakeModelClient
+        client = FakeModelClient({})
+        agg = _build_aggregation(
+            "meta_judge", self._normalizer(), client,
+            models=["primary/model"],
+            meta_judge={},
+        )
+        assert isinstance(agg, MetaJudge)
+        assert agg._model == "primary/model"  # type: ignore[attr-defined]
+        assert agg._system_prompt is None  # type: ignore[attr-defined]
 
 
 class TestBuildTermination:
@@ -247,6 +283,364 @@ class TestMissingModelsRaises:
             await run_experiment(cfg)
 
 
+class TestTaskProfileDrivenRunner:
+    def test_registry_exposes_gsm8k_profile(self) -> None:
+        from tasks.profiles import get_profile
+        p = get_profile("gsm8k")
+        assert p.name == "gsm8k"
+        assert p.output_schema is not None
+        assert p.prompt_hint  # non-empty
+
+    def test_unknown_dataset_raises(self) -> None:
+        from tasks.profiles import get_profile
+        with pytest.raises(ValueError, match="Unknown dataset"):
+            get_profile("nonexistent_dataset")
+
+    @pytest.mark.filterwarnings("ignore::FutureWarning")
+    async def test_config_prompt_hint_overrides_profile(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """When council.prompt_hint is set in YAML, it wins over the profile default."""
+        import council.core
+        import experiments.run as runmod
+        from tasks.loader import BenchmarkTask, TaskLoader
+        from tasks.registry import REGISTRY
+
+        captured: dict[str, object] = {}
+
+        class _StubResult:
+            final_answer = "42"
+            confidence = 1.0
+            total_cost = 0.0
+            rounds_used = 1
+            tokens_in = 0
+            tokens_out = 0
+            round_history: list[object] = []
+
+        async def fake_run_council(**kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return _StubResult()
+
+        class _StubLoader(TaskLoader):
+            def load(self, limit=None):  # type: ignore[override, no-untyped-def]
+                return [BenchmarkTask(id="t1", question="Q?", ground_truth="42", domain="math")]
+
+            @property
+            def name(self) -> str:
+                return "gsm8k"
+
+        monkeypatch.setattr(council.core, "run_council", fake_run_council)
+        monkeypatch.setitem(REGISTRY, "gsm8k", _StubLoader())
+
+        cfg = {
+            "name": "hint_override",
+            "dataset": "gsm8k",
+            "task_limit": 1,
+            "council": {
+                "models": ["fake/a", "fake/b"],
+                "max_rounds": 0,
+                "protocol": "direct",
+                "aggregation": "majority_vote",
+                "termination": "fixed",
+                "task_delay_seconds": 0,
+                "prompt_hint": "CUSTOM OVERRIDE HINT",
+            },
+        }
+        await runmod.run_experiment(cfg)
+        assert captured.get("task_hint") == "CUSTOM OVERRIDE HINT"
+
+    @pytest.mark.filterwarnings("ignore::FutureWarning")
+    async def test_profile_prompt_hint_used_when_config_absent(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """Without config override, the TaskProfile's prompt_hint is used."""
+        import council.core
+        import experiments.run as runmod
+        from tasks.loader import BenchmarkTask, TaskLoader
+        from tasks.profiles import get_profile
+        from tasks.registry import REGISTRY
+
+        captured: dict[str, object] = {}
+
+        class _StubResult:
+            final_answer = "42"
+            confidence = 1.0
+            total_cost = 0.0
+            rounds_used = 1
+            tokens_in = 0
+            tokens_out = 0
+            round_history: list[object] = []
+
+        async def fake_run_council(**kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return _StubResult()
+
+        class _StubLoader(TaskLoader):
+            def load(self, limit=None):  # type: ignore[override, no-untyped-def]
+                return [BenchmarkTask(id="t1", question="Q?", ground_truth="42", domain="math")]
+
+            @property
+            def name(self) -> str:
+                return "gsm8k"
+
+        monkeypatch.setattr(council.core, "run_council", fake_run_council)
+        monkeypatch.setitem(REGISTRY, "gsm8k", _StubLoader())
+
+        cfg = {
+            "name": "profile_default",
+            "dataset": "gsm8k",
+            "task_limit": 1,
+            "council": {
+                "models": ["fake/a", "fake/b"],
+                "max_rounds": 0,
+                "protocol": "direct",
+                "aggregation": "majority_vote",
+                "termination": "fixed",
+                "task_delay_seconds": 0,
+            },
+        }
+        await runmod.run_experiment(cfg)
+        assert captured.get("task_hint") == get_profile("gsm8k").prompt_hint
+
+
+class TestParseAgents:
+    def test_bare_string_entries(self) -> None:
+        """Legacy form: list of bare strings → AgentConfigs with only model set."""
+        agents, models = _parse_agents(["openai/gpt-4", "anthropic/claude-3"])
+        assert len(agents) == 2
+        assert [a.id for a in agents] == ["agent-0", "agent-1"]
+        assert [a.model for a in agents] == ["openai/gpt-4", "anthropic/claude-3"]
+        assert all(a.temperature is None for a in agents)
+        assert all(a.max_tokens is None for a in agents)
+        assert all(a.system_prompt is None for a in agents)
+        assert models == ["openai/gpt-4", "anthropic/claude-3"]
+
+    def test_dict_entries_thread_overrides(self) -> None:
+        """Dict form routes temperature / max_tokens / system_prompt to AgentConfig."""
+        agents, models = _parse_agents([
+            {
+                "model": "openai/gpt-4",
+                "temperature": 0.2,
+                "max_tokens": 1024,
+                "system_prompt": "Be precise.",
+            },
+            {"model": "anthropic/claude-3", "temperature": 0.9},
+        ])
+        assert agents[0].model == "openai/gpt-4"
+        assert agents[0].temperature == 0.2
+        assert agents[0].max_tokens == 1024
+        assert agents[0].system_prompt == "Be precise."
+        assert agents[1].model == "anthropic/claude-3"
+        assert agents[1].temperature == 0.9
+        assert agents[1].max_tokens is None
+        assert agents[1].system_prompt is None
+        assert models == ["openai/gpt-4", "anthropic/claude-3"]
+
+    def test_mixed_string_and_dict_entries(self) -> None:
+        """String and dict entries may be mixed in the same list."""
+        agents, models = _parse_agents([
+            "openai/gpt-4",
+            {"model": "anthropic/claude-3", "temperature": 0.1},
+        ])
+        assert agents[0].model == "openai/gpt-4"
+        assert agents[0].temperature is None
+        assert agents[1].model == "anthropic/claude-3"
+        assert agents[1].temperature == 0.1
+        assert models == ["openai/gpt-4", "anthropic/claude-3"]
+
+    def test_dict_without_model_raises(self) -> None:
+        with pytest.raises(ValueError, match="missing or empty 'model' key"):
+            _parse_agents([{"temperature": 0.5}])
+
+    def test_dict_with_empty_model_raises(self) -> None:
+        with pytest.raises(ValueError, match="missing or empty 'model' key"):
+            _parse_agents([{"model": ""}])
+
+    def test_invalid_entry_type_raises(self) -> None:
+        with pytest.raises(ValueError, match="must be a string or dict"):
+            _parse_agents([42])  # type: ignore[list-item]
+
+
+class TestRichYamlThreadsToCouncil:
+    """End-to-end: rich per-agent + per-meta-judge YAML reaches AgentConfig and MetaJudge."""
+
+    @pytest.mark.filterwarnings("ignore::FutureWarning")
+    async def test_per_agent_overrides_reach_agent_config(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        import council.core
+        import experiments.run as runmod
+        from tasks.loader import BenchmarkTask, TaskLoader
+        from tasks.registry import REGISTRY
+
+        captured: dict[str, object] = {}
+
+        class _StubResult:
+            final_answer = "42"
+            confidence = 1.0
+            total_cost = 0.0
+            rounds_used = 1
+            tokens_in = 0
+            tokens_out = 0
+            round_history: tuple[object, ...] = ()
+
+        async def fake_run_council(**kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return _StubResult()
+
+        class _StubLoader(TaskLoader):
+            def load(self, limit=None):  # type: ignore[override, no-untyped-def]
+                return [BenchmarkTask(id="t1", question="Q?", ground_truth="42", domain="math")]
+
+            @property
+            def name(self) -> str:
+                return "gsm8k"
+
+        monkeypatch.setattr(council.core, "run_council", fake_run_council)
+        monkeypatch.setitem(REGISTRY, "gsm8k", _StubLoader())
+
+        cfg = {
+            "name": "rich_agents",
+            "dataset": "gsm8k",
+            "task_limit": 1,
+            "council": {
+                "models": [
+                    {"model": "fake/a", "temperature": 0.1, "system_prompt": "A-prompt"},
+                    {"model": "fake/b", "max_tokens": 512},
+                    "fake/c",
+                ],
+                "max_rounds": 0,
+                "protocol": "direct",
+                "aggregation": "majority_vote",
+                "termination": "fixed",
+                "task_delay_seconds": 0,
+            },
+        }
+        await runmod.run_experiment(cfg)
+        agents = captured["agents"]
+        assert isinstance(agents, list)
+        assert len(agents) == 3
+        assert agents[0].model == "fake/a"
+        assert agents[0].temperature == 0.1
+        assert agents[0].system_prompt == "A-prompt"
+        assert agents[1].model == "fake/b"
+        assert agents[1].max_tokens == 512
+        assert agents[2].model == "fake/c"
+        assert agents[2].temperature is None
+        assert agents[2].system_prompt is None
+
+    @pytest.mark.filterwarnings("ignore::FutureWarning")
+    async def test_meta_judge_dict_reaches_metajudge(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        import council.core
+        import experiments.run as runmod
+        from council.aggregation import MetaJudge
+        from tasks.loader import BenchmarkTask, TaskLoader
+        from tasks.registry import REGISTRY
+
+        captured: dict[str, object] = {}
+
+        class _StubResult:
+            final_answer = "42"
+            confidence = 1.0
+            total_cost = 0.0
+            rounds_used = 1
+            tokens_in = 0
+            tokens_out = 0
+            round_history: tuple[object, ...] = ()
+
+        async def fake_run_council(**kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return _StubResult()
+
+        class _StubLoader(TaskLoader):
+            def load(self, limit=None):  # type: ignore[override, no-untyped-def]
+                return [BenchmarkTask(id="t1", question="Q?", ground_truth="42", domain="math")]
+
+            @property
+            def name(self) -> str:
+                return "gsm8k"
+
+        monkeypatch.setattr(council.core, "run_council", fake_run_council)
+        monkeypatch.setitem(REGISTRY, "gsm8k", _StubLoader())
+
+        cfg = {
+            "name": "rich_judge",
+            "dataset": "gsm8k",
+            "task_limit": 1,
+            "council": {
+                "models": ["fake/a", "fake/b"],
+                "max_rounds": 0,
+                "protocol": "direct",
+                "aggregation": "meta_judge",
+                "meta_judge": {
+                    "model": "fake/judge",
+                    "temperature": 0.05,
+                    "max_tokens": 4096,
+                    "system_prompt": "You are the synthesis judge.",
+                },
+                "termination": "fixed",
+                "task_delay_seconds": 0,
+            },
+        }
+        await runmod.run_experiment(cfg)
+        agg = captured["aggregation"]
+        assert isinstance(agg, MetaJudge)
+        assert agg._model == "fake/judge"  # type: ignore[attr-defined]
+        assert agg._temperature == 0.05  # type: ignore[attr-defined]
+        assert agg._max_tokens == 4096  # type: ignore[attr-defined]
+        assert agg._system_prompt == "You are the synthesis judge."  # type: ignore[attr-defined]
+
+    @pytest.mark.filterwarnings("ignore::FutureWarning")
+    async def test_meta_judge_receives_output_schema(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """output_schema is forwarded to MetaJudge so it can inject JSON instructions."""
+        import council.core
+        import experiments.run as runmod
+        from council.aggregation import MetaJudge
+        from tasks.loader import BenchmarkTask, TaskLoader
+        from tasks.registry import REGISTRY
+
+        captured: dict[str, object] = {}
+
+        class _StubResult:
+            final_answer = "42"
+            confidence = 1.0
+            total_cost = 0.0
+            rounds_used = 1
+            tokens_in = 0
+            tokens_out = 0
+            round_history: tuple[object, ...] = ()
+
+        async def fake_run_council(**kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return _StubResult()
+
+        class _StubLoader(TaskLoader):
+            def load(self, limit=None):  # type: ignore[override, no-untyped-def]
+                return [BenchmarkTask(id="t1", question="Q?", ground_truth="42", domain="math")]
+
+            @property
+            def name(self) -> str:
+                return "gsm8k"
+
+        monkeypatch.setattr(council.core, "run_council", fake_run_council)
+        monkeypatch.setitem(REGISTRY, "gsm8k", _StubLoader())
+
+        cfg = {
+            "name": "schema_test",
+            "dataset": "gsm8k",
+            "task_limit": 1,
+            "council": {
+                "models": ["fake/a", "fake/b"],
+                "max_rounds": 0,
+                "protocol": "direct",
+                "aggregation": "meta_judge",
+                "meta_judge": {"model": "fake/judge"},
+                "termination": "fixed",
+                "task_delay_seconds": 0,
+            },
+        }
+        await runmod.run_experiment(cfg)
+        agg = captured["aggregation"]
+        assert isinstance(agg, MetaJudge)
+        # GSM8K profile has an output_schema — it must be forwarded to MetaJudge.
+        assert agg._output_schema is not None  # type: ignore[attr-defined]
+        assert "answer" in str(agg._output_schema)  # type: ignore[attr-defined]
+
+
 class TestYamlConfigsHaveNewKeys:
     def test_fast_config_has_topology(self) -> None:
         cfg = load_config("configs/experiment/fast.yaml")
@@ -254,7 +648,9 @@ class TestYamlConfigsHaveNewKeys:
 
     def test_fast_config_has_aggregation(self) -> None:
         cfg = load_config("configs/experiment/fast.yaml")
-        assert cfg["council"]["aggregation"] == "majority_vote"
+        # fast.yaml uses meta_judge: the integration baseline exercises the
+        # full informed-aggregation path (debate transcript + synthesis).
+        assert cfg["council"]["aggregation"] == "meta_judge"
 
     def test_fast_config_has_termination(self) -> None:
         cfg = load_config("configs/experiment/fast.yaml")
@@ -263,3 +659,35 @@ class TestYamlConfigsHaveNewKeys:
     def test_full_config_has_topology(self) -> None:
         cfg = load_config("configs/experiment/full.yaml")
         assert cfg["council"]["topology"] == "complete"
+
+    def test_fast_config_uses_rich_per_agent_form(self) -> None:
+        """fast.yaml demonstrates the dict form (model + temperature + system_prompt)."""
+        cfg = load_config("configs/experiment/fast.yaml")
+        models = cfg["council"]["models"]
+        # At least one entry must be a dict with model + temperature — proves the
+        # rich form is documented and parseable.
+        dict_entries = [m for m in models if isinstance(m, dict)]
+        assert dict_entries, "fast.yaml should demonstrate the dict form for council.models"
+        first = dict_entries[0]
+        assert "model" in first and isinstance(first["model"], str)
+        assert "temperature" in first
+        # At least one entry must also carry a system_prompt to exercise that field.
+        assert any("system_prompt" in m for m in dict_entries)
+
+    def test_fast_config_has_rich_meta_judge(self) -> None:
+        """fast.yaml uses the nested meta_judge dict, not the legacy bare string."""
+        cfg = load_config("configs/experiment/fast.yaml")
+        mj = cfg["council"].get("meta_judge")
+        assert isinstance(mj, dict), "fast.yaml should use the meta_judge: {...} form"
+        assert "model" in mj and isinstance(mj["model"], str)
+        assert "temperature" in mj
+        assert "system_prompt" in mj
+
+    def test_fast_config_parses_into_agent_configs(self) -> None:
+        """Smoke: fast.yaml models list parses into AgentConfigs with overrides."""
+        cfg = load_config("configs/experiment/fast.yaml")
+        agents, _ = _parse_agents(cfg["council"]["models"])
+        assert len(agents) == len(cfg["council"]["models"])
+        # At least one agent carries a non-default temperature sourced from YAML.
+        assert any(a.temperature is not None for a in agents)
+        assert any(a.system_prompt for a in agents)

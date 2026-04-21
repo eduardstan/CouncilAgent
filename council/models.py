@@ -41,9 +41,10 @@ class ModelRequest:
 
     model: str
     prompt: str
-    response_format: dict[str, str] | None = None
+    response_format: dict[str, object] | None = None
     max_tokens: int = 2048
     temperature: float = 0.7
+    system_prompt: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,13 +56,35 @@ class ModelFailure:
     retries: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class ModelResponse:
+    """Identity-free response from a one-shot LLM call (e.g. MetaJudge synthesis).
+
+    Distinct from AgentResponse because a synthesis/utility call is not
+    "in" a deliberation round — there is no agent_id or round_index that
+    would be semantically meaningful to stamp.
+    """
+
+    content: str
+    tokens_in: int
+    tokens_out: int
+    cost: float
+
+
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------
 
 
 class ModelClient(ABC):
-    """Route a ModelRequest to the correct backend, return response or failure."""
+    """Route a ModelRequest to the correct backend, return response or failure.
+
+    Two entry points:
+      - complete() — for per-round agent calls; stamps agent_id and round_index
+        onto the returned AgentResponse. Used by council/core.py.
+      - call()     — for one-shot synthesis/utility calls with no pipeline
+        identity. Used by aggregation.MetaJudge.
+    """
 
     @abstractmethod
     async def complete(
@@ -70,6 +93,12 @@ class ModelClient(ABC):
         agent_id: str,
         round_index: int,
     ) -> AgentResponse | ModelFailure: ...
+
+    @abstractmethod
+    async def call(
+        self,
+        request: ModelRequest,
+    ) -> ModelResponse | ModelFailure: ...
 
     @abstractmethod
     async def estimate_cost(self, model: str, prompt_tokens: int) -> float: ...
@@ -81,22 +110,31 @@ class ModelClient(ABC):
 
 _ResponseMap = dict[tuple[str, int], str]
 _ResponseFactory = Callable[[ModelRequest, str, int], str]
+_CallHandler = Callable[[ModelRequest], str] | str
 
 
 class FakeModelClient(ModelClient):
     """Deterministic test double.
 
-    Accepts either:
+    complete() dispatch — pass either:
     - A dict keyed by (agent_id, round_index) → response string
     - A callable (request, agent_id, round_index) → response string
 
-    Unknown (agent_id, round_index) pairs return a ModelFailure.
-    Token counts are approximated from string lengths (deterministic).
-    Cost is always 0.0.
+    call() dispatch — pass call_handler:
+    - A string (returned verbatim), or
+    - A callable (request) → response string
+
+    Unknown keys / missing handlers return ModelFailure.
+    Token counts are approximated from string lengths. Cost is always 0.0.
     """
 
-    def __init__(self, responses: _ResponseMap | _ResponseFactory) -> None:
+    def __init__(
+        self,
+        responses: _ResponseMap | _ResponseFactory,
+        call_handler: _CallHandler | None = None,
+    ) -> None:
         self._responses = responses
+        self._call_handler = call_handler
 
     async def complete(
         self,
@@ -122,6 +160,22 @@ class FakeModelClient(ModelClient):
             agent_id=agent_id,
             content=content,
             round_index=round_index,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost=0.0,
+        )
+
+    async def call(self, request: ModelRequest) -> ModelResponse | ModelFailure:
+        if self._call_handler is None:
+            return ModelFailure(
+                model=request.model,
+                error="FakeModelClient: no call_handler registered",
+            )
+        content = self._call_handler(request) if callable(self._call_handler) else self._call_handler
+        tokens_in = max(1, len(request.prompt) // 4)
+        tokens_out = max(1, len(content) // 4)
+        return ModelResponse(
+            content=content,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             cost=0.0,
@@ -159,7 +213,7 @@ class LiteLLMClient(ModelClient):
         # Load .env so OPENROUTER_API_KEY and other provider keys are available
         # to LiteLLM without requiring the caller to set them manually.
         try:
-            from dotenv import load_dotenv  # type: ignore[import-untyped]
+            from dotenv import load_dotenv
             load_dotenv(override=False)  # don't override already-set env vars
         except ImportError:
             pass  # python-dotenv not installed; assume env is already set
@@ -167,25 +221,26 @@ class LiteLLMClient(ModelClient):
         # Suppress litellm's verbose "Provider List" error banners — they are
         # printed for any exception including rate limits and add no signal.
         try:
-            import litellm as _litellm  # type: ignore[import-untyped]
+            import litellm as _litellm
             _litellm.suppress_debug_info = True
-            _litellm.set_verbose = False
+            _litellm.set_verbose = False  # type: ignore[attr-defined]
         except Exception as exc:
             logger.debug("litellm debug-suppression setup skipped: %s", exc)
 
-    async def complete(
-        self,
-        request: ModelRequest,
-        agent_id: str,
-        round_index: int,
-    ) -> AgentResponse | ModelFailure:
+    async def _invoke(self, request: ModelRequest) -> ModelResponse | ModelFailure:
+        """Shared litellm invocation — used by both complete() and call()."""
         import asyncio
 
         import litellm  # local import keeps council/core.py framework-free
 
+        messages: list[dict[str, str]] = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": request.prompt})
+
         kwargs: dict[str, object] = {
             "model": request.model,
-            "messages": [{"role": "user", "content": request.prompt}],
+            "messages": messages,
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
         }
@@ -202,7 +257,6 @@ class LiteLLMClient(ModelClient):
                 msg = response.choices[0].message
                 # Some thinking models (e.g. lfm-2.5-1.2b-thinking) return
                 # content=None with the answer only in reasoning_content.
-                # Fall back to reasoning_content when content is absent.
                 content: str = (
                     msg.content
                     or getattr(msg, "reasoning_content", None)
@@ -211,7 +265,6 @@ class LiteLLMClient(ModelClient):
                 tokens_in: int = response.usage.prompt_tokens or 0
                 tokens_out: int = response.usage.completion_tokens or 0
 
-                # Parse real cost from litellm hidden params (populated for most providers).
                 cost: float = 0.0
                 try:
                     raw_cost = response._hidden_params.get("response_cost", 0.0)
@@ -219,23 +272,21 @@ class LiteLLMClient(ModelClient):
                 except (AttributeError, TypeError, ValueError):
                     pass
 
-                return AgentResponse(
-                    agent_id=agent_id,
+                return ModelResponse(
                     content=content,
-                    round_index=round_index,
                     tokens_in=tokens_in,
                     tokens_out=tokens_out,
                     cost=cost,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 last_error = f"timeout after {self._timeout}s"
                 logger.warning("LiteLLMClient: %s timed out (attempt %d/%d)",
                                request.model, attempt + 1, self._max_retries)
-                break  # timeouts are not retryable
-            except litellm.RateLimitError as exc:
+                break
+            except litellm.RateLimitError as exc:  # type: ignore[attr-defined]
                 last_error = str(exc)
                 if attempt < self._max_retries - 1:
-                    backoff = 2.0 ** attempt  # 1s, 2s, 4s ...
+                    backoff = 2.0 ** attempt
                     logger.warning("LiteLLMClient: rate limit on %s, retrying in %.1fs (attempt %d/%d)",
                                    request.model, backoff, attempt + 1, self._max_retries)
                     await asyncio.sleep(backoff)
@@ -245,9 +296,30 @@ class LiteLLMClient(ModelClient):
             except Exception as exc:
                 last_error = str(exc)
                 logger.debug("LiteLLMClient failure for %s: %s", request.model, exc)
-                break  # non-retryable errors
+                break
 
         return ModelFailure(model=request.model, error=last_error)
+
+    async def complete(
+        self,
+        request: ModelRequest,
+        agent_id: str,
+        round_index: int,
+    ) -> AgentResponse | ModelFailure:
+        outcome = await self._invoke(request)
+        if isinstance(outcome, ModelFailure):
+            return outcome
+        return AgentResponse(
+            agent_id=agent_id,
+            content=outcome.content,
+            round_index=round_index,
+            tokens_in=outcome.tokens_in,
+            tokens_out=outcome.tokens_out,
+            cost=outcome.cost,
+        )
+
+    async def call(self, request: ModelRequest) -> ModelResponse | ModelFailure:
+        return await self._invoke(request)
 
     async def estimate_cost(self, model: str, prompt_tokens: int) -> float:
         try:

@@ -19,7 +19,6 @@ from council.context import AgentResponse, CouncilResult
 from council.core import run_council
 from council.models import ModelClient
 from council.policy import CouncilConfig
-from council.task_profile import TaskProfile
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +80,8 @@ class UpgradeModels(EscalationStrategy):
             termination=self._config.termination,
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
+            answer_response_format=self._config.answer_response_format,
+            task_hint=self._config.prompt_hint,
         )
         return _result_to_response(result, base_cost=response.cost, escalated=True)
 
@@ -111,6 +112,8 @@ class AddDeliberation(EscalationStrategy):
             termination=FixedRounds(self._extra_rounds + 1),
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
+            answer_response_format=self._config.answer_response_format,
+            task_hint=self._config.prompt_hint,
         )
         return _result_to_response(result, base_cost=response.cost, escalated=True)
 
@@ -143,11 +146,7 @@ class CouncilAgent:
         self._escalation = escalation
         self._escalation_threshold = escalation_threshold
 
-    async def complete(
-        self,
-        prompt: str,
-        task_profile: TaskProfile | None = None,
-    ) -> AgentResponse:
+    async def complete(self, prompt: str) -> AgentResponse:
         """Run the council and return an AgentResponse with council metadata."""
         result = await run_council(
             prompt=prompt,
@@ -160,6 +159,7 @@ class CouncilAgent:
             ranking=self._config.ranking,
             anonymize=self._config.anonymize,
             answer_response_format=self._config.answer_response_format,
+            task_hint=self._config.prompt_hint,
         )
 
         response = _result_to_response(result)

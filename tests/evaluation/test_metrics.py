@@ -226,18 +226,23 @@ class TestInterRaterAgreement:
 
 class TestDiversityTrajectory:
     def _fake_embedder(self) -> object:
-        """Returns an embedder that maps each unique string to a unique orthogonal vector."""
+        """Returns an embedder that maps each unique string to a unique orthogonal vector.
+
+        All emitted vectors share a fixed dimensionality so they can be
+        compared with cosine distance (which requires equal lengths).
+        """
 
         class _FakeEmbedder:
+            _DIM = 16
             _vocab: dict[str, list[float]] = {}
 
             def encode(self, texts: list[str]) -> list[list[float]]:
                 result = []
                 for t in texts:
                     if t not in self._vocab:
-                        dim = len(self._vocab)
-                        v = [0.0] * (dim + 1)
-                        v[dim] = 1.0
+                        idx = len(self._vocab)
+                        v = [0.0] * self._DIM
+                        v[idx % self._DIM] = 1.0
                         self._vocab[t] = v
                     result.append(self._vocab[t])
                 return result

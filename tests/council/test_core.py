@@ -387,7 +387,7 @@ async def test_aggregation_receives_only_last_answer_round_responses() -> None:
     from council.context import AggregationResult as AR
 
     class SpyAggregation(Aggregation):
-        async def aggregate(self, responses, preferences=None, round_history=None):
+        async def aggregate(self, responses, preferences=None, round_history=None, original_prompt=None):
             seen_responses.append([r.content for r in responses])
             return AggregationResult(final_answer=responses[0].content if responses else "", confidence=1.0, method="spy")
 
@@ -580,6 +580,140 @@ async def test_generate_uses_topology_communication_mode() -> None:
     assert all(m == CommunicationMode.BROADCAST for m in captured_modes), (
         f"BusTopology round-0 contexts should carry BROADCAST, got: {captured_modes}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 6.12 — prompt_hint threads to VisibilityContext and Protocol prompts
+# ---------------------------------------------------------------------------
+
+
+async def test_task_hint_appears_in_answer_round_prompts() -> None:
+    """When task_hint is set, it must appear in answer-round prompts only."""
+    captured: list[tuple[int, str]] = []  # (round_index, prompt)
+
+    class SpyProtocol(PeerReviewProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            p = super().build_prompt(ctx)
+            captured.append((ctx.round_index, p))
+            return p
+
+    agents = _agents(3)
+    client = _fake(3, "42")
+    hint = "Return only the final numeric answer, no units or prose."
+    await run_council(
+        prompt="Q?",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),  # rounds 0, 1, 2 — PeerReview: 0=answer, 1=critique, 2=answer
+        task_hint=hint,
+    )
+    answer_prompts = [p for r, p in captured if r in (0, 2)]
+    critique_prompts = [p for r, p in captured if r == 1]
+    assert answer_prompts, "expected at least one answer-round prompt"
+    for p in answer_prompts:
+        assert hint in p, f"answer-round prompt missing hint: {p[:200]}"
+    for p in critique_prompts:
+        assert hint not in p, f"critique-round prompt should NOT contain hint: {p[:200]}"
+
+
+async def test_empty_task_hint_is_noop() -> None:
+    """An empty task_hint must not change the prompt at all."""
+    captured: list[str] = []
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            p = super().build_prompt(ctx)
+            captured.append(p)
+            return p
+
+    agents = _agents(2)
+    client = _fake(2, "7")
+    await run_council(
+        prompt="What?",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+        task_hint="",
+    )
+    assert captured
+    for p in captured:
+        assert p.strip() == "What?"
+
+
+# ---------------------------------------------------------------------------
+# Task 6.11 — per-agent temperature / max_tokens overrides on AgentConfig
+# ---------------------------------------------------------------------------
+
+
+async def test_per_agent_temperature_override_reaches_model_request() -> None:
+    """AgentConfig.temperature/max_tokens, when set, must override ModelRequest defaults."""
+    from council.models import FakeModelClient, ModelFailure, ModelRequest
+
+    seen: list[ModelRequest] = []
+
+    class SpyClient(FakeModelClient):
+        async def complete(self, request, agent_id, round_index):  # type: ignore[override]
+            seen.append(request)
+            return await super().complete(request, agent_id, round_index)
+
+    agents = [
+        AgentConfig(id="cold", model="fake/a", temperature=0.1, max_tokens=128),
+        AgentConfig(id="warm", model="fake/b", temperature=0.9),
+        AgentConfig(id="default", model="fake/c"),
+    ]
+    client = SpyClient({(a.id, r): "42" for a in agents for r in range(3)})
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    by_model = {req.model: req for req in seen if not isinstance(req, ModelFailure)}
+    assert by_model["fake/a"].temperature == 0.1
+    assert by_model["fake/a"].max_tokens == 128
+    assert by_model["fake/b"].temperature == 0.9
+    assert by_model["fake/b"].max_tokens == 2048  # ModelRequest default
+    assert by_model["fake/c"].temperature == 0.7  # ModelRequest default
+    assert by_model["fake/c"].max_tokens == 2048
+
+
+async def test_per_agent_system_prompt_reaches_model_request() -> None:
+    """AgentConfig.system_prompt, when set, must appear on the ModelRequest."""
+    from council.models import FakeModelClient, ModelFailure, ModelRequest
+
+    seen: list[ModelRequest] = []
+
+    class SpyClient(FakeModelClient):
+        async def complete(self, request, agent_id, round_index):  # type: ignore[override]
+            seen.append(request)
+            return await super().complete(request, agent_id, round_index)
+
+    agents = [
+        AgentConfig(id="persona", model="fake/a", system_prompt="You are a careful reasoner."),
+        AgentConfig(id="default", model="fake/b"),
+    ]
+    client = SpyClient({(a.id, r): "42" for a in agents for r in range(3)})
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    by_model = {req.model: req for req in seen if not isinstance(req, ModelFailure)}
+    assert by_model["fake/a"].system_prompt == "You are a careful reasoner."
+    assert by_model["fake/b"].system_prompt is None
 
 
 # ---------------------------------------------------------------------------

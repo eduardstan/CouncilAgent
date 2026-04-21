@@ -8,13 +8,19 @@ Phase 3 work — stubs raise NotImplementedError.
 
 from __future__ import annotations
 
+import json
 import logging
 from abc import ABC, abstractmethod
-from collections import Counter
-from collections import defaultdict
-from typing import Callable
+from collections import Counter, defaultdict
+from collections.abc import Callable
 
-from council.context import AgentResponse, AggregationResult, AnswerNormalizer, PreferenceData, RichPreference
+from council.context import (
+    AgentResponse,
+    AggregationResult,
+    AnswerNormalizer,
+    PreferenceData,
+    RichPreference,
+)
 from council.models import ModelClient, ModelFailure, ModelRequest
 
 logger = logging.getLogger(__name__)
@@ -27,6 +33,10 @@ class Aggregation(ABC):
     Blind aggregators (MajorityVote, BordaCount, Condorcet) ignore it.
     Informed aggregators (MetaJudge) use it to trace how consensus formed.
     See Issue 11 in LLMCouncil_Deep_Review.md for the design rationale.
+
+    The optional original_prompt parameter carries the user's question. MetaJudge
+    uses it to anchor the synthesis prompt so the judge answers the actual task
+    rather than guessing it from the debate. Blind aggregators ignore it.
     """
 
     @abstractmethod
@@ -35,6 +45,7 @@ class Aggregation(ABC):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult: ...
 
 
@@ -56,6 +67,7 @@ class MajorityVote(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult:
         if not responses:
             return AggregationResult(final_answer="", confidence=0.0, method="MajorityVote")
@@ -93,6 +105,7 @@ class BordaCount(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult:
         if not responses or not preferences:
             return AggregationResult(final_answer="", confidence=0.0, method="BordaCount")
@@ -144,8 +157,10 @@ class MetaJudge(Aggregation):
     hardcoded (Constitution §3). MetaJudge does NOT import Protocol; round labels
     come from round_index alone via the injected round_label_fn.
 
-    Confidence is fixed at 1.0 because MetaJudge produces one synthesized answer;
-    agreement-based confidence lives at the CouncilAgent layer above.
+    Confidence (Constitution §5): when a normalizer is injected, confidence is
+    the fraction of final-round agent responses whose canonical form matches
+    the synthesized answer's canonical form. Without a normalizer, confidence
+    falls back to 1.0 (sentinel — the synthesis model spoke, no calibration).
     """
 
     def __init__(
@@ -153,24 +168,47 @@ class MetaJudge(Aggregation):
         model: str,
         model_client: ModelClient,
         round_label_fn: Callable[[int], str] | None = None,
+        response_format: dict[str, object] | None = None,
+        normalizer: AnswerNormalizer | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 2048,
+        system_prompt: str | None = None,
+        output_schema: dict[str, object] | None = None,
     ) -> None:
         self._model = model
         self._model_client = model_client
         self._round_label_fn = round_label_fn or _default_round_label
+        self._response_format = response_format
+        self._normalizer = normalizer
+        self._temperature = temperature
+        self._max_tokens = max_tokens
+        self._system_prompt = system_prompt
+        self._output_schema = output_schema
 
     def _format_debate(self, round_history: list[AgentResponse]) -> str:
-        """Format the full deliberation history as a phase-labelled transcript."""
+        """Format the full deliberation history as a phase-labelled transcript.
+
+        Agent labels are stable across rounds: the same agent_id is always
+        rendered as the same "Response X" marker, derived from a sort over
+        the union of agent_ids seen in the history. This lets the synthesis
+        model track how each participant's position evolved — critical for
+        the "informed Area Chair" reading of the debate.
+        """
         by_round: dict[int, list[AgentResponse]] = defaultdict(list)
         for r in round_history:
             by_round[r.round_index].append(r)
+
+        # Stable label mapping: sorted agent_ids → A, B, C, …
+        all_agent_ids = sorted({r.agent_id for r in round_history})
+        label_map = {aid: chr(65 + i) for i, aid in enumerate(all_agent_ids)}
 
         sections: list[str] = []
         for round_idx in sorted(by_round):
             label = self._round_label_fn(round_idx)
             phase_label = "GENERATE" if round_idx == 0 else label
             sections.append(f"### Round {round_idx} — {phase_label}")
-            for i, r in enumerate(by_round[round_idx]):
-                sections.append(f"[Response {chr(65 + i)}]:\n{r.content}")
+            for r in sorted(by_round[round_idx], key=lambda x: x.agent_id):
+                sections.append(f"[Response {label_map[r.agent_id]}]:\n{r.content}")
         return "\n\n".join(sections)
 
     async def aggregate(
@@ -178,9 +216,16 @@ class MetaJudge(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult:
         if not responses:
             return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
+
+        # Anchor the synthesis on the original question so the judge answers
+        # the actual task rather than inferring it from the transcript.
+        task_section = (
+            f"## Original question\n{original_prompt}\n\n" if original_prompt else ""
+        )
 
         if round_history:
             debate_section = self._format_debate(round_history)
@@ -189,7 +234,8 @@ class MetaJudge(Aggregation):
                 "Below is the full debate transcript, organized by round. "
                 "Synthesize the best final answer, taking into account how the "
                 "agents' positions evolved through critique and revision.\n\n"
-                f"{debate_section}\n\n"
+                f"{task_section}"
+                f"## Debate transcript\n{debate_section}\n\n"
                 "Provide your synthesized final answer:"
             )
         else:
@@ -201,22 +247,53 @@ class MetaJudge(Aggregation):
             prompt = (
                 "You are a synthesis judge. Below are responses from multiple agents "
                 "to a question. Synthesize them into a single best answer.\n\n"
-                f"Responses:\n{formatted}\n\n"
+                f"{task_section}"
+                f"## Responses\n{formatted}\n\n"
                 "Provide your synthesized answer:"
             )
 
-        outcome = await self._model_client.complete(
-            ModelRequest(model=self._model, prompt=prompt),
-            agent_id="meta-judge",
-            round_index=0,
+        # When response_format requests JSON, the prompt MUST mention "JSON"
+        # (OpenAI API requirement). Inject the task output schema when available
+        # so the synthesis model knows the expected shape.
+        if self._response_format and self._output_schema:
+            prompt += (
+                "\n\nRespond with valid JSON matching this schema:\n"
+                + json.dumps(self._output_schema, indent=2)
+            )
+        elif self._response_format:
+            prompt += "\n\nRespond with valid JSON."
+
+        outcome = await self._model_client.call(
+            ModelRequest(
+                model=self._model,
+                prompt=prompt,
+                response_format=self._response_format,
+                temperature=self._temperature,
+                max_tokens=self._max_tokens,
+                system_prompt=self._system_prompt,
+            ),
         )
         if isinstance(outcome, ModelFailure):
             logger.warning("MetaJudge model call failed: %s", outcome.error)
             return AggregationResult(final_answer="", confidence=0.0, method="MetaJudge")
 
+        # Normalize the synthesis output so final_answer is the canonical form,
+        # consistent with MajorityVote (both return e.g. "18", not raw JSON).
+        final_answer = outcome.content
+        confidence = 1.0
+        if self._normalizer is not None:
+            synth_canonical = await self._normalizer.normalize(outcome.content)
+            final_answer = synth_canonical
+            matches = 0
+            for r in responses:
+                agent_canonical = await self._normalizer.normalize(r.content)
+                if agent_canonical == synth_canonical:
+                    matches += 1
+            confidence = matches / len(responses) if responses else 0.0
+
         return AggregationResult(
-            final_answer=outcome.content,
-            confidence=1.0,
+            final_answer=final_answer,
+            confidence=confidence,
             method="MetaJudge",
         )
 
@@ -239,6 +316,7 @@ class CondorcetAggregation(Aggregation):
         responses: list[AgentResponse],
         preferences: list[PreferenceData] | None = None,
         round_history: list[AgentResponse] | None = None,
+        original_prompt: str | None = None,
     ) -> AggregationResult:
         if not responses or not preferences:
             return AggregationResult(final_answer="", confidence=0.0, method="Condorcet")

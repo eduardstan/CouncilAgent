@@ -46,9 +46,10 @@ class TestCouncilConfig:
         with pytest.raises((AttributeError, TypeError)):
             cfg.name = "changed"  # type: ignore[misc]
 
-    def test_ranking_defaults_to_none(self) -> None:
+    def test_ranking_defaults_to_null_ranking(self) -> None:
+        from council.ranking import NullRanking
         cfg = self._minimal_config()
-        assert cfg.ranking is None
+        assert isinstance(cfg.ranking, NullRanking)
 
 
 # ---------------------------------------------------------------------------
@@ -170,3 +171,36 @@ class TestCouncilPolicy:
         cfg = policy.plan("Write a poem.", _profile_open_ended())
         assert isinstance(cfg.aggregation, MetaJudge)
         assert cfg.aggregation._model == "fake/primary"  # type: ignore[attr-defined]
+
+    def test_meta_judge_receives_response_format_when_schema_present(self) -> None:
+        """When TaskProfile has output_schema, MetaJudge.response_format mirrors the config's."""
+        from council.task_profile import TaskProfile
+        schema: dict[str, object] = {"type": "object", "properties": {"answer": {"type": "string"}}}
+        profile = TaskProfile(
+            name="structured_open",
+            normalizer=IdentityNormalizer(),
+            output_schema=schema,
+            recommended_aggregation="meta_judge",
+        )
+        policy = CouncilPolicy(
+            model_client=FakeModelClient({}),
+            default_models=["fake/a", "fake/b"],
+        )
+        cfg = policy.plan("prompt", profile)
+        assert isinstance(cfg.aggregation, MetaJudge)
+        assert cfg.aggregation._response_format == cfg.answer_response_format  # type: ignore[attr-defined]
+        assert cfg.aggregation._response_format == {"type": "json_object"}  # type: ignore[attr-defined]
+
+    def test_meta_judge_round_label_fn_reflects_peer_review_protocol(self) -> None:
+        """Policy wires round_label_fn so odd rounds are labelled CRITIQUE (PeerReview)."""
+        policy = CouncilPolicy(
+            model_client=FakeModelClient({}),
+            default_models=["fake/a", "fake/b"],
+        )
+        cfg = policy.plan("Write a poem.", _profile_open_ended())
+        assert isinstance(cfg.aggregation, MetaJudge)
+        label_fn = cfg.aggregation._round_label_fn  # type: ignore[attr-defined]
+        # PeerReviewProtocol: even rounds = answer, odd rounds = critique.
+        assert label_fn(0) == "GENERATE"
+        assert label_fn(1) == "CRITIQUE"
+        assert label_fn(2) == "ANSWER"

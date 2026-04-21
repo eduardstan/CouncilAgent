@@ -140,7 +140,7 @@ class TestBordaCount:
 class TestMetaJudge:
     def _make_judge(self, synthesis: str) -> MetaJudge:
         from council.models import FakeModelClient
-        client = FakeModelClient({("meta-judge", 0): synthesis})
+        client = FakeModelClient({}, call_handler=synthesis)
         return MetaJudge(model="fake/synth", model_client=client)
 
     async def test_returns_synthesis_model_output(self) -> None:
@@ -152,12 +152,12 @@ class TestMetaJudge:
     async def test_prompt_contains_all_responses(self) -> None:
         captured: list[str] = []
 
-        def factory(req, agent_id, round_index):  # type: ignore[return]
+        def handler(req):  # type: ignore[no-untyped-def]
             captured.append(req.prompt)
             return "synthesized"
 
         from council.models import FakeModelClient
-        agg = MetaJudge(model="fake/m", model_client=FakeModelClient(factory))
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}, call_handler=handler))
         await agg.aggregate([_resp("alpha", "agent-0"), _resp("beta", "agent-1")])
         assert captured, "model was never called"
         assert "alpha" in captured[0]
@@ -167,12 +167,12 @@ class TestMetaJudge:
         """Constitution §10: MetaJudge must not expose real agent_id in synthesis prompt."""
         captured: list[str] = []
 
-        def factory(req, agent_id, round_index):  # type: ignore[return]
+        def handler(req):  # type: ignore[no-untyped-def]
             captured.append(req.prompt)
             return "ok"
 
         from council.models import FakeModelClient
-        agg = MetaJudge(model="fake/m", model_client=FakeModelClient(factory))
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}, call_handler=handler))
         await agg.aggregate([_resp("answer-A", "agent-0"), _resp("answer-B", "agent-1")])
         assert captured
         assert "agent-0" not in captured[0]
@@ -189,7 +189,7 @@ class TestMetaJudge:
 
     async def test_model_failure_returns_empty(self) -> None:
         from council.models import FakeModelClient
-        # Empty dict → FakeModelClient returns ModelFailure for unknown key
+        # No call_handler set → FakeModelClient.call() returns ModelFailure.
         agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}))
         result = await agg.aggregate([_resp("x")])
         assert result.final_answer == ""
@@ -199,7 +199,7 @@ class TestMetaJudge:
         """When round_history is provided, MetaJudge prompt contains phase labels."""
         captured: list[str] = []
 
-        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+        def handler(request):  # type: ignore[no-untyped-def]
             captured.append(request.prompt)
             return "synthesized"
 
@@ -214,7 +214,7 @@ class TestMetaJudge:
             AgentResponse("agent-0", "revised answer", 2, 5, 5, 0.0),
             AgentResponse("agent-1", "revised answer", 2, 5, 5, 0.0),
         ]
-        agg = MetaJudge(model="fake/m", model_client=FakeModelClient(factory))
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}, call_handler=handler))
         final_responses = [r for r in history if r.round_index == 2]
         await agg.aggregate(final_responses, round_history=history)
 
@@ -227,16 +227,234 @@ class TestMetaJudge:
         assert "GENERATE" in prompt  # round 0 label
         assert "CRITIQUE" in prompt  # odd round label
 
+    async def test_temperature_and_max_tokens_threaded_into_request(self) -> None:
+        """Synthesis temperature and max_tokens are configurable per-MetaJudge."""
+        from council.models import ModelRequest
+        captured: list[ModelRequest] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request)
+            return "synth"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            temperature=0.0,
+            max_tokens=512,
+        )
+        await agg.aggregate([_resp("a")])
+        assert captured
+        assert captured[0].temperature == 0.0
+        assert captured[0].max_tokens == 512
+
+    async def test_temperature_default_favours_consistency(self) -> None:
+        """MetaJudge defaults to low temperature (synthesis should be deterministic)."""
+        from council.models import FakeModelClient
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler="x"),
+        )
+        assert agg._temperature < 0.5  # type: ignore[attr-defined]
+
+    async def test_system_prompt_threaded_into_request(self) -> None:
+        """system_prompt is forwarded to ModelRequest so LiteLLMClient prepends it."""
+        from council.models import FakeModelClient, ModelRequest
+        captured: list[ModelRequest] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request)
+            return "synth"
+
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            system_prompt="You are the synthesis judge.",
+        )
+        await agg.aggregate([_resp("a")])
+        assert captured
+        assert captured[0].system_prompt == "You are the synthesis judge."
+
+    async def test_system_prompt_defaults_to_none(self) -> None:
+        """Absent system_prompt yields None on the request (no system turn prepended)."""
+        from council.models import FakeModelClient, ModelRequest
+        captured: list[ModelRequest] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request)
+            return "synth"
+
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+        )
+        await agg.aggregate([_resp("a")])
+        assert captured
+        assert captured[0].system_prompt is None
+
+    async def test_confidence_from_normalizer_agreement_when_injected(self) -> None:
+        """Constitution §5: with a normalizer, confidence = fraction of agents matching synthesis."""
+        from council.models import FakeModelClient
+        # Synthesis answer matches 2/3 of the final-round agents after normalization.
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler="42"),
+            normalizer=IdentityNormalizer(),
+        )
+        responses = [_resp("42"), _resp("42"), _resp("99")]
+        result = await agg.aggregate(responses)
+        assert result.final_answer == "42"
+        assert result.confidence == pytest.approx(2 / 3)
+
+    async def test_confidence_defaults_to_one_without_normalizer(self) -> None:
+        """Without a normalizer, MetaJudge confidence stays at sentinel 1.0."""
+        from council.models import FakeModelClient
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler="synth"),
+        )
+        result = await agg.aggregate([_resp("a"), _resp("b"), _resp("c")])
+        assert result.final_answer == "synth"
+        assert result.confidence == pytest.approx(1.0)
+
+    async def test_confidence_is_zero_when_synthesis_disagrees_with_all(self) -> None:
+        """If no agent matches the synthesis, confidence is 0/n."""
+        from council.models import FakeModelClient
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler="100"),
+            normalizer=IdentityNormalizer(),
+        )
+        result = await agg.aggregate([_resp("42"), _resp("99")])
+        assert result.final_answer == "100"
+        assert result.confidence == pytest.approx(0.0)
+
+    async def test_original_prompt_anchors_synthesis(self) -> None:
+        """When original_prompt is supplied, it appears in the synthesis prompt."""
+        captured: list[str] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synth"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}, call_handler=handler))
+        await agg.aggregate(
+            [_resp("alpha"), _resp("beta")],
+            original_prompt="What is the capital of France?",
+        )
+        assert captured
+        assert "What is the capital of France?" in captured[0]
+        assert "Original question" in captured[0]
+
+    async def test_original_prompt_omitted_when_none(self) -> None:
+        """When original_prompt is None (legacy callers), no task section appears."""
+        captured: list[str] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synth"
+
+        from council.models import FakeModelClient
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}, call_handler=handler))
+        await agg.aggregate([_resp("alpha")])
+        assert captured
+        assert "Original question" not in captured[0]
+
+    async def test_response_format_is_passed_to_model_call(self) -> None:
+        """MetaJudge threads response_format into the ModelRequest for its synthesis call."""
+        captured: list[dict[str, object] | None] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.response_format)
+            return "synth"
+
+        from council.models import FakeModelClient
+        schema: dict[str, object] = {"type": "json_object"}
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            response_format=schema,
+        )
+        await agg.aggregate([_resp("a"), _resp("b")])
+        assert captured == [schema]
+
+    async def test_agent_labels_are_stable_across_rounds(self) -> None:
+        """Same agent_id maps to the same 'Response X' marker in every round.
+
+        This lets the synthesis model trace position evolution; if labels
+        shifted round-to-round, the transcript would silently permute speakers.
+        """
+        captured: list[str] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synth"
+
+        from council.context import AgentResponse
+        from council.models import FakeModelClient
+
+        # Deliberately shuffle the history ordering within rounds so that naive
+        # positional labelling would produce inconsistent labels.
+        history = [
+            AgentResponse("agent-1", "r0-1", 0, 5, 5, 0.0),
+            AgentResponse("agent-0", "r0-0", 0, 5, 5, 0.0),
+            AgentResponse("agent-0", "r1-0", 1, 5, 5, 0.0),
+            AgentResponse("agent-1", "r1-1", 1, 5, 5, 0.0),
+        ]
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+        )
+        final_responses = [r for r in history if r.round_index == 1]
+        await agg.aggregate(final_responses, round_history=history)
+
+        assert captured
+        prompt = captured[0]
+        # agent-0 → Response A; agent-1 → Response B (sorted order).
+        # Both rounds must use the same mapping.
+        r0_section = prompt.split("### Round 1")[0]
+        r1_section = prompt.split("### Round 1")[1]
+        assert "[Response A]:\nr0-0" in r0_section
+        assert "[Response B]:\nr0-1" in r0_section
+        assert "[Response A]:\nr1-0" in r1_section
+        assert "[Response B]:\nr1-1" in r1_section
+
+    async def test_round_label_fn_overrides_default_phase_labels(self) -> None:
+        """A custom round_label_fn renames phase markers in the synthesis prompt."""
+        captured: list[str] = []
+
+        def handler(request):  # type: ignore[no-untyped-def]
+            captured.append(request.prompt)
+            return "synth"
+
+        from council.context import AgentResponse
+        from council.models import FakeModelClient
+
+        history = [
+            AgentResponse("agent-0", "x", 0, 5, 5, 0.0),
+            AgentResponse("agent-0", "y", 1, 5, 5, 0.0),
+        ]
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            round_label_fn=lambda i: f"CUSTOM-{i}",
+        )
+        await agg.aggregate([history[-1]], round_history=history)
+        assert captured
+        # Round 0 is always GENERATE; round 1 uses the custom label.
+        assert "CUSTOM-1" in captured[0]
+
     async def test_round_history_none_falls_back_to_flat_list(self) -> None:
         """Without round_history, MetaJudge uses flat response list."""
         captured: list[str] = []
 
-        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+        def handler(request):  # type: ignore[no-untyped-def]
             captured.append(request.prompt)
             return "synthesized"
 
         from council.models import FakeModelClient
-        agg = MetaJudge(model="fake/m", model_client=FakeModelClient(factory))
+        agg = MetaJudge(model="fake/m", model_client=FakeModelClient({}, call_handler=handler))
         await agg.aggregate([_resp("alpha"), _resp("beta")], round_history=None)
 
         assert captured
@@ -260,7 +478,7 @@ class TestMetaJudge:
         """Smoke test: all subclasses accept round_history=None without raising."""
         from council.models import FakeModelClient
         responses = [_resp("x", "agent-0")]
-        client = FakeModelClient({("meta-judge", 0): "x"})
+        client = FakeModelClient({}, call_handler="x")
 
         for agg in [
             MajorityVote(normalizer=IdentityNormalizer()),

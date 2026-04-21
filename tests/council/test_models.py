@@ -18,6 +18,7 @@ from council.models import (
     LiteLLMClient,
     ModelFailure,
     ModelRequest,
+    ModelResponse,
 )
 
 # ---------------------------------------------------------------------------
@@ -36,11 +37,20 @@ class TestModelRequest:
         assert req.response_format is None
         assert req.max_tokens == 2048
         assert req.temperature == 0.7
+        assert req.system_prompt is None
 
     def test_is_frozen(self) -> None:
         req = ModelRequest(model="m", prompt="p")
         with pytest.raises((AttributeError, TypeError)):
             req.prompt = "changed"  # type: ignore[misc]
+
+    def test_response_format_accepts_nested_schema(self) -> None:
+        schema: dict[str, object] = {
+            "type": "json_schema",
+            "schema": {"type": "object", "properties": {"answer": {"type": "string"}}},
+        }
+        req = ModelRequest(model="m", prompt="p", response_format=schema)
+        assert req.response_format == schema
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +146,35 @@ class TestFakeModelClient:
         assert isinstance(r1, AgentResponse)
         assert r0.content == "first"
         assert r1.content == "second"
+
+    async def test_call_with_string_handler_returns_model_response(self) -> None:
+        client = FakeModelClient({}, call_handler="synthesized")
+        result = await client.call(self._req())
+        assert isinstance(result, ModelResponse)
+        assert result.content == "synthesized"
+        assert result.tokens_in > 0
+        assert result.tokens_out > 0
+        assert result.cost == 0.0
+
+    async def test_call_with_callable_handler_receives_request(self) -> None:
+        seen: list[ModelRequest] = []
+
+        def handler(req: ModelRequest) -> str:
+            seen.append(req)
+            return f"model={req.model}"
+
+        client = FakeModelClient({}, call_handler=handler)
+        result = await client.call(self._req("fake/judge"))
+        assert isinstance(result, ModelResponse)
+        assert result.content == "model=fake/judge"
+        assert len(seen) == 1
+        assert seen[0].model == "fake/judge"
+
+    async def test_call_without_handler_returns_failure(self) -> None:
+        client = FakeModelClient({("a", 0): "x"})  # no call_handler set
+        result = await client.call(self._req())
+        assert isinstance(result, ModelFailure)
+        assert "call_handler" in result.error
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +291,77 @@ class TestLiteLLMClient:
         cost = await client.estimate_cost("openai/gpt-4o-mini", prompt_tokens=100)
         assert isinstance(cost, float)
         assert cost >= 0.0
+
+    async def test_call_returns_model_response_without_identity(self, mocker: pytest.FixtureRequest) -> None:
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = "synthesis"
+        mock_resp.usage.prompt_tokens = 7
+        mock_resp.usage.completion_tokens = 3
+        mock_resp._hidden_params = {"response_cost": 0.001}
+
+        mocker.patch("litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp)
+
+        client = LiteLLMClient()
+        result = await client.call(ModelRequest(model="openai/gpt-4o-mini", prompt="judge this"))
+        assert isinstance(result, ModelResponse)
+        assert result.content == "synthesis"
+        assert result.tokens_in == 7
+        assert result.tokens_out == 3
+        assert result.cost == pytest.approx(0.001)
+
+    async def test_call_returns_failure_on_exception(self, mocker: pytest.FixtureRequest) -> None:
+        mocker.patch("litellm.acompletion", side_effect=Exception("synthesis failed"))
+        client = LiteLLMClient()
+        result = await client.call(ModelRequest(model="openai/gpt-4o-mini", prompt="hi"))
+        assert isinstance(result, ModelFailure)
+        assert "synthesis failed" in result.error.lower()
+
+    async def test_system_prompt_prepends_system_message(self, mocker: pytest.FixtureRequest) -> None:
+        """When system_prompt is set, it must appear as the first message with role=system."""
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = "ok"
+        mock_resp.usage.prompt_tokens = 3
+        mock_resp.usage.completion_tokens = 1
+        mock_resp._hidden_params = {"response_cost": 0.0}
+
+        mock_acompletion = mocker.patch(
+            "litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp
+        )
+
+        client = LiteLLMClient()
+        req = ModelRequest(
+            model="openai/gpt-4o-mini",
+            prompt="Question?",
+            system_prompt="You are concise.",
+        )
+        await client.complete(req, agent_id="a", round_index=0)
+
+        messages = mock_acompletion.call_args.kwargs["messages"]
+        assert messages[0] == {"role": "system", "content": "You are concise."}
+        assert messages[1] == {"role": "user", "content": "Question?"}
+
+    async def test_no_system_prompt_emits_only_user_message(self, mocker: pytest.FixtureRequest) -> None:
+        """Default: no system_prompt → messages contains only the user turn."""
+        mock_resp = mocker.MagicMock()
+        mock_resp.choices = [mocker.MagicMock()]
+        mock_resp.choices[0].message.content = "ok"
+        mock_resp.usage.prompt_tokens = 3
+        mock_resp.usage.completion_tokens = 1
+        mock_resp._hidden_params = {"response_cost": 0.0}
+
+        mock_acompletion = mocker.patch(
+            "litellm.acompletion", new_callable=mocker.AsyncMock, return_value=mock_resp
+        )
+
+        client = LiteLLMClient()
+        await client.complete(
+            ModelRequest(model="openai/gpt-4o-mini", prompt="Q"), agent_id="a", round_index=0
+        )
+
+        messages = mock_acompletion.call_args.kwargs["messages"]
+        assert messages == [{"role": "user", "content": "Q"}]
 
 
 # ---------------------------------------------------------------------------

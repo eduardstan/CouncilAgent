@@ -15,9 +15,12 @@ council:
   models:
     - "ollama/qwen3:0.6b"
     - "ollama/deepseek-r1:1.5b"
-  protocol: direct      # options: direct | peer_review | simultaneous
-  max_rounds: 0         # 0 = generate only, no deliberation
-  budget_usd: 0.0       # local models are free
+  topology: complete          # complete | star | bus | ring | dynamic_star
+  protocol: direct            # direct | peer_review | simultaneous
+  aggregation: majority_vote  # majority_vote | borda | condorcet | meta_judge
+  termination: fixed          # fixed | agreement | budget | composite
+  max_rounds: 0               # 0 = generate only, no deliberation
+  budget_usd: 0.0             # local models are free
   task_delay_seconds: 0.0
 
 mlflow:

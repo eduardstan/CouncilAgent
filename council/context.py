@@ -54,6 +54,7 @@ class VisibilityContext:
     total_agents: int
     communication_mode: CommunicationMode
     original_prompt: str
+    task_hint: str = ""
 
 
 class AnswerNormalizer(ABC):
