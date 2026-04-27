@@ -279,6 +279,30 @@ class TestPeerReviewProtocol:
         assert "answer one" in prompt
         assert "answer two" in prompt
 
+    def test_audit_s2_regression_critique_excludes_stale_rounds(self) -> None:
+        """Audit §2 regression: critique prompt must contain only round-1 content, not round-0."""
+        visible = [
+            _response("Response A", "round-zero-answer", round_index=0),
+            _response("Response A", "round-one-critique-target", round_index=1),
+        ]
+        ctx = _ctx(round_index=1, visible=visible)
+        protocol = PeerReviewProtocol()
+        prompt = protocol.build_prompt(ctx)
+        assert "round-one-critique-target" in prompt
+        assert "round-zero-answer" not in prompt
+
+    def test_audit_s2_regression_revision_excludes_stale_rounds(self) -> None:
+        """Audit §2 regression: revision prompt must contain only round-1 critiques, not round-0."""
+        visible = [
+            _response("Response A", "old-round-zero-content", round_index=0),
+            _response("Response A", "fresh-round-one-critique", round_index=1),
+        ]
+        ctx = _ctx(round_index=2, visible=visible)
+        protocol = PeerReviewProtocol()
+        prompt = protocol.build_prompt(ctx)
+        assert "fresh-round-one-critique" in prompt
+        assert "old-round-zero-content" not in prompt
+
 
 # ---------------------------------------------------------------------------
 # SimultaneousProtocol
