@@ -66,10 +66,11 @@ class DynamicStarTopology(Topology):
     """Alternating fan-out / fan-in visibility (round-dependent).
 
     Index 0 is the hub (infrastructure routing node — not a privileged agent).
-    - Even rounds (0, 2, …): hub broadcasts to all peripherals (fan-out).
-      matrix[0][j] = True for j > 0; all other entries False.
-    - Odd rounds (1, 3, …): all peripherals report to hub (fan-in).
+    Convention: adjacency[i][j] = True means "agent i sees agent j's output".
+    - Even rounds (0, 2, …): fan-out — peripherals read hub.
       matrix[i][0] = True for i > 0; all other entries False.
+    - Odd rounds (1, 3, …): fan-in — hub reads peripherals.
+      matrix[0][j] = True for j > 0; all other entries False.
     """
 
     communication_mode = CommunicationMode.RELAY
