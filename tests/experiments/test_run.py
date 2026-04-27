@@ -263,6 +263,26 @@ class TestBuildTermination:
         with pytest.raises(ValueError, match="Unknown termination"):
             _build_termination("unknown_term", total_rounds=3, normalizer=self._normalizer(), budget_usd=1.0)
 
+    def test_dict_form_agreement_threshold_overrides_default(self) -> None:
+        """Audit §4 regression: dict form must inject agreement_threshold, not hardcode 0.8."""
+        from council.termination import AgreementThreshold, CompositeTermination
+        t = _build_termination(
+            {"name": "agreement", "agreement_threshold": 0.95},
+            total_rounds=3, normalizer=self._normalizer(), budget_usd=1.0,
+        )
+        assert isinstance(t, CompositeTermination)
+        # Dig out the AgreementThreshold sub-strategy and verify the threshold.
+        agreement_strat = next(
+            s for s in t._strategies if isinstance(s, AgreementThreshold)
+        )
+        assert agreement_strat._threshold == pytest.approx(0.95)
+
+    def test_bare_string_still_accepted(self) -> None:
+        """Backward compat: bare string form still works after the dict-parser refactor."""
+        from council.termination import FixedRounds
+        t = _build_termination("fixed", total_rounds=5, normalizer=self._normalizer(), budget_usd=1.0)
+        assert isinstance(t, FixedRounds)
+
 
 class TestMissingModelsRaises:
     async def test_run_experiment_raises_when_models_absent(self, tmp_path: Path) -> None:

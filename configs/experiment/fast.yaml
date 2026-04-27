@@ -11,9 +11,15 @@
 # Unset per-agent fields fall back to ModelRequest defaults (temp=0.7, max_tokens=2048).
 #
 # `council.meta_judge` is an optional dict for the synthesis judge:
-#   {model?: str, temperature?: float, max_tokens?: int, system_prompt?: str}
+#   {model?: str, temperature?: float, max_tokens?: int, system_prompt?: str, max_rounds_to_include?: int}
 # `model` falls back to `models[0]` when absent.
 # Legacy form `meta_judge_model: "..."` (bare string) is still accepted.
+#
+# `council.termination` accepts a bare string or a dict:
+#   {name: composite, agreement_threshold: 0.95}  ← overrides the default 0.8 threshold.
+#
+# Top-level `models:` block sets global LiteLLMClient parameters:
+#   {timeout_seconds: 30, max_retries: 2}
 
 name: fast
 
