@@ -129,27 +129,41 @@ class TestStarTopology:
 
 class TestDynamicStarTopology:
     def test_even_round_hub_broadcasts_to_all_peripherals(self) -> None:
-        # Even round (0, 2, ...): hub (index 0) sends to all peripherals.
+        # Even round (fan-out): peripherals read hub.
+        # adjacency[i][j] = "i sees j", so m[peripheral][hub] is True.
         t = DynamicStarTopology(4)
         m = t.get_adjacency_matrix(0)
-        # hub → peripherals: m[hub][peripheral] is True for peripheral != hub
+        for i in range(1, 4):
+            assert m[i][0] is True
+        # hub does not read peripherals in fan-out
         for j in range(1, 4):
-            assert m[0][j] is True
-        # peripherals don't see each other in fan-out
+            assert m[0][j] is False
+        # peripherals don't see each other
         for i in range(1, 4):
             for j in range(1, 4):
                 assert m[i][j] is False
 
     def test_odd_round_peripherals_report_to_hub(self) -> None:
-        # Odd round (1, 3, ...): all peripherals send to hub.
+        # Odd round (fan-in): hub reads peripherals.
+        # adjacency[i][j] = "i sees j", so m[hub][peripheral] is True.
         t = DynamicStarTopology(4)
         m = t.get_adjacency_matrix(1)
-        # peripherals → hub: m[peripheral][hub] is True
-        for i in range(1, 4):
-            assert m[i][0] is True
-        # hub doesn't see other agents in fan-in (it receives only)
         for j in range(1, 4):
-            assert m[0][j] is False
+            assert m[0][j] is True
+        # peripherals do not read hub in fan-in
+        for i in range(1, 4):
+            assert m[i][0] is False
+
+    def test_audit_s3_regression_hub_reads_peripherals_on_odd_round(self) -> None:
+        """Audit §3 regression: hub must have visibility on critique (odd) rounds."""
+        t = DynamicStarTopology(3)
+        m = t.get_adjacency_matrix(1)
+        # hub (agent 0) sees both peripherals on odd (fan-in) round
+        assert m[0][1] is True
+        assert m[0][2] is True
+        # peripheral 1 does NOT see peripheral 2 (or hub) on fan-in round
+        assert m[1][0] is False
+        assert m[1][2] is False
 
     def test_round_0_not_equal_to_round_1(self) -> None:
         t = DynamicStarTopology(4)
