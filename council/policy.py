@@ -10,9 +10,10 @@ prototyping and integration testing without API cost.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from council.aggregation import Aggregation, MajorityVote, MetaJudge
+from council.context import AnswerNormalizer
 from council.core import AgentConfig
 from council.models import ModelClient
 from council.protocol import DirectAnswerProtocol, PeerReviewProtocol, Protocol
@@ -49,9 +50,12 @@ class CouncilConfig:
     protocol: Protocol
     aggregation: Aggregation
     termination: TerminationStrategy
-    ranking: Ranking | None = None
+    ranking: Ranking = field(default_factory=NullRanking)
     anonymize: bool = True
     estimated_cost_usd: float = 0.0
+    answer_response_format: dict[str, object] | None = None
+    prompt_hint: str = ""
+    normalizer: AnswerNormalizer | None = None
 
 
 class CouncilPolicy:
@@ -72,10 +76,14 @@ class CouncilPolicy:
         model_client: ModelClient,
         default_models: list[str] | None = None,
         budget_usd: float = 0.10,
+        meta_judge_model: str | None = None,
     ) -> None:
         self._model_client = model_client
         self._models = default_models if default_models is not None else _FREE_MODELS
         self._budget = budget_usd
+        # Explicit synthesis model for MetaJudge. Falls back to self._models[0]
+        # so callers that don't need a dedicated judge model get sensible behaviour.
+        self._meta_judge_model = meta_judge_model
 
     def plan(self, prompt: str, task_profile: TaskProfile) -> CouncilConfig:
         """Return the most capable affordable config for the given task profile."""
@@ -93,22 +101,42 @@ class CouncilPolicy:
         n = len(agents)
         topology = CompleteGraphTopology(n)
 
+        output_schema = task_profile.output_schema
+        # When the task declares a structured output schema, request JSON from the
+        # model on every answer round. None means free-text (no format enforcement).
+        rf: dict[str, object] | None = {"type": "json_object"} if output_schema else None
+
         # Tier 1 — fast_vote: single round, majority vote regardless of task type.
         fast = CouncilConfig(
             name="fast_vote",
             agents=agents,
             topology=topology,
-            protocol=DirectAnswerProtocol(),
+            protocol=DirectAnswerProtocol(output_schema=output_schema),
             aggregation=MajorityVote(normalizer=task_profile.normalizer),
             termination=FixedRounds(1),
             estimated_cost_usd=0.0,
+            answer_response_format=rf,
+            prompt_hint=task_profile.prompt_hint,
+            normalizer=task_profile.normalizer,
         )
 
         # Tier 2 — standard_deliberation: peer review, agreement-gated, task-aware agg.
+        standard_protocol = PeerReviewProtocol(output_schema=output_schema)
         if task_profile.recommended_aggregation == "meta_judge":
+            judge_model = self._meta_judge_model if self._meta_judge_model else self._models[0]
+            # Label rounds via the protocol's own answer/critique predicate, so
+            # MetaJudge stays protocol-agnostic while tracking phase correctly.
+            def _round_label(round_index: int, _p: Protocol = standard_protocol) -> str:
+                if round_index == 0:
+                    return "GENERATE"
+                return "ANSWER" if _p.is_answer_round(round_index) else "CRITIQUE"
+
             agg: Aggregation = MetaJudge(
-                model=self._models[0],
+                model=judge_model,
                 model_client=self._model_client,
+                round_label_fn=_round_label,
+                response_format=rf,
+                normalizer=task_profile.normalizer,
             )
         else:
             agg = MajorityVote(normalizer=task_profile.normalizer)
@@ -117,13 +145,16 @@ class CouncilPolicy:
             name="standard_deliberation",
             agents=agents,
             topology=topology,
-            protocol=PeerReviewProtocol(),
+            protocol=standard_protocol,
             aggregation=agg,
             termination=CompositeTermination(
                 AgreementThreshold(0.8, normalizer=task_profile.normalizer),
                 FixedRounds(2),
             ),
             estimated_cost_usd=0.0,
+            answer_response_format=rf,
+            prompt_hint=task_profile.prompt_hint,
+            normalizer=task_profile.normalizer,
         )
 
         return [fast, standard]

@@ -15,7 +15,6 @@ from typing import Protocol
 from council.context import AnswerNormalizer, CouncilState
 from council.normalizer import IdentityNormalizer
 
-
 # ---------------------------------------------------------------------------
 # Embedder protocol (injected for diversity_trajectory)
 # ---------------------------------------------------------------------------
@@ -32,6 +31,23 @@ class Embedder(Protocol):
 # ---------------------------------------------------------------------------
 
 _NUMERIC_RE = re.compile(r"\b\d+(?:[.,]\d+)*\b")
+_CURRENCY_RE = re.compile(r"[$€£¥](?=\d)")
+_THOUSANDS_RE = re.compile(r"(\d),(\d{3})(?!\d)")
+
+
+def _canonicalize_numeric(s: str) -> str:
+    """Strip currency symbols and thousands-separator commas for numeric matching.
+
+    Examples: "$70,000" → "70000", "€1,234.56" → "1234.56", "$18" → "18".
+    Applied to both sides before comparison so "$70,000" == "70000".
+    """
+    s = _CURRENCY_RE.sub("", s)
+    # Strip thousands-separator commas iteratively (handles "1,234,567")
+    prev = None
+    while prev != s:
+        prev = s
+        s = _THOUSANDS_RE.sub(r"\1\2", s)
+    return s
 
 
 def _word_boundary_match(prediction: str, ground_truth: str) -> bool:
@@ -73,7 +89,15 @@ async def task_accuracy(
 
     if norm_pred == norm_gt:
         return 1.0
-    return 1.0 if _word_boundary_match(prediction, ground_truth) else 0.0
+    # Numeric canonicalization: strip currency symbols and thousands-separator
+    # commas so "$70,000" matches "70000".
+    if _canonicalize_numeric(norm_pred) == _canonicalize_numeric(norm_gt):
+        return 1.0
+    # Word-boundary fallback: canonicalize both sides so "$70,000" in a sentence
+    # is found when ground_truth is "70000".
+    canon_pred = _canonicalize_numeric(prediction)
+    canon_gt = _canonicalize_numeric(ground_truth)
+    return 1.0 if _word_boundary_match(canon_pred, canon_gt) else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +265,7 @@ def _mean_pairwise_cosine_distance(vecs: list[list[float]]) -> float:
     count = 0
     for i in range(n):
         for j in range(i + 1, n):
-            dot = sum(a * b for a, b in zip(vecs[i], vecs[j]))
+            dot = sum(a * b for a, b in zip(vecs[i], vecs[j], strict=True))
             norm_i = math.sqrt(sum(a * a for a in vecs[i]))
             norm_j = math.sqrt(sum(a * a for a in vecs[j]))
             if norm_i > 0 and norm_j > 0:

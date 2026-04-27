@@ -42,16 +42,19 @@ class CompleteGraphTopology(Topology):
 
 
 class StarTopology(Topology):
-    """Pure relay — equivalent to CompleteGraph in visibility terms.
+    """Pure relay — same adjacency as CompleteGraph, but RELAY communication mode.
 
     The hub is infrastructure only (not an agent). All peripherals see all
-    other peripherals via the hub relay. Adjacency is static across all rounds.
+    other peripherals via the 2-hop hub relay. Adjacency is static across all
+    rounds (architecture rule: no round-parity alternation — that lives in
+    DynamicStarTopology).
 
-    Architecture rule: StarTopology must NOT alternate on round parity.
-    Round-dependent visibility belongs in DynamicStarTopology.
+    The RELAY mode is semantically distinct from CompleteGraphTopology's
+    INDIVIDUAL mode: protocols receive the same visibility but know that
+    messages are routed rather than sent peer-to-peer.
     """
 
-    communication_mode = CommunicationMode.INDIVIDUAL
+    communication_mode = CommunicationMode.RELAY
 
     def get_adjacency_matrix(self, round_index: int) -> list[list[bool]]:
         # Pure relay: everyone sees everyone (2-hop via hub, same result as complete).
@@ -63,10 +66,11 @@ class DynamicStarTopology(Topology):
     """Alternating fan-out / fan-in visibility (round-dependent).
 
     Index 0 is the hub (infrastructure routing node — not a privileged agent).
-    - Even rounds (0, 2, …): hub broadcasts to all peripherals (fan-out).
-      matrix[0][j] = True for j > 0; all other entries False.
-    - Odd rounds (1, 3, …): all peripherals report to hub (fan-in).
+    Convention: adjacency[i][j] = True means "agent i sees agent j's output".
+    - Even rounds (0, 2, …): fan-out — peripherals read hub.
       matrix[i][0] = True for i > 0; all other entries False.
+    - Odd rounds (1, 3, …): fan-in — hub reads peripherals.
+      matrix[0][j] = True for j > 0; all other entries False.
     """
 
     communication_mode = CommunicationMode.RELAY
@@ -75,13 +79,13 @@ class DynamicStarTopology(Topology):
         n = self.num_agents
         m = [[False] * n for _ in range(n)]
         if round_index % 2 == 0:
-            # Fan-out: hub (0) → peripherals
-            for j in range(1, n):
-                m[0][j] = True
-        else:
-            # Fan-in: peripherals → hub (0)
+            # Fan-out: peripherals read hub (adjacency[i][0] = "i sees 0")
             for i in range(1, n):
                 m[i][0] = True
+        else:
+            # Fan-in: hub reads peripherals (adjacency[0][j] = "0 sees j")
+            for j in range(1, n):
+                m[0][j] = True
         return m
 
 

@@ -60,6 +60,8 @@ The default config (`config.yaml`) combines both: `topology: star` + `aggregatio
 
 **Recommended: Option C.** It resolves the contradiction at the conceptual level, not just the implementation level. The star topology becomes useful for what it genuinely models — hub-and-spoke *latency* patterns — rather than smuggling in a privileged agent. The synthesis strategy becomes an explicit, configurable concern.
 
+**Addendum (discovered during pipeline testing):** When MetaJudge is the aggregator, it must receive the full deliberation history — not just final-round responses. This is the "Area Chair reads the reviews" model: the chair traces how opinions evolved through critique and revision rounds, identifies which arguments were compelling, and produces an informed synthesis. See Issue 11 for the two-paradigm (blind vs informed) aggregation design.
+
 ```python
 # Revised topology — pure communication graph, no privileged agents
 class StarTopology(Topology):
@@ -462,6 +464,8 @@ class SimultaneousProtocol(Protocol):
 
 **Solution.** Implement the alternating critique-revision cycle. The key insight: **review and revision are symmetric opposites.** In odd rounds, agents critique. In even rounds, agents revise based on critiques. This maps naturally to the academic peer review process: submit → review → revise → re-review.
 
+**Critical corollary: answer rounds vs. deliberation rounds.** The protocol produces two distinct types of output — *answers* (round 0, 2, 4…) and *critiques* (round 1, 3, 5…). The core pipeline must know which is which, because only answer-round responses should be fed to ranking and aggregation. Critique text is deliberation artefact, not a candidate answer. The protocol should declare this via `is_answer_round(round_index: int) -> bool`. Feeding critique text to `MajorityVote` produces nonsensical results (every critique is a unique string → confidence ≈ 1/N). Structured JSON output (`response_format`) should only be enforced on answer rounds; critique rounds should remain free text.
+
 ```python
 class PeerReviewProtocol(Protocol):
     def __init__(self, anonymize: bool = True, output_schema: Optional[dict] = None):
@@ -640,11 +644,23 @@ class CompositeTermination(TerminationStrategy):
         return False, "No termination condition met"
 ```
 
+**Semantic clarification: `max_rounds` in config means deliberation cycles, not raw rounds.** The `FixedRounds` termination strategy operates on raw round counts internally, but experiment configs expose `max_rounds` as the number of deliberation cycles *after* initial generation. The runner translates: `total_raw_rounds = 1 + max_rounds * protocol.cycle_length()`. For PeerReview (cycle_length=2), `max_rounds: 1` → 3 raw rounds (generate, critique, revise). For Direct/Simultaneous (cycle_length=1), `max_rounds: 1` → 2 raw rounds. `max_rounds: 0` always means generate-only regardless of protocol. This keeps the config semantic stable across protocol changes — switching from PeerReview to Simultaneous doesn't silently halve the deliberation depth.
+
 ---
 
-### Issue 11: MetaJudge Gets Unstructured Flat Input
+### Issue 11: MetaJudge Gets Unstructured Flat Input — And Misses the Debate Arc
 
 Already detailed in the previous analysis. The fix is round-structured prompts with phase labels. Combined with structured output enforcement (Issue 4), the MetaJudge becomes dramatically more reliable.
+
+**Deeper issue discovered during pipeline testing.** There are two fundamentally different aggregation paradigms, and the current code conflates them:
+
+1. **Blind aggregation** (MajorityVote, BordaCount, Condorcet): counts normalized final-round answers. Does not need — and should not receive — the deliberation history. These methods are fast, statistically grounded, and immune to narrative manipulation.
+
+2. **Informed aggregation** (MetaJudge): an LLM reads the *full debate arc* — initial answers, critiques, revisions, preference signals — and synthesizes a final answer. This is the "Area Chair" model from academic peer review: the chair doesn't just count reviewer scores, they *read the discussion* to understand *why* opinions shifted, who made compelling arguments, and whether critiques were addressed.
+
+Currently, MetaJudge receives only the final-round responses as a flat list. This discards the entire deliberation history — the very thing that makes multi-round councils valuable. An informed aggregator that can't see the debate is like an area chair who only reads the final scores without reading the reviews.
+
+**Fix.** `Aggregation.aggregate()` receives an optional `round_history: list[AgentResponse]` parameter. Blind aggregators ignore it. `MetaJudge` uses it to construct a structured prompt showing the full deliberation arc with phase labels (GENERATE, CRITIQUE, REVISION) so the synthesis model can trace how consensus formed or where disagreement persists. This does not violate Constitution §3 — aggregation still controls the decision; it just has access to richer input.
 
 ---
 
@@ -1009,8 +1025,18 @@ async def run_council(
     # Stage 1: Independent Generation
     state = await _generate(state, agents, protocol, model_client, task_profile)
     
-    # Stage 2: Deliberation (until termination)
+    # Stage 2-4: The Deliberation Loop
+    # Rank and aggregate are INSIDE the loop so that the termination
+    # strategy can check consensus on the aggregated state — not on raw
+    # response text. This mirrors the academic peer review process: the
+    # area chair reads and aggregates reviews before deciding whether to
+    # invoke another discussion round.
     while True:
+        answer_responses = _get_answer_round_responses(state, protocol)
+        preferences = await _rank(state, ranking, agent_ids)
+        agg_result = await _aggregate(answer_responses, aggregation, preferences)
+        state.interim_result = agg_result
+        
         should_stop, reason = await termination.should_terminate(state)
         if should_stop:
             state.termination_reason = reason
@@ -1019,12 +1045,7 @@ async def run_council(
             state, agents, topology, protocol, model_client, anonymize
         )
     
-    # Stage 3: Ranking (optional)
-    state = await _rank(state, ranking, agent_ids)
-    
-    # Stage 4: Aggregation
-    state = await _aggregate(state, aggregation, model_client)
-    
+    state.final_result = agg_result
     return state.to_result()
 
 async def _generate(state, agents, protocol, model_client, task_profile):
@@ -1163,14 +1184,15 @@ This plan integrates the bug fixes from Part II, the new abstractions from Part 
 │  - model selection                                          │
 ├───────────────────────────────────────────────────────┤
 │  Core Pipeline: run_council() (pure async, no frameworks)   │
-│  - generate → deliberate → rank → aggregate                 │
-│  - termination strategies                                   │
-│  - anonymization, structured output                         │
+│  - generate → [deliberate → rank → aggregate → check] loop  │
+│  - termination checks aggregated state, not raw text        │
+│  - anonymization, structured output (response_format API)   │
 ├───────────┬──────────┬──────────┬─────────────────────┤
 │ Topology  │ Protocol │ Ranking  │ Aggregation         │
-│ (who sees │ (what    │ (extract │ (decide: vote,      │
-│  whom)    │  they    │  prefs)  │  synthesize,        │
-│           │  say)    │          │  select)            │
+│ (who sees │ (what    │ (extract │ (blind: vote on     │
+│  whom)    │  they    │  prefs)  │  normalized answers;│
+│           │  say)    │          │  informed: MetaJudge│
+│           │          │          │  reads debate arc)  │
 ├───────────┴──────────┴──────────┴─────────────────────┤
 │  ModelClient (LiteLLM wrapper)                              │
 │  - caching, metering, fault injection, retries              │
@@ -1307,33 +1329,116 @@ print(response.metadata["dissenting_views"])  # ["Model B emphasized methodology
 
 ---
 
-### Phase 5: Hypothesis Testing (Week 9-10)
+### Phase 5: Pipeline Hardening (Week 9-10)
+
+**Goal**: Fix the structural issues discovered during live pipeline testing. The core loop, aggregation paradigm, and structured output enforcement must be production-solid before hypothesis testing produces meaningful results.
+
+**Why this phase exists.** Running the pipeline on real tasks (GSM8K with 3 paid models) revealed that:
+- Models ignore JSON schema instructions in long prompts → answers arrive as prose → normalizer falls through to `strip().lower()` → every response looks unique → confidence collapses to 0.33 even on unanimous agreement
+- The pipeline loop runs deliberation in a loop but rank+aggregate happen *after* the loop exits — so termination strategies check raw response text instead of aggregated consensus
+- PeerReviewProtocol alternates answer rounds (even) and critique rounds (odd), but no layer declares this — aggregation receives critiques mixed with answers
+- MetaJudge receives only final-round responses as a flat list, discarding the deliberation arc that gives multi-round councils their value
+
+These are not feature gaps — they are correctness issues that make hypothesis testing (Phase 6) unreliable.
+
+| # | Task | Files | Why |
+|---|------|-------|-----|
+| 5.1 | Force structured output via `response_format={"type": "json_object"}` at the API level for answer rounds | `council/models.py`, `council/context.py` | Prompt-level JSON schema is ignored when context is long; API enforcement is reliable |
+| 5.2 | Restructure core loop — rank+aggregate inside the loop, termination checks `interim_result` | `council/core.py` | Termination must check aggregated consensus, not raw text. Mirrors the academic peer review model: area chair aggregates before deciding on another discussion round |
+| 5.3 | Protocol declares answer vs deliberation rounds via `is_answer_round(round_index) -> bool` | `council/protocol.py` | Core pipeline must filter answer-round responses for aggregation without hardcoding round-parity logic |
+| 5.4 | Debate-aware aggregation — `aggregate()` receives optional `round_history` parameter | `council/aggregation.py`, `council/context.py` | Blind aggregators (MajorityVote) ignore it; informed aggregators (MetaJudge) use the full debate arc to trace how consensus formed. See Issue 11 |
+| 5.5 | Thread `response_format` through `ModelRequest` → `LiteLLMClient` for answer rounds | `council/models.py`, `council/core.py` | Completes the structured output enforcement chain from protocol → core → model client |
+| 5.6 | End-to-end verification: 5-task GSM8K run with 3 paid models, all pipeline stages visible | `experiments/run.py` | Verify that confidence reflects actual agreement, debate transcripts show clean stage separation, and council beats the no-deliberation baseline |
+
+**Deliverable**: `uv run python -m experiments.run --config configs/experiment/fast.yaml` produces confidence ≥ 0.9 on unanimous agreement, debate transcripts with clean GENERATE → DELIBERATE → RANK → AGGREGATE stages, and council accuracy ≥ baseline accuracy.
+
+**Validation**:
+- Test: 3 agents all answer "72" → confidence = 1.0 (not 0.33)
+- Test: `response_format` is passed to LiteLLM for answer rounds, not for critique rounds
+- Test: `AgreementThreshold` terminates early when aggregated consensus is reached
+- Test: MetaJudge prompt contains round-structured debate history with phase labels
+- Test: Council accuracy on 5-task GSM8K ≥ majority-vote-without-deliberation baseline
+
+---
+
+### Phase 6: Runner Configurability & Correctness Fixes
+
+**Goal**: Make the experiment runner fully configurable so that Phase 7 hypothesis testing can sweep over topologies, aggregations, and termination strategies. Fix the correctness issues discovered during code review that would invalidate sweep results.
+
+**Why this phase exists.** Code review after Phase 5 revealed that `experiments/run.py` hardcodes `CompleteGraphTopology`, `MajorityVote`, `FixedRounds`, and `NullRanking` — the only varying dimension is protocol. The "4 topologies x 4 protocols x 5 aggregations x 3 datasets = 240 configurations" deliverable from Phase 4 is structurally impossible. Additionally, `_deliberate()` only passes round N-1 responses to the visibility context, which means `SimultaneousProtocol`'s sliding window is dead code. The `task_accuracy` smart matcher lacks numeric extraction (Issue 9 partial implementation), causing false negatives on currency/comma-formatted numbers. The `CouncilAgent` production path doesn't thread `answer_response_format`, so the structured output enforcement from Phase 5 only works via the benchmark runner. Finally, `StarTopology` is indistinguishable from `CompleteGraphTopology` (identical adjacency + identical communication mode), providing no experimental value.
+
+| # | Task | Files | Status |
+|---|------|-------|--------|
+| 6.1 | Make topology/aggregation/ranking/termination configurable from YAML | `experiments/run.py`, all config YAMLs | ✅ |
+| 6.2 | Fix `_deliberate()` to pass all prior-round responses (all rounds, not just N-1) | `council/core.py` | ✅ |
+| 6.3 | Fix `_generate()` to use `topology.communication_mode` instead of hardcoded `INDIVIDUAL` | `council/core.py` | ✅ |
+| 6.4 | Add numeric extraction to `task_accuracy` smart matcher — handles `$70,000`, commas, currency | `evaluation/metrics.py` | ✅ |
+| 6.5 | Thread `answer_response_format` through `CouncilAgent` → `CouncilConfig` → `run_council()` | `council/agent.py`, `council/policy.py` | ✅ |
+| 6.6 | Inject `output_schema` from `TaskProfile` into protocols built by `CouncilPolicy` | `council/policy.py` | ✅ |
+| 6.7 | Differentiate `StarTopology` from `CompleteGraphTopology` via `CommunicationMode.RELAY` | `council/topology.py` | ✅ |
+
+**Phase 6 Extensions (implemented on `feature/p6-aggregation-polish`):**
+
+| # | Task | Files |
+|---|------|-------|
+| 6.8 | ruff + mypy correctness pass across `council/` | `council/*.py` |
+| 6.9 | ruff fixes in `evaluation/` + broken diversity test fixture | `evaluation/metrics.py`, tests |
+| 6.10 | Numeric extraction in `task_accuracy` — full Issue 9 closure | `evaluation/metrics.py` |
+| 6.11 | Per-agent `temperature` and `max_tokens` overrides on `AgentConfig` | `council/core.py`, `council/models.py` |
+| 6.12 | `TaskProfile.prompt_hint` → `VisibilityContext.task_hint` → Protocol injection on answer rounds only | `council/task_profile.py`, `council/context.py`, `council/protocol.py`, `council/core.py`, `council/policy.py`, `council/agent.py` |
+| 6.13 | `MetaJudge` receives `original_prompt` to anchor synthesis | `council/aggregation.py`, `council/core.py` |
+| 6.14 | Benchmark runner routes via per-dataset `TaskProfile` registry (`tasks/profiles.py`) | `tasks/profiles.py`, `experiments/run.py` |
+| 6.15 | Per-agent `system_prompt` threaded through `AgentConfig` → `ModelRequest` → `LiteLLMClient` | `council/core.py`, `council/models.py` |
+| 6.16 | YAML schema extension: each `council.models` entry is a bare string OR `{model, temperature?, max_tokens?, system_prompt?}` dict; `council.meta_judge` nested dict carries synthesis-judge overrides (`{model?, temperature?, max_tokens?, system_prompt?}`). `MetaJudge` accepts `system_prompt` and `output_schema` kwargs, forwarded to its `ModelRequest`. | `experiments/run.py`, `council/aggregation.py`, `configs/experiment/fast.yaml` |
+
+**Deliverable for 6.1–6.16 (achieved)**: runner accepts all topology/aggregation/termination/protocol combinations; `SimultaneousProtocol` windowing works end-to-end; `task_accuracy("$70,000", "70000")` → 1.0; `CouncilAgent.complete()` enforces structured output; per-dataset `TaskProfile` drives normalizer, output schema, and prompt hint from `tasks/profiles.py`. YAML configs expose the full per-agent and per-judge knob set (temperature, max_tokens, system_prompt) — `fast.yaml` is the canonical example.
+
+**Phase 6 Audit Polish (pending — `feature/p6-audit-polish`):**
+
+A 2026-04-25 architectural audit (`report.md`) stress-tested the post-6.16 implementation and surfaced seven follow-on items. None invalidates the layered architecture, but each one blocks rigorous Phase 7 sweeps: cardinal aggregators silently produce empty answers, peer review concatenates stale rounds (~3.3× cost on `max_rounds: 3`), the dynamic star topology renders the hub blind on the very round it is meant to critique, key thresholds are hardcoded, dissent is computed in raw-string space (so `AgreementThreshold` rarely fires on natural-language math answers), `MetaJudge` re-ingests the full transcript every round, and a single rate-limited model crashes the whole step. Items map 1:1 to the audit sections.
+
+| # | Task | Files |
+|---|------|-------|
+| 6.17 | Add `_build_ranking()` factory in the runner; expose `council.ranking` YAML key (`null` / `simple` / `structured`) so cardinal aggregators (Borda, Condorcet) receive non-empty `PreferenceData` instead of the `NullRanking` default. (Audit §1) | `experiments/run.py`, `configs/experiment/*.yaml` |
+| 6.18 | `PeerReviewProtocol._critique_prompt` and `_revision_prompt` invoke `_filter_window(ctx, window_size=1)` so multi-round deliberation does not concatenate stale rounds under one "critiques received" label; add a regression test asserting that round-2 critique prompts contain only round-1 content. (Audit §2) | `council/protocol.py`, `tests/council/test_protocol.py` |
+| 6.19 | Fix `DynamicStarTopology.get_adjacency_matrix` index inversion (the matrix is read as `adjacency[i][j] = "i sees j"`): even rounds = fan-out (`m[i][0] = True` for `i > 0` — peripherals read hub), odd rounds = fan-in (`m[0][j] = True` for `j > 0` — hub reads peripherals). Pin with a regression test that on an odd round `m[0][1] is True` and `m[1][0] is False`. (Audit §3) | `council/topology.py`, `tests/council/test_topology.py` |
+| 6.20 | Extend YAML schema: `termination` accepts a dict (e.g. `{name: composite, agreement_threshold: 0.95}`); `_build_termination` injects values into `AgreementThreshold` instead of the hardcoded `0.8` at `run.py:200,208`. Surface global `models.timeout_seconds` / `models.max_retries` to `LiteLLMClient`. Mirrors the dict-form pattern already used by `aggregation` and `council.models`. (Audit §4) | `experiments/run.py`, `configs/experiment/*.yaml` |
+| 6.21 | Replace raw `r.content.strip().lower() != winner` in `council/agent.py` (the dissent set used by `CouncilAgent.complete`'s confidence calc) with `await normalizer.normalize(r.content) != winner`, so dissent is computed in canonical space and `AgreementThreshold` no longer falsely negates consensus on discursive answers like "The answer is 15." vs "15". (Audit §5) | `council/agent.py`, `tests/council/test_agent.py` |
+| 6.22 | `MetaJudge` accepts `max_rounds_to_include: int \| None` and trims `_format_debate` to the last N rounds before formatting; runner exposes it via the `aggregation` dict introduced in 6.16 so YAML configs can cap synthesis context per experiment. (Audit §6) | `council/aggregation.py`, `experiments/run.py`, `tests/council/test_aggregation.py` |
+| 6.23 | Hardening: strip ```` ```json ... ``` ```` markdown fences before `json.loads` in `StructuredRanking.extract`; add `return_exceptions=True` to the two `asyncio.gather` calls in `core.py` (`_generate`, `_deliberate`) and convert raised exceptions into `ModelFailure` so a single rate-limited or timed-out agent does not crash the round. (Audit §7) | `council/ranking.py`, `council/core.py` |
+
+**Phase 6 closes when**: Borda/Condorcet runs produce non-empty `final_answer` end-to-end; PeerReview prompt size is `O(1)` in `max_rounds`; `DynamicStarTopology` round-1 grants the hub fan-in visibility; `AgreementThreshold` and global model timeouts are tunable from YAML; `CouncilAgent` confidence reflects normalizer-canonical dissent; `MetaJudge` honours a configurable history cap; the runner survives a single-agent failure without aborting the round.
+
+---
+
+### Phase 7: Hypothesis Testing (Week 13-14)
 
 **Goal**: Test the hypotheses from `plan.md` using the benchmark infrastructure.
 
 | # | Hypothesis | Config | What to measure |
 |---|-----------|--------|-----------------|
-| 5.1 | H1 (Diversity curve) | 1-model → 3-model → 5-model councils, same vs different families | Accuracy vs model diversity (non-monotonic?) |
-| 5.2 | H3 (Diminishing returns) | Same council, vary max_rounds from 0 to 5 | Accuracy gain per round (logarithmic decay?) |
-| 5.3 | H5 (Cardinal > Ordinal) | Borda vs WeightedVote vs Condorcet on same tasks | Which aggregation wins, and does Arrow's escape work? |
-| 5.4 | H6 (Anti-sycophancy) | Same config ± anti_sycophancy=true | Accuracy difference, convergence speed |
-| 5.5 | H10 (Adaptive termination) | FixedRounds vs AgreementThreshold vs BudgetExhaustion | Cost savings vs quality loss |
-| 5.6 | NEW: Council-as-agent vs single LLM | `CouncilAgent.complete()` vs best single model | Accuracy, variance, confidence calibration |
+| 7.1 | H1 (Diversity curve) | 1-model → 3-model → 5-model councils, same vs different families | Accuracy vs model diversity (non-monotonic?) |
+| 7.2 | H3 (Diminishing returns) | Same council, vary max_rounds from 0 to 5 | Accuracy gain per round (logarithmic decay?) |
+| 7.3 | H5 (Cardinal > Ordinal) | Borda vs WeightedVote vs Condorcet on same tasks | Which aggregation wins, and does Arrow's escape work? |
+| 7.4 | H6 (Anti-sycophancy) | Same config ± anti_sycophancy=true | Accuracy difference, convergence speed |
+| 7.5 | H10 (Adaptive termination) | FixedRounds vs AgreementThreshold vs BudgetExhaustion | Cost savings vs quality loss |
+| 7.6 | NEW: Council-as-agent vs single LLM | `CouncilAgent.complete()` vs best single model | Accuracy, variance, confidence calibration |
 
 **Deliverable**: Results tables with Wilcoxon p-values and bootstrap CIs. At least 3 confirmed/rejected hypotheses.
 
 ---
 
-### Phase 6: Polish, Thesis Integration, and Production Demo (Week 11-12)
+### Phase 8: Polish, Thesis Integration, and Production Demo (Week 15-16)
 
 | # | Task | Why |
 |---|------|-----|
-| 6.1 | Streamlit dashboard for interactive exploration of benchmark results | Thesis defense demo |
-| 6.2 | Production demo: PDF summarization via `CouncilAgent` | Shows the vision |
-| 6.3 | Production demo: Code review via `CouncilAgent` | Another application |
-| 6.4 | API reference documentation | Usability |
-| 6.5 | Thesis chapter: architectural decisions with empirical justification | The payoff |
-| 6.6 | Package publication to PyPI as `llm-council` | Community contribution |
+| 8.1 | Streamlit dashboard for interactive exploration of benchmark results | Thesis defense demo |
+| 8.2 | Production demo: PDF summarization via `CouncilAgent` | Shows the vision |
+| 8.3 | Production demo: Code review via `CouncilAgent` | Another application |
+| 8.4 | API reference documentation | Usability |
+| 8.5 | Thesis chapter: architectural decisions with empirical justification | The payoff |
+| 8.6 | Package publication to PyPI as `llm-council` | Community contribution |
+| 8.7 | `CouncilAgent` as LiteLLM-compatible custom provider | `council/litellm_provider.py` — ultimate composability (deferred from Phase 3.6) |
 
 ---
 

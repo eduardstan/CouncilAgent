@@ -11,7 +11,6 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-
 # ---------------------------------------------------------------------------
 # bootstrap_ci
 # ---------------------------------------------------------------------------
@@ -74,7 +73,7 @@ def wilcoxon_test(a: list[float], b: list[float]) -> tuple[float, float]:
     # When all differences are zero (identical series), scipy raises RuntimeWarning
     # due to division by zero in the rank normalization. Handle this degenerate
     # case directly: no difference → statistic=0, p-value=1.0.
-    if all(x == y for x, y in zip(a, b)):
+    if all(x == y for x, y in zip(a, b, strict=True)):
         return 0.0, 1.0
 
     result = wilcoxon(a, b)
@@ -138,9 +137,8 @@ class AIPWEstimator:
         Requires scikit-learn.
         """
         try:
-            from sklearn.linear_model import Ridge  # type: ignore[import-untyped]
-            from sklearn.preprocessing import OneHotEncoder  # type: ignore[import-untyped]
             import numpy as np  # type: ignore[import-untyped]
+            from sklearn.linear_model import Ridge  # type: ignore[import-untyped]
         except ImportError as e:
             raise ImportError(
                 "AIPWEstimator.fit requires scikit-learn and numpy. "
@@ -272,7 +270,6 @@ class MixedEffectsModel:
         Raises ValueError if data is empty or has fewer than 2 distinct domains.
         """
         try:
-            import numpy as np  # type: ignore[import-untyped]
             import pandas as pd  # type: ignore[import-untyped]
             import statsmodels.formula.api as smf  # type: ignore[import-untyped]
         except ImportError as e:

@@ -13,13 +13,13 @@ AgreementThreshold early exit, and zero framework imports.
 from __future__ import annotations
 
 from council.aggregation import MajorityVote
-from council.context import CouncilResult
+from council.context import CommunicationMode, CouncilResult
 from council.core import AgentConfig, run_council
 from council.models import FakeModelClient
 from council.normalizer import IdentityNormalizer
 from council.protocol import DirectAnswerProtocol, PeerReviewProtocol
 from council.termination import AgreementThreshold, CompositeTermination, FixedRounds
-from council.topology import CompleteGraphTopology, RingTopology
+from council.topology import BusTopology, CompleteGraphTopology, RingTopology
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -342,6 +342,381 @@ async def test_adjacency_correct_when_middle_agent_fails_in_round_0() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Task 5.2 — loop restructure: critiques excluded, interim_result populated
+# ---------------------------------------------------------------------------
+
+
+async def test_peer_review_critiques_excluded_from_aggregation() -> None:
+    """MajorityVote must never receive critique-round (odd) responses.
+
+    With PeerReview and FixedRounds(3): round 0 = answers, round 1 = critiques,
+    round 2 = revised answers. The final aggregated answer must come from round 2
+    only — not from critique text mixed in.
+    """
+    n = 3
+    responses: dict[tuple[str, int], str] = {}
+    for i in range(n):
+        responses[(f"agent-{i}", 0)] = "initial answer"
+        responses[(f"agent-{i}", 1)] = "CRITIQUE: this is a critique, not an answer"
+        responses[(f"agent-{i}", 2)] = "revised answer"
+
+    agents = _agents(n)
+    client = FakeModelClient(responses)
+    result = await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(n),
+        protocol=PeerReviewProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),
+    )
+    # The final answer must come from round-2 revised answers, not critique text.
+    assert "critique" not in result.final_answer.lower(), (
+        f"Critique text leaked into final answer: {result.final_answer!r}"
+    )
+    assert "revised answer" in result.final_answer.lower()
+
+
+async def test_aggregation_receives_only_last_answer_round_responses() -> None:
+    """Spy aggregation: verify it only sees round-0 (or round-2) responses, never round-1 critiques."""
+    n = 2
+    seen_responses: list[list[str]] = []
+
+    from council.aggregation import Aggregation, AggregationResult
+    from council.context import AggregationResult as AR
+
+    class SpyAggregation(Aggregation):
+        async def aggregate(self, responses, preferences=None, round_history=None, original_prompt=None):
+            seen_responses.append([r.content for r in responses])
+            return AggregationResult(final_answer=responses[0].content if responses else "", confidence=1.0, method="spy")
+
+    responses_map: dict[tuple[str, int], str] = {
+        ("agent-0", 0): "answer0",
+        ("agent-1", 0): "answer0",
+        ("agent-0", 1): "CRITIQUE TEXT",
+        ("agent-1", 1): "CRITIQUE TEXT",
+        ("agent-0", 2): "final_answer",
+        ("agent-1", 2): "final_answer",
+    }
+    agents = _agents(n)
+    client = FakeModelClient(responses_map)
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(n),
+        protocol=PeerReviewProtocol(),
+        aggregation=SpyAggregation(),
+        termination=FixedRounds(3),
+    )
+    for call_responses in seen_responses:
+        for content in call_responses:
+            assert "CRITIQUE" not in content, (
+                f"Critique response leaked into aggregation call: {content!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Tasks 5.1+5.5 — response_format gating
+# ---------------------------------------------------------------------------
+
+
+async def test_response_format_passed_for_answer_rounds_with_peer_review() -> None:
+    """With PeerReview + answer_response_format set, round 0 and round 2 get the format;
+    round 1 (critique) gets None."""
+    captured: dict[tuple[str, int], dict | None] = {}
+
+    def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+        captured[(agent_id, round_index)] = request.response_format
+        return '{"answer": "42"}'
+
+    agents = _agents(3)
+    client = FakeModelClient(factory)
+    rf = {"type": "json_object"}
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=PeerReviewProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),
+        answer_response_format=rf,
+    )
+    # Rounds 0 and 2 are answer rounds → get response_format
+    for agent_id in [f"agent-{i}" for i in range(3)]:
+        assert captured.get((agent_id, 0)) == rf, f"{agent_id} round 0 missing response_format"
+        assert captured.get((agent_id, 2)) == rf, f"{agent_id} round 2 missing response_format"
+    # Round 1 is a critique round → must NOT get response_format
+    for agent_id in [f"agent-{i}" for i in range(3)]:
+        assert captured.get((agent_id, 1)) is None, (
+            f"{agent_id} round 1 (critique) should have response_format=None"
+        )
+
+
+async def test_response_format_none_when_not_set() -> None:
+    """Without answer_response_format, all requests have response_format=None."""
+    captured_formats: list[dict | None] = []
+
+    def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+        captured_formats.append(request.response_format)
+        return "42"
+
+    agents = _agents(2)
+    client = FakeModelClient(factory)
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=PeerReviewProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(2),
+        # answer_response_format not passed → defaults to None
+    )
+    assert all(rf is None for rf in captured_formats), (
+        "Expected all response_format values to be None when not set"
+    )
+
+
+async def test_response_format_all_rounds_for_direct_answer_protocol() -> None:
+    """DirectAnswerProtocol: all rounds are answer rounds, so all get response_format."""
+    captured_formats: list[dict | None] = []
+
+    def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+        captured_formats.append(request.response_format)
+        return "42"
+
+    agents = _agents(2)
+    client = FakeModelClient(factory)
+    rf = {"type": "json_object"}
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(2),
+        answer_response_format=rf,
+    )
+    assert all(f == rf for f in captured_formats), (
+        "DirectAnswerProtocol: every round should carry response_format"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 6.3 — _deliberate() passes full prior history, not just round N-1
+# ---------------------------------------------------------------------------
+
+
+async def test_deliberate_passes_full_history_to_later_rounds() -> None:
+    """In round 2, each agent must see responses from both round 0 and round 1,
+    not just round 1. This makes SimultaneousProtocol's sliding window live."""
+    # round_index → list of (ctx.agent_id, [visible response round_indexes])
+    captured_visible_rounds: dict[int, list[list[int]]] = {}
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            if ctx.round_index >= 1:
+                round_idxs = [r.round_index for r in ctx.visible_responses]
+                captured_visible_rounds.setdefault(ctx.round_index, []).append(round_idxs)
+            return super().build_prompt(ctx)
+
+    agents = _agents(3)
+    client = _fake(3, "answer")
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),
+        anonymize=False,
+    )
+    # Round-1 agents see round-0 history (2 other agents in complete graph)
+    assert 1 in captured_visible_rounds, "Expected round-1 spy captures"
+    # Round-2 agents must see BOTH round-0 and round-1 history from each peer
+    assert 2 in captured_visible_rounds, "Expected round-2 spy captures"
+    for visible_round_idxs in captured_visible_rounds[2]:
+        assert 0 in visible_round_idxs, (
+            f"Round-2 context missing round-0 history: {visible_round_idxs}"
+        )
+        assert 1 in visible_round_idxs, (
+            f"Round-2 context missing round-1 history: {visible_round_idxs}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 6.2 — _generate() uses topology.communication_mode in round 0
+# ---------------------------------------------------------------------------
+
+
+async def test_generate_uses_topology_communication_mode() -> None:
+    """Round-0 VisibilityContext.communication_mode must come from the topology,
+    not be hardcoded to INDIVIDUAL."""
+    captured_modes: list[CommunicationMode] = []
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            if ctx.round_index == 0:
+                captured_modes.append(ctx.communication_mode)
+            return super().build_prompt(ctx)
+
+    agents = _agents(3)
+    client = _fake(3, "answer")
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=BusTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    assert captured_modes, "Expected round-0 prompts to be built"
+    assert all(m == CommunicationMode.BROADCAST for m in captured_modes), (
+        f"BusTopology round-0 contexts should carry BROADCAST, got: {captured_modes}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 6.12 — prompt_hint threads to VisibilityContext and Protocol prompts
+# ---------------------------------------------------------------------------
+
+
+async def test_task_hint_appears_in_answer_round_prompts() -> None:
+    """When task_hint is set, it must appear in answer-round prompts only."""
+    captured: list[tuple[int, str]] = []  # (round_index, prompt)
+
+    class SpyProtocol(PeerReviewProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            p = super().build_prompt(ctx)
+            captured.append((ctx.round_index, p))
+            return p
+
+    agents = _agents(3)
+    client = _fake(3, "42")
+    hint = "Return only the final numeric answer, no units or prose."
+    await run_council(
+        prompt="Q?",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(3),  # rounds 0, 1, 2 — PeerReview: 0=answer, 1=critique, 2=answer
+        task_hint=hint,
+    )
+    answer_prompts = [p for r, p in captured if r in (0, 2)]
+    critique_prompts = [p for r, p in captured if r == 1]
+    assert answer_prompts, "expected at least one answer-round prompt"
+    for p in answer_prompts:
+        assert hint in p, f"answer-round prompt missing hint: {p[:200]}"
+    for p in critique_prompts:
+        assert hint not in p, f"critique-round prompt should NOT contain hint: {p[:200]}"
+
+
+async def test_empty_task_hint_is_noop() -> None:
+    """An empty task_hint must not change the prompt at all."""
+    captured: list[str] = []
+
+    class SpyProtocol(DirectAnswerProtocol):
+        def build_prompt(self, ctx):  # type: ignore[override]
+            p = super().build_prompt(ctx)
+            captured.append(p)
+            return p
+
+    agents = _agents(2)
+    client = _fake(2, "7")
+    await run_council(
+        prompt="What?",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=SpyProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+        task_hint="",
+    )
+    assert captured
+    for p in captured:
+        assert p.strip() == "What?"
+
+
+# ---------------------------------------------------------------------------
+# Task 6.11 — per-agent temperature / max_tokens overrides on AgentConfig
+# ---------------------------------------------------------------------------
+
+
+async def test_per_agent_temperature_override_reaches_model_request() -> None:
+    """AgentConfig.temperature/max_tokens, when set, must override ModelRequest defaults."""
+    from council.models import FakeModelClient, ModelFailure, ModelRequest
+
+    seen: list[ModelRequest] = []
+
+    class SpyClient(FakeModelClient):
+        async def complete(self, request, agent_id, round_index):  # type: ignore[override]
+            seen.append(request)
+            return await super().complete(request, agent_id, round_index)
+
+    agents = [
+        AgentConfig(id="cold", model="fake/a", temperature=0.1, max_tokens=128),
+        AgentConfig(id="warm", model="fake/b", temperature=0.9),
+        AgentConfig(id="default", model="fake/c"),
+    ]
+    client = SpyClient({(a.id, r): "42" for a in agents for r in range(3)})
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    by_model = {req.model: req for req in seen if not isinstance(req, ModelFailure)}
+    assert by_model["fake/a"].temperature == 0.1
+    assert by_model["fake/a"].max_tokens == 128
+    assert by_model["fake/b"].temperature == 0.9
+    assert by_model["fake/b"].max_tokens == 2048  # ModelRequest default
+    assert by_model["fake/c"].temperature == 0.7  # ModelRequest default
+    assert by_model["fake/c"].max_tokens == 2048
+
+
+async def test_per_agent_system_prompt_reaches_model_request() -> None:
+    """AgentConfig.system_prompt, when set, must appear on the ModelRequest."""
+    from council.models import FakeModelClient, ModelFailure, ModelRequest
+
+    seen: list[ModelRequest] = []
+
+    class SpyClient(FakeModelClient):
+        async def complete(self, request, agent_id, round_index):  # type: ignore[override]
+            seen.append(request)
+            return await super().complete(request, agent_id, round_index)
+
+    agents = [
+        AgentConfig(id="persona", model="fake/a", system_prompt="You are a careful reasoner."),
+        AgentConfig(id="default", model="fake/b"),
+    ]
+    client = SpyClient({(a.id, r): "42" for a in agents for r in range(3)})
+    await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(2),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    by_model = {req.model: req for req in seen if not isinstance(req, ModelFailure)}
+    assert by_model["fake/a"].system_prompt == "You are a careful reasoner."
+    assert by_model["fake/b"].system_prompt is None
+
+
+# ---------------------------------------------------------------------------
 # Constitution §8 — zero framework imports in council.core
 # ---------------------------------------------------------------------------
 
@@ -363,3 +738,35 @@ def test_core_has_no_framework_imports() -> None:
     forbidden = ["langgraph", "hydra", "mlflow", "opentelemetry", "langchain"]
     for fw in forbidden:
         assert fw not in import_text, f"council/core.py imports forbidden framework: {fw}"
+
+
+# ---------------------------------------------------------------------------
+# Audit §7 regression — asyncio.gather return_exceptions
+# ---------------------------------------------------------------------------
+
+
+async def test_single_agent_exception_does_not_abort_round() -> None:
+    """Audit §7: a RuntimeError from one agent must not propagate; other agents' responses land."""
+    agents = _agents(3)
+
+    class RaisingClient(FakeModelClient):
+        async def complete(self, request, agent_id, round_index):  # type: ignore[override]
+            if agent_id == "agent-0" and round_index == 0:
+                raise RuntimeError("simulated rate-limit crash")
+            return await super().complete(request, agent_id, round_index)
+
+    client = RaisingClient({(f"agent-{i}", r): "42" for i in range(3) for r in range(5)})
+    result = await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    responding_ids = {r.agent_id for r in result.round_history if r.round_index == 0}
+    # agent-0 raised; agent-1 and agent-2 must still have responded.
+    assert "agent-1" in responding_ids or "agent-2" in responding_ids
+    # The run must not have raised — result is a CouncilResult.
+    assert isinstance(result, CouncilResult)

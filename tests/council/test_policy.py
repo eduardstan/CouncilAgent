@@ -46,9 +46,10 @@ class TestCouncilConfig:
         with pytest.raises((AttributeError, TypeError)):
             cfg.name = "changed"  # type: ignore[misc]
 
-    def test_ranking_defaults_to_none(self) -> None:
+    def test_ranking_defaults_to_null_ranking(self) -> None:
+        from council.ranking import NullRanking
         cfg = self._minimal_config()
-        assert cfg.ranking is None
+        assert isinstance(cfg.ranking, NullRanking)
 
 
 # ---------------------------------------------------------------------------
@@ -120,3 +121,86 @@ class TestCouncilPolicy:
         policy = self._policy()
         cfg = policy.plan("Q", _profile_factual())
         assert len(cfg.agents) == 3
+
+    # --- Task 6.6: output_schema injection ---
+
+    def test_plan_injects_output_schema_into_protocol(self) -> None:
+        schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+        profile = TaskProfile(name="structured", normalizer=IdentityNormalizer(), output_schema=schema)
+        policy = self._policy()
+        cfg = policy.plan("Q", profile)
+        # The returned protocol is PeerReviewProtocol (standard_deliberation tier).
+        assert isinstance(cfg.protocol, PeerReviewProtocol)
+        assert cfg.protocol._schema == schema  # type: ignore[attr-defined]
+
+    def test_plan_no_output_schema_leaves_protocol_schema_none(self) -> None:
+        profile = TaskProfile(name="plain", normalizer=IdentityNormalizer(), output_schema=None)
+        policy = self._policy()
+        cfg = policy.plan("Q", profile)
+        assert cfg.protocol._schema is None  # type: ignore[attr-defined]
+
+    def test_plan_fast_tier_also_gets_output_schema(self) -> None:
+        schema = {"type": "object"}
+        profile = TaskProfile(name="structured", normalizer=IdentityNormalizer(), output_schema=schema)
+        # Use zero budget so we can inspect the fast tier
+        policy = self._policy(budget=100.0)
+        tiers = policy._build_tiers(profile)  # type: ignore[attr-defined]
+        fast = next(t for t in tiers if t.name == "fast_vote")
+        assert fast.protocol._schema == schema  # type: ignore[attr-defined]
+
+    # --- Fix 1: meta_judge_model configurable ---
+
+    def test_meta_judge_model_explicit_used_when_set(self) -> None:
+        dedicated = "openrouter/anthropic/claude-opus-4"
+        policy = CouncilPolicy(
+            model_client=FakeModelClient({}),
+            default_models=["fake/a", "fake/b"],
+            meta_judge_model=dedicated,
+        )
+        cfg = policy.plan("Write a poem.", _profile_open_ended())
+        assert isinstance(cfg.aggregation, MetaJudge)
+        assert cfg.aggregation._model == dedicated  # type: ignore[attr-defined]
+
+    def test_meta_judge_model_falls_back_to_models_0_when_none(self) -> None:
+        models = ["fake/primary", "fake/secondary"]
+        policy = CouncilPolicy(
+            model_client=FakeModelClient({}),
+            default_models=models,
+            meta_judge_model=None,
+        )
+        cfg = policy.plan("Write a poem.", _profile_open_ended())
+        assert isinstance(cfg.aggregation, MetaJudge)
+        assert cfg.aggregation._model == "fake/primary"  # type: ignore[attr-defined]
+
+    def test_meta_judge_receives_response_format_when_schema_present(self) -> None:
+        """When TaskProfile has output_schema, MetaJudge.response_format mirrors the config's."""
+        from council.task_profile import TaskProfile
+        schema: dict[str, object] = {"type": "object", "properties": {"answer": {"type": "string"}}}
+        profile = TaskProfile(
+            name="structured_open",
+            normalizer=IdentityNormalizer(),
+            output_schema=schema,
+            recommended_aggregation="meta_judge",
+        )
+        policy = CouncilPolicy(
+            model_client=FakeModelClient({}),
+            default_models=["fake/a", "fake/b"],
+        )
+        cfg = policy.plan("prompt", profile)
+        assert isinstance(cfg.aggregation, MetaJudge)
+        assert cfg.aggregation._response_format == cfg.answer_response_format  # type: ignore[attr-defined]
+        assert cfg.aggregation._response_format == {"type": "json_object"}  # type: ignore[attr-defined]
+
+    def test_meta_judge_round_label_fn_reflects_peer_review_protocol(self) -> None:
+        """Policy wires round_label_fn so odd rounds are labelled CRITIQUE (PeerReview)."""
+        policy = CouncilPolicy(
+            model_client=FakeModelClient({}),
+            default_models=["fake/a", "fake/b"],
+        )
+        cfg = policy.plan("Write a poem.", _profile_open_ended())
+        assert isinstance(cfg.aggregation, MetaJudge)
+        label_fn = cfg.aggregation._round_label_fn  # type: ignore[attr-defined]
+        # PeerReviewProtocol: even rounds = answer, odd rounds = critique.
+        assert label_fn(0) == "GENERATE"
+        assert label_fn(1) == "CRITIQUE"
+        assert label_fn(2) == "ANSWER"

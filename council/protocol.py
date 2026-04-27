@@ -25,6 +25,27 @@ class Protocol(ABC):
     @abstractmethod
     def build_prompt(self, ctx: VisibilityContext) -> str: ...
 
+    def is_answer_round(self, round_index: int) -> bool:
+        """Return True if agents produce a final answer this round.
+
+        Default: all rounds are answer rounds (correct for DirectAnswerProtocol
+        and SimultaneousProtocol). PeerReviewProtocol overrides to return False
+        for odd (critique) rounds.
+        """
+        return True
+
+    def cycle_length(self) -> int:
+        """Number of raw rounds per deliberation cycle.
+
+        A "cycle" is the smallest unit of deliberation the protocol defines.
+        For PeerReview: critique + revision = 2 rounds per cycle.
+        For DirectAnswer/Simultaneous: 1 round per cycle.
+
+        Used by the runner to translate config max_rounds (deliberation cycles)
+        to the total raw round count: total = 1 + max_rounds * cycle_length().
+        """
+        return 1
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -33,6 +54,13 @@ class Protocol(ABC):
 
 def _format_schema(schema: dict[str, object]) -> str:
     return f"\n\nRespond with valid JSON matching this schema:\n{json.dumps(schema, indent=2)}"
+
+
+def _append_hint(prompt: str, hint: str) -> str:
+    """Append a task-level formatting hint to a prompt. No-op when hint is empty."""
+    if not hint:
+        return prompt
+    return f"{prompt}\n\n{hint}"
 
 
 def _format_responses(ctx: VisibilityContext) -> str:
@@ -77,7 +105,8 @@ class DirectAnswerProtocol(Protocol):
         prompt = ctx.original_prompt
         if self._schema:
             prompt += _format_schema(self._schema)
-        return prompt
+        # DirectAnswer: every round is an answer round — always inject hint.
+        return _append_hint(prompt, ctx.task_hint)
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +125,12 @@ class PeerReviewProtocol(Protocol):
     def __init__(self, output_schema: dict[str, object] | None = None) -> None:
         self._schema = output_schema
 
+    def is_answer_round(self, round_index: int) -> bool:
+        return round_index % 2 == 0
+
+    def cycle_length(self) -> int:
+        return 2
+
     def build_prompt(self, ctx: VisibilityContext) -> str:
         if ctx.round_index == 0:
             return self._initial_prompt(ctx)
@@ -107,10 +142,28 @@ class PeerReviewProtocol(Protocol):
         prompt = ctx.original_prompt
         if self._schema:
             prompt += _format_schema(self._schema)
-        return prompt
+        return _append_hint(prompt, ctx.task_hint)
+
+    def _windowed_ctx(self, ctx: VisibilityContext) -> VisibilityContext:
+        """Return ctx with visible_responses limited to the last round (window=1).
+
+        Prevents quadratic context growth and logical confusion between rounds
+        in multi-round deliberation (audit §2).
+        """
+        windowed = _filter_window(ctx, window_size=1)
+        return VisibilityContext(
+            agent_id=ctx.agent_id,
+            round_index=ctx.round_index,
+            visible_responses=windowed,
+            own_previous_responses=ctx.own_previous_responses,
+            total_agents=ctx.total_agents,
+            communication_mode=ctx.communication_mode,
+            original_prompt=ctx.original_prompt,
+            task_hint=ctx.task_hint,
+        )
 
     def _critique_prompt(self, ctx: VisibilityContext) -> str:
-        formatted = _format_responses(ctx)
+        formatted = _format_responses(self._windowed_ctx(ctx))
         parts = [
             f"Original question: {ctx.original_prompt}",
             "",
@@ -125,7 +178,7 @@ class PeerReviewProtocol(Protocol):
         return "\n".join(parts)
 
     def _revision_prompt(self, ctx: VisibilityContext) -> str:
-        formatted = _format_responses(ctx)
+        formatted = _format_responses(self._windowed_ctx(ctx))
         own_prev = ctx.own_previous_responses[-1].content if ctx.own_previous_responses else ""
         parts = [
             f"Original question: {ctx.original_prompt}",
@@ -141,7 +194,8 @@ class PeerReviewProtocol(Protocol):
         ]
         if self._schema:
             parts.append(_format_schema(self._schema))
-        return "\n".join(parts)
+        # Revision rounds are answer rounds — inject the hint here too.
+        return _append_hint("\n".join(parts), ctx.task_hint)
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +223,7 @@ class SimultaneousProtocol(Protocol):
             prompt = ctx.original_prompt
             if self._schema:
                 prompt += _format_schema(self._schema)
-            return prompt
+            return _append_hint(prompt, ctx.task_hint)
 
         windowed = _filter_window(ctx, self._window_size)
         temp_ctx = VisibilityContext(
@@ -180,6 +234,7 @@ class SimultaneousProtocol(Protocol):
             total_agents=ctx.total_agents,
             communication_mode=ctx.communication_mode,
             original_prompt=ctx.original_prompt,
+            task_hint=ctx.task_hint,
         )
         formatted = _format_responses(temp_ctx)
         parts = [
@@ -192,4 +247,4 @@ class SimultaneousProtocol(Protocol):
         ]
         if self._schema:
             parts.append(_format_schema(self._schema))
-        return "\n".join(parts)
+        return _append_hint("\n".join(parts), ctx.task_hint)

@@ -207,8 +207,170 @@ class TestCouncilAgentEscalation:
 
 
 # ---------------------------------------------------------------------------
+# Task 6.5 — answer_response_format threaded through CouncilAgent.complete()
+# ---------------------------------------------------------------------------
+
+
+class TestAnswerResponseFormatThreading:
+    async def test_response_format_reaches_model_calls(self) -> None:
+        """When CouncilConfig.answer_response_format is set, every answer-round
+        ModelRequest must carry that format."""
+        captured: list[dict | None] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured.append(request.response_format)
+            return '{"answer": "42"}'
+
+        rf = {"type": "json_object"}
+        cfg = CouncilConfig(
+            name="test",
+            agents=[AgentConfig(id=f"agent-{i}", model=f"fake/m-{i}") for i in range(3)],
+            topology=CompleteGraphTopology(3),
+            protocol=DirectAnswerProtocol(),
+            aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+            termination=FixedRounds(1),
+            answer_response_format=rf,
+        )
+        agent = CouncilAgent(config=cfg, model_client=FakeModelClient(factory))
+        await agent.complete("Q")
+        assert captured, "Expected at least one model call"
+        assert all(f == rf for f in captured), (
+            f"Not all requests carried answer_response_format: {captured}"
+        )
+
+    async def test_no_response_format_when_config_field_is_none(self) -> None:
+        captured: list[dict | None] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured.append(request.response_format)
+            return "42"
+
+        agent = CouncilAgent(config=_config(3), model_client=FakeModelClient(factory))
+        await agent.complete("Q")
+        assert all(f is None for f in captured), (
+            "Expected response_format=None when CouncilConfig.answer_response_format is None"
+        )
+
+    async def test_upgrade_models_escalation_preserves_response_format(self) -> None:
+        """UpgradeModels must pass CouncilConfig.answer_response_format through
+        to the escalated run_council call — otherwise structured-output
+        enforcement is silently dropped."""
+        captured_rf: list[dict | None] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured_rf.append(request.response_format)
+            return '{"answer": "x"}'
+
+        rf = {"type": "json_object"}
+        cfg = CouncilConfig(
+            name="test",
+            agents=[AgentConfig(id=f"agent-{i}", model=f"fake/m-{i}") for i in range(3)],
+            topology=CompleteGraphTopology(3),
+            protocol=DirectAnswerProtocol(),
+            aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+            termination=FixedRounds(1),
+            answer_response_format=rf,
+        )
+        # Escalation triggers on low confidence — craft a disagreement client.
+        initial_client = FakeModelClient({
+            ("agent-0", 0): '{"answer": "A"}',
+            ("agent-1", 0): '{"answer": "B"}',
+            ("agent-2", 0): '{"answer": "C"}',
+        })
+        upgrade_client = FakeModelClient(factory)
+        strategy = UpgradeModels(
+            upgraded_models=["fake/strong-0", "fake/strong-1", "fake/strong-2"],
+            model_client=upgrade_client,
+            config=cfg,
+        )
+        agent = CouncilAgent(
+            config=cfg, model_client=initial_client,
+            escalation=strategy, escalation_threshold=0.5,
+        )
+        await agent.complete("Q")
+        assert captured_rf, "escalated path was never exercised"
+        assert all(f == rf for f in captured_rf), (
+            f"UpgradeModels dropped answer_response_format: {captured_rf}"
+        )
+
+    async def test_add_deliberation_escalation_preserves_response_format(self) -> None:
+        """AddDeliberation must also preserve answer_response_format."""
+        captured_rf: list[dict | None] = []
+
+        def factory(request, agent_id, round_index):  # type: ignore[no-untyped-def]
+            captured_rf.append(request.response_format)
+            return '{"answer": "x"}'
+
+        rf = {"type": "json_object"}
+        cfg = CouncilConfig(
+            name="test",
+            agents=[AgentConfig(id=f"agent-{i}", model=f"fake/m-{i}") for i in range(3)],
+            topology=CompleteGraphTopology(3),
+            protocol=DirectAnswerProtocol(),
+            aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+            termination=FixedRounds(1),
+            answer_response_format=rf,
+        )
+        strategy = AddDeliberation(
+            extra_rounds=1,
+            model_client=FakeModelClient(factory),
+            config=cfg,
+        )
+        # Low confidence → escalation fires.
+        initial_client = FakeModelClient({
+            ("agent-0", 0): '{"answer": "A"}',
+            ("agent-1", 0): '{"answer": "B"}',
+            ("agent-2", 0): '{"answer": "C"}',
+        })
+        agent = CouncilAgent(
+            config=cfg, model_client=initial_client,
+            escalation=strategy, escalation_threshold=0.5,
+        )
+        await agent.complete("Q")
+        assert captured_rf, "escalated path was never exercised"
+        assert all(f == rf for f in captured_rf), (
+            f"AddDeliberation dropped answer_response_format: {captured_rf}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Constitution §8 — no framework imports in council.agent
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Audit §5 regression — normalizer-canonical dissent
+# ---------------------------------------------------------------------------
+
+
+async def test_audit_s5_regression_discursive_answer_not_counted_as_dissent() -> None:
+    """Audit §5: 'The answer is 15.' must not count as dissenting when winner is '15'."""
+    from council.normalizer import StructuredOutputNormalizer
+
+    n = 3
+    agents = [AgentConfig(id=f"agent-{i}", model=f"fake/m-{i}") for i in range(n)]
+    # Two agents give discursive answer, one gives bare canonical — all normalize to "15".
+    client = FakeModelClient({
+        ("agent-0", 0): "The answer is 15.",
+        ("agent-1", 0): "15",
+        ("agent-2", 0): "The answer is 15.",
+    })
+    normalizer = StructuredOutputNormalizer()
+    config = CouncilConfig(
+        name="test",
+        agents=agents,
+        topology=CompleteGraphTopology(n),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=normalizer),
+        termination=FixedRounds(1),
+        normalizer=normalizer,
+    )
+    agent = CouncilAgent(config=config, model_client=client)
+    response = await agent.complete("What is 10+5?")
+    # All three normalize to "15" — no dissenters when normalizer is wired.
+    assert response.metadata["dissenting_views"] == [], (
+        f"Expected no dissenters, got: {response.metadata['dissenting_views']}"
+    )
 
 
 def test_agent_has_no_framework_imports() -> None:

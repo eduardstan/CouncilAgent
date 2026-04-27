@@ -1,21 +1,59 @@
-# Fast benchmark config — 3-round peer review, 5 GSM8K problems.
+# Fast benchmark config — 1 deliberation cycle of peer review, 3 GSM8K problems.
 # Agents answer → critique each other → revise their own answers.
 # Full debate transcript is printed to stdout and saved as an MLflow artifact.
+#
+# max_rounds = deliberation cycles after initial generation.
+# PeerReview cycle = critique + revision (2 raw rounds).
+# So max_rounds: 1 → 1 + 1*2 = 3 total raw rounds.
+#
+# Each `council.models` entry may be either a bare model string or a dict:
+#   {model: str, temperature?: float, max_tokens?: int, system_prompt?: str}
+# Unset per-agent fields fall back to ModelRequest defaults (temp=0.7, max_tokens=2048).
+#
+# `council.meta_judge` is an optional dict for the synthesis judge:
+#   {model?: str, temperature?: float, max_tokens?: int, system_prompt?: str, max_rounds_to_include?: int}
+# `model` falls back to `models[0]` when absent.
+# Legacy form `meta_judge_model: "..."` (bare string) is still accepted.
+#
+# `council.termination` accepts a bare string or a dict:
+#   {name: composite, agreement_threshold: 0.95}  ← overrides the default 0.8 threshold.
+#
+# Top-level `models:` block sets global LiteLLMClient parameters:
+#   {timeout_seconds: 30, max_retries: 2}
 
 name: fast
 
 dataset: gsm8k
-task_limit: 5
+task_limit: 3
 
 council:
   models:
-    - "openrouter/openai/gpt-4.1-nano"
-    - "openrouter/qwen/qwen3.5-flash-02-23"
-    - "openrouter/google/gemini-2.5-flash-lite"
-  protocol: peer_review    # direct | peer_review | simultaneous
-  max_rounds: 3            # round 0=answer, 1=critique, 2=revision
+    - model: "openrouter/openai/gpt-4.1-nano"
+      temperature: 0.2
+      max_tokens: 1024
+      system_prompt: "You are a careful mathematician. Work step by step, verify each calculation, and commit to a single final numeric answer."
+    - model: "openrouter/qwen/qwen3.5-flash-02-23"
+      temperature: 0.7
+      system_prompt: "You are a pragmatic problem solver. Prefer the most direct solution path and double-check arithmetic."
+    - model: "openrouter/google/gemini-2.5-flash-lite"
+      temperature: 0.5
+      # max_tokens / system_prompt omitted → ModelRequest defaults apply.
+
+  topology: complete        # complete | star | bus | ring | dynamic_star
+  protocol: peer_review     # direct | peer_review | simultaneous
+  aggregation: meta_judge   # majority_vote | borda | condorcet | meta_judge
+
+  meta_judge:
+    model: "openrouter/openai/gpt-4.1-nano"
+    temperature: 0.1
+    max_tokens: 2048
+    system_prompt: "You are a synthesis judge reviewing a multi-agent deliberation. Identify the most defensible answer, weigh the critiques fairly, and return a single concise final answer."
+
+  ranking: null             # null | regex | structured  (structured needed for borda/condorcet)
+  termination: fixed        # fixed | agreement | budget | composite
+  max_rounds: 1             # 1 deliberation cycle (generate → critique → revise)
   budget_usd: 0.10
-  task_delay_seconds: 1.0  # paid models need much less throttling
+  task_delay_seconds: 1.0   # paid models need much less throttling
 
 mlflow:
   tracking_uri: "mlruns"

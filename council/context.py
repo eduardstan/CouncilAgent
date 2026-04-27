@@ -54,6 +54,7 @@ class VisibilityContext:
     total_agents: int
     communication_mode: CommunicationMode
     original_prompt: str
+    task_hint: str = ""
 
 
 class AnswerNormalizer(ABC):
@@ -115,6 +116,7 @@ class CouncilState:
     tokens_out: int = 0
     termination_reason: str = ""
     final_result: AggregationResult | None = None
+    interim_result: AggregationResult | None = None
 
     @classmethod
     def initial(cls, question: str) -> CouncilState:

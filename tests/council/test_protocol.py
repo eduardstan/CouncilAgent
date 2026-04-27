@@ -68,6 +68,72 @@ ALL_PROTOCOLS: list[Protocol] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Task 5.3 — is_answer_round() contract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("protocol", ALL_PROTOCOLS, ids=["DirectAnswer", "PeerReview", "Simultaneous"])
+def test_is_answer_round_0_always_true(protocol: Protocol) -> None:
+    """Round 0 (initial generation) must always be an answer round."""
+    assert protocol.is_answer_round(0) is True
+
+
+@pytest.mark.parametrize("protocol", [DirectAnswerProtocol(), SimultaneousProtocol()], ids=["DirectAnswer", "Simultaneous"])
+def test_non_peer_review_all_rounds_are_answer_rounds(protocol: Protocol) -> None:
+    for idx in [0, 1, 2, 3, 4]:
+        assert protocol.is_answer_round(idx) is True, (
+            f"{type(protocol).__name__}.is_answer_round({idx}) returned False; expected True"
+        )
+
+
+def test_peer_review_even_rounds_are_answer_rounds() -> None:
+    p = PeerReviewProtocol()
+    for idx in [0, 2, 4]:
+        assert p.is_answer_round(idx) is True
+
+
+def test_peer_review_odd_rounds_are_critique_rounds() -> None:
+    p = PeerReviewProtocol()
+    for idx in [1, 3, 5]:
+        assert p.is_answer_round(idx) is False
+
+
+# ---------------------------------------------------------------------------
+# Task 5.3 — cycle_length() contract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("protocol,expected", [
+    (DirectAnswerProtocol(), 1),
+    (SimultaneousProtocol(), 1),
+    (PeerReviewProtocol(), 2),
+], ids=["DirectAnswer", "Simultaneous", "PeerReview"])
+def test_cycle_length(protocol: Protocol, expected: int) -> None:
+    assert protocol.cycle_length() == expected
+
+
+def test_total_rounds_translation() -> None:
+    """Runner translates: total = 1 + max_rounds * cycle_length().
+
+    PeerReview with max_rounds=1 → 1 + 1*2 = 3 total raw rounds.
+    Direct with max_rounds=2 → 1 + 2*1 = 3 total raw rounds.
+    max_rounds=0 → 1 (generate only).
+    """
+    peer = PeerReviewProtocol()
+    direct = DirectAnswerProtocol()
+
+    assert 1 + 1 * peer.cycle_length() == 3
+    assert 1 + 2 * direct.cycle_length() == 3
+    assert 1 + 0 * peer.cycle_length() == 1
+    assert 1 + 0 * direct.cycle_length() == 1
+
+
+# ---------------------------------------------------------------------------
+# Regression Issue 6 — parametrized over all Protocol subclasses
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.parametrize("protocol", ALL_PROTOCOLS, ids=["DirectAnswer", "PeerReview", "Simultaneous"])
 def test_issue6_no_real_agent_id_in_prompt_when_anonymized(protocol: Protocol) -> None:
     """Issue 6: when VisibilityContext contains anonymized agent_ids (e.g. 'Response A'),
@@ -212,6 +278,30 @@ class TestPeerReviewProtocol:
         prompt = protocol.build_prompt(ctx)
         assert "answer one" in prompt
         assert "answer two" in prompt
+
+    def test_audit_s2_regression_critique_excludes_stale_rounds(self) -> None:
+        """Audit §2 regression: critique prompt must contain only round-1 content, not round-0."""
+        visible = [
+            _response("Response A", "round-zero-answer", round_index=0),
+            _response("Response A", "round-one-critique-target", round_index=1),
+        ]
+        ctx = _ctx(round_index=1, visible=visible)
+        protocol = PeerReviewProtocol()
+        prompt = protocol.build_prompt(ctx)
+        assert "round-one-critique-target" in prompt
+        assert "round-zero-answer" not in prompt
+
+    def test_audit_s2_regression_revision_excludes_stale_rounds(self) -> None:
+        """Audit §2 regression: revision prompt must contain only round-1 critiques, not round-0."""
+        visible = [
+            _response("Response A", "old-round-zero-content", round_index=0),
+            _response("Response A", "fresh-round-one-critique", round_index=1),
+        ]
+        ctx = _ctx(round_index=2, visible=visible)
+        protocol = PeerReviewProtocol()
+        prompt = protocol.build_prompt(ctx)
+        assert "fresh-round-one-critique" in prompt
+        assert "old-round-zero-content" not in prompt
 
 
 # ---------------------------------------------------------------------------

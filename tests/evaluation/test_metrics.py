@@ -77,6 +77,30 @@ class TestTaskAccuracy:
         score = await task_accuracy("PARIS", "paris", method="smart")
         assert score == pytest.approx(1.0)
 
+    # --- numeric canonicalization (Task 6.4) ---
+
+    async def test_currency_prefix_stripped(self) -> None:
+        score = await task_accuracy("$70,000", "70000", method="smart")
+        assert score == pytest.approx(1.0)
+
+    async def test_currency_no_thousands_sep(self) -> None:
+        score = await task_accuracy("$18", "18", method="smart")
+        assert score == pytest.approx(1.0)
+
+    async def test_euro_with_decimal(self) -> None:
+        score = await task_accuracy("€1,234.56", "1234.56", method="smart")
+        assert score == pytest.approx(1.0)
+
+    async def test_currency_in_sentence(self) -> None:
+        score = await task_accuracy("The answer is $70,000.", "70000", method="smart")
+        assert score == pytest.approx(1.0)
+
+    async def test_issue9_still_fails_after_canonicalize(self) -> None:
+        # "172" and "72" canonicalize identically (no currency/commas) — word-boundary
+        # must still reject "72" found inside "172".
+        score = await task_accuracy("The answer is 172.", "72", method="smart")
+        assert score == pytest.approx(0.0)
+
 
 # ---------------------------------------------------------------------------
 # convergence_rate
@@ -202,18 +226,23 @@ class TestInterRaterAgreement:
 
 class TestDiversityTrajectory:
     def _fake_embedder(self) -> object:
-        """Returns an embedder that maps each unique string to a unique orthogonal vector."""
+        """Returns an embedder that maps each unique string to a unique orthogonal vector.
+
+        All emitted vectors share a fixed dimensionality so they can be
+        compared with cosine distance (which requires equal lengths).
+        """
 
         class _FakeEmbedder:
+            _DIM = 16
             _vocab: dict[str, list[float]] = {}
 
             def encode(self, texts: list[str]) -> list[list[float]]:
                 result = []
                 for t in texts:
                     if t not in self._vocab:
-                        dim = len(self._vocab)
-                        v = [0.0] * (dim + 1)
-                        v[dim] = 1.0
+                        idx = len(self._vocab)
+                        v = [0.0] * self._DIM
+                        v[idx % self._DIM] = 1.0
                         self._vocab[t] = v
                     result.append(self._vocab[t])
                 return result

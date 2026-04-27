@@ -1,7 +1,7 @@
-# Ollama deliberation config — 3-round peer-review protocol with local models.
-# Round 0: agents answer independently.
-# Round 1: agents critique each other's answers.
-# Round 2: agents revise their own answers based on critiques.
+# Ollama deliberation config — 1 peer-review cycle with local models.
+# Generate: agents answer independently.
+# Critique: agents critique each other's answers.
+# Revise: agents revise their own answers based on critiques.
 #
 # Requires: ollama serve with qwen3:0.6b and deepseek-r1:1.5b pulled.
 
@@ -14,8 +14,11 @@ council:
   models:
     - "ollama/qwen3:0.6b"
     - "ollama/deepseek-r1:1.5b"
-  protocol: peer_review   # agents see each other and deliberate
-  max_rounds: 3
+  topology: complete          # complete | star | bus | ring | dynamic_star
+  protocol: peer_review       # direct | peer_review | simultaneous
+  aggregation: majority_vote  # majority_vote | borda | condorcet | meta_judge
+  termination: fixed          # fixed | agreement | budget | composite
+  max_rounds: 1
   budget_usd: 0.0
   task_delay_seconds: 0.0
 
