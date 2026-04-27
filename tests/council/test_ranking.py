@@ -94,6 +94,14 @@ class TestStructuredRanking:
         spy.extract('{"ranking": ["A"], "scores": {"A": 7}}', agent_ids=["A"])
         assert regex_called == [], "regex fallback should not be called on valid JSON"
 
+    def test_markdown_json_fence_stripped_before_parse(self) -> None:
+        """Audit §7 regression: LLM wrapping JSON in ```json ... ``` fences must still parse."""
+        ranking = StructuredRanking()
+        fenced = '```json\n{"ranking": ["A", "B"], "scores": {"A": 9, "B": 5}}\n```'
+        result = ranking.extract(fenced, agent_ids=["A", "B"])
+        assert isinstance(result, RichPreference)
+        assert result.ordered_ids == ["A", "B"]
+
 
 # ---------------------------------------------------------------------------
 # RegexOrdinalRanking

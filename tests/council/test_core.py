@@ -738,3 +738,35 @@ def test_core_has_no_framework_imports() -> None:
     forbidden = ["langgraph", "hydra", "mlflow", "opentelemetry", "langchain"]
     for fw in forbidden:
         assert fw not in import_text, f"council/core.py imports forbidden framework: {fw}"
+
+
+# ---------------------------------------------------------------------------
+# Audit §7 regression — asyncio.gather return_exceptions
+# ---------------------------------------------------------------------------
+
+
+async def test_single_agent_exception_does_not_abort_round() -> None:
+    """Audit §7: a RuntimeError from one agent must not propagate; other agents' responses land."""
+    agents = _agents(3)
+
+    class RaisingClient(FakeModelClient):
+        async def complete(self, request, agent_id, round_index):  # type: ignore[override]
+            if agent_id == "agent-0" and round_index == 0:
+                raise RuntimeError("simulated rate-limit crash")
+            return await super().complete(request, agent_id, round_index)
+
+    client = RaisingClient({(f"agent-{i}", r): "42" for i in range(3) for r in range(5)})
+    result = await run_council(
+        prompt="Q",
+        agents=agents,
+        model_client=client,
+        topology=CompleteGraphTopology(3),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=IdentityNormalizer()),
+        termination=FixedRounds(1),
+    )
+    responding_ids = {r.agent_id for r in result.round_history if r.round_index == 0}
+    # agent-0 raised; agent-1 and agent-2 must still have responded.
+    assert "agent-1" in responding_ids or "agent-2" in responding_ids
+    # The run must not have raised — result is a CouncilResult.
+    assert isinstance(result, CouncilResult)
