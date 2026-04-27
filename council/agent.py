@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 
-from council.context import AgentResponse, CouncilResult
+from council.context import AgentResponse, AnswerNormalizer, CouncilResult
 from council.core import run_council
 from council.models import ModelClient
 from council.policy import CouncilConfig
@@ -83,7 +83,9 @@ class UpgradeModels(EscalationStrategy):
             answer_response_format=self._config.answer_response_format,
             task_hint=self._config.prompt_hint,
         )
-        return _result_to_response(result, base_cost=response.cost, escalated=True)
+        return await _result_to_response(
+            result, base_cost=response.cost, escalated=True, normalizer=self._config.normalizer
+        )
 
 
 class AddDeliberation(EscalationStrategy):
@@ -115,7 +117,9 @@ class AddDeliberation(EscalationStrategy):
             answer_response_format=self._config.answer_response_format,
             task_hint=self._config.prompt_hint,
         )
-        return _result_to_response(result, base_cost=response.cost, escalated=True)
+        return await _result_to_response(
+            result, base_cost=response.cost, escalated=True, normalizer=self._config.normalizer
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +166,7 @@ class CouncilAgent:
             task_hint=self._config.prompt_hint,
         )
 
-        response = _result_to_response(result)
+        response = await _result_to_response(result, normalizer=self._config.normalizer)
 
         if self._escalation and result.confidence < self._escalation_threshold:
             logger.debug(
@@ -180,22 +184,22 @@ class CouncilAgent:
 # ---------------------------------------------------------------------------
 
 
-def _result_to_response(
+async def _result_to_response(
     result: CouncilResult,
     *,
     base_cost: float = 0.0,
     escalated: bool = False,
+    normalizer: AnswerNormalizer | None = None,
 ) -> AgentResponse:
     """Convert a CouncilResult to an AgentResponse (Constitution §2)."""
     last_round = result.rounds_used - 1
     last_responses = [r for r in result.round_history if r.round_index == last_round]
     winner = result.final_answer
-    # NOTE: winner is already a canonical form (lowercased, stripped) produced by
-    # the aggregation normalizer. Comparing via strip().lower() is approximate —
-    # responses like "The answer is 72." won't match canonical "72" even though they
-    # normalize to the same answer. This is informational metadata only; the final
-    # answer and confidence are unaffected.
-    dissenting = [r.content for r in last_responses if r.content.strip().lower() != winner]
+    if normalizer is not None:
+        canonicals = [await normalizer.normalize(r.content) for r in last_responses]
+        dissenting = [r.content for r, c in zip(last_responses, canonicals, strict=True) if c != winner]
+    else:
+        dissenting = [r.content for r in last_responses if r.content.strip().lower() != winner]
 
     return AgentResponse(
         agent_id="council" if not escalated else "council-escalated",

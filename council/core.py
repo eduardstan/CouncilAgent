@@ -220,10 +220,12 @@ async def _generate(
         )
         for agent, ctx in zip(agents, ctx_for_agent, strict=True)
     ]
-    results = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for agent, outcome in zip(agents, results, strict=True):
-        if isinstance(outcome, ModelFailure):
+        if isinstance(outcome, BaseException):
+            logger.warning("Agent %s raised in round 0: %s", agent.id, outcome)
+        elif isinstance(outcome, ModelFailure):
             logger.debug("Agent %s failed in round 0: %s", agent.id, outcome.error)
         else:
             state.round_history.append(outcome)
@@ -285,10 +287,12 @@ async def _deliberate(
             )
         )
 
-    results = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for agent, outcome in zip(agents, results, strict=True):
-        if isinstance(outcome, ModelFailure):
+        if isinstance(outcome, BaseException):
+            logger.warning("Agent %s raised in round %d: %s", agent.id, round_index, outcome)
+        elif isinstance(outcome, ModelFailure):
             logger.debug("Agent %s failed in round %d: %s", agent.id, round_index, outcome.error)
         else:
             state.round_history.append(outcome)

@@ -338,6 +338,41 @@ class TestAnswerResponseFormatThreading:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Audit §5 regression — normalizer-canonical dissent
+# ---------------------------------------------------------------------------
+
+
+async def test_audit_s5_regression_discursive_answer_not_counted_as_dissent() -> None:
+    """Audit §5: 'The answer is 15.' must not count as dissenting when winner is '15'."""
+    from council.normalizer import StructuredOutputNormalizer
+
+    n = 3
+    agents = [AgentConfig(id=f"agent-{i}", model=f"fake/m-{i}") for i in range(n)]
+    # Two agents give discursive answer, one gives bare canonical — all normalize to "15".
+    client = FakeModelClient({
+        ("agent-0", 0): "The answer is 15.",
+        ("agent-1", 0): "15",
+        ("agent-2", 0): "The answer is 15.",
+    })
+    normalizer = StructuredOutputNormalizer()
+    config = CouncilConfig(
+        name="test",
+        agents=agents,
+        topology=CompleteGraphTopology(n),
+        protocol=DirectAnswerProtocol(),
+        aggregation=MajorityVote(normalizer=normalizer),
+        termination=FixedRounds(1),
+        normalizer=normalizer,
+    )
+    agent = CouncilAgent(config=config, model_client=client)
+    response = await agent.complete("What is 10+5?")
+    # All three normalize to "15" — no dissenters when normalizer is wired.
+    assert response.metadata["dissenting_views"] == [], (
+        f"Expected no dissenters, got: {response.metadata['dissenting_views']}"
+    )
+
+
 def test_agent_has_no_framework_imports() -> None:
     import importlib.util
 

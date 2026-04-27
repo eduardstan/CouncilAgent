@@ -65,7 +65,10 @@ class StructuredRanking(Ranking):
 
         # --- Primary: JSON ---
         try:
-            data = json.loads(text)
+            stripped = text.strip()
+            if stripped.startswith("```"):
+                stripped = stripped.split("\n", 1)[-1].rsplit("```", 1)[0]
+            data = json.loads(stripped)
             ordered = [aid for aid in data.get("ranking", []) if aid in valid_ids]
             raw_scores: dict[str, object] = data.get("scores", {})
             scores: dict[str, float] = {}

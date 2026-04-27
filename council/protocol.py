@@ -144,8 +144,26 @@ class PeerReviewProtocol(Protocol):
             prompt += _format_schema(self._schema)
         return _append_hint(prompt, ctx.task_hint)
 
+    def _windowed_ctx(self, ctx: VisibilityContext) -> VisibilityContext:
+        """Return ctx with visible_responses limited to the last round (window=1).
+
+        Prevents quadratic context growth and logical confusion between rounds
+        in multi-round deliberation (audit §2).
+        """
+        windowed = _filter_window(ctx, window_size=1)
+        return VisibilityContext(
+            agent_id=ctx.agent_id,
+            round_index=ctx.round_index,
+            visible_responses=windowed,
+            own_previous_responses=ctx.own_previous_responses,
+            total_agents=ctx.total_agents,
+            communication_mode=ctx.communication_mode,
+            original_prompt=ctx.original_prompt,
+            task_hint=ctx.task_hint,
+        )
+
     def _critique_prompt(self, ctx: VisibilityContext) -> str:
-        formatted = _format_responses(ctx)
+        formatted = _format_responses(self._windowed_ctx(ctx))
         parts = [
             f"Original question: {ctx.original_prompt}",
             "",
@@ -160,7 +178,7 @@ class PeerReviewProtocol(Protocol):
         return "\n".join(parts)
 
     def _revision_prompt(self, ctx: VisibilityContext) -> str:
-        formatted = _format_responses(ctx)
+        formatted = _format_responses(self._windowed_ctx(ctx))
         own_prev = ctx.own_previous_responses[-1].content if ctx.own_previous_responses else ""
         parts = [
             f"Original question: {ctx.original_prompt}",

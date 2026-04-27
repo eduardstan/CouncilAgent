@@ -1361,7 +1361,7 @@ These are not feature gaps — they are correctness issues that make hypothesis 
 
 ---
 
-### Phase 6: Runner Configurability & Correctness Fixes ✅
+### Phase 6: Runner Configurability & Correctness Fixes
 
 **Goal**: Make the experiment runner fully configurable so that Phase 7 hypothesis testing can sweep over topologies, aggregations, and termination strategies. Fix the correctness issues discovered during code review that would invalidate sweep results.
 
@@ -1391,7 +1391,23 @@ These are not feature gaps — they are correctness issues that make hypothesis 
 | 6.15 | Per-agent `system_prompt` threaded through `AgentConfig` → `ModelRequest` → `LiteLLMClient` | `council/core.py`, `council/models.py` |
 | 6.16 | YAML schema extension: each `council.models` entry is a bare string OR `{model, temperature?, max_tokens?, system_prompt?}` dict; `council.meta_judge` nested dict carries synthesis-judge overrides (`{model?, temperature?, max_tokens?, system_prompt?}`). `MetaJudge` accepts `system_prompt` and `output_schema` kwargs, forwarded to its `ModelRequest`. | `experiments/run.py`, `council/aggregation.py`, `configs/experiment/fast.yaml` |
 
-**Deliverable achieved**: runner accepts all topology/aggregation/termination/protocol combinations; `SimultaneousProtocol` windowing works end-to-end; `task_accuracy("$70,000", "70000")` → 1.0; `CouncilAgent.complete()` enforces structured output; per-dataset `TaskProfile` drives normalizer, output schema, and prompt hint from `tasks/profiles.py`. YAML configs expose the full per-agent and per-judge knob set (temperature, max_tokens, system_prompt) — `fast.yaml` is the canonical example.
+**Deliverable for 6.1–6.16 (achieved)**: runner accepts all topology/aggregation/termination/protocol combinations; `SimultaneousProtocol` windowing works end-to-end; `task_accuracy("$70,000", "70000")` → 1.0; `CouncilAgent.complete()` enforces structured output; per-dataset `TaskProfile` drives normalizer, output schema, and prompt hint from `tasks/profiles.py`. YAML configs expose the full per-agent and per-judge knob set (temperature, max_tokens, system_prompt) — `fast.yaml` is the canonical example.
+
+**Phase 6 Audit Polish (pending — `feature/p6-audit-polish`):**
+
+A 2026-04-25 architectural audit (`report.md`) stress-tested the post-6.16 implementation and surfaced seven follow-on items. None invalidates the layered architecture, but each one blocks rigorous Phase 7 sweeps: cardinal aggregators silently produce empty answers, peer review concatenates stale rounds (~3.3× cost on `max_rounds: 3`), the dynamic star topology renders the hub blind on the very round it is meant to critique, key thresholds are hardcoded, dissent is computed in raw-string space (so `AgreementThreshold` rarely fires on natural-language math answers), `MetaJudge` re-ingests the full transcript every round, and a single rate-limited model crashes the whole step. Items map 1:1 to the audit sections.
+
+| # | Task | Files |
+|---|------|-------|
+| 6.17 | Add `_build_ranking()` factory in the runner; expose `council.ranking` YAML key (`null` / `simple` / `structured`) so cardinal aggregators (Borda, Condorcet) receive non-empty `PreferenceData` instead of the `NullRanking` default. (Audit §1) | `experiments/run.py`, `configs/experiment/*.yaml` |
+| 6.18 | `PeerReviewProtocol._critique_prompt` and `_revision_prompt` invoke `_filter_window(ctx, window_size=1)` so multi-round deliberation does not concatenate stale rounds under one "critiques received" label; add a regression test asserting that round-2 critique prompts contain only round-1 content. (Audit §2) | `council/protocol.py`, `tests/council/test_protocol.py` |
+| 6.19 | Fix `DynamicStarTopology.get_adjacency_matrix` index inversion (the matrix is read as `adjacency[i][j] = "i sees j"`): even rounds = fan-out (`m[i][0] = True` for `i > 0` — peripherals read hub), odd rounds = fan-in (`m[0][j] = True` for `j > 0` — hub reads peripherals). Pin with a regression test that on an odd round `m[0][1] is True` and `m[1][0] is False`. (Audit §3) | `council/topology.py`, `tests/council/test_topology.py` |
+| 6.20 | Extend YAML schema: `termination` accepts a dict (e.g. `{name: composite, agreement_threshold: 0.95}`); `_build_termination` injects values into `AgreementThreshold` instead of the hardcoded `0.8` at `run.py:200,208`. Surface global `models.timeout_seconds` / `models.max_retries` to `LiteLLMClient`. Mirrors the dict-form pattern already used by `aggregation` and `council.models`. (Audit §4) | `experiments/run.py`, `configs/experiment/*.yaml` |
+| 6.21 | Replace raw `r.content.strip().lower() != winner` in `council/agent.py` (the dissent set used by `CouncilAgent.complete`'s confidence calc) with `await normalizer.normalize(r.content) != winner`, so dissent is computed in canonical space and `AgreementThreshold` no longer falsely negates consensus on discursive answers like "The answer is 15." vs "15". (Audit §5) | `council/agent.py`, `tests/council/test_agent.py` |
+| 6.22 | `MetaJudge` accepts `max_rounds_to_include: int \| None` and trims `_format_debate` to the last N rounds before formatting; runner exposes it via the `aggregation` dict introduced in 6.16 so YAML configs can cap synthesis context per experiment. (Audit §6) | `council/aggregation.py`, `experiments/run.py`, `tests/council/test_aggregation.py` |
+| 6.23 | Hardening: strip ```` ```json ... ``` ```` markdown fences before `json.loads` in `StructuredRanking.extract`; add `return_exceptions=True` to the two `asyncio.gather` calls in `core.py` (`_generate`, `_deliberate`) and convert raised exceptions into `ModelFailure` so a single rate-limited or timed-out agent does not crash the round. (Audit §7) | `council/ranking.py`, `council/core.py` |
+
+**Phase 6 closes when**: Borda/Condorcet runs produce non-empty `final_answer` end-to-end; PeerReview prompt size is `O(1)` in `max_rounds`; `DynamicStarTopology` round-1 grants the hub fan-in visibility; `AgreementThreshold` and global model timeouts are tunable from YAML; `CouncilAgent` confidence reflects normalizer-canonical dissent; `MetaJudge` honours a configurable history cap; the runner survives a single-agent failure without aborting the round.
 
 ---
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from council.aggregation import Aggregation, MajorityVote, MetaJudge
+from council.context import AnswerNormalizer
 from council.core import AgentConfig
 from council.models import ModelClient
 from council.protocol import DirectAnswerProtocol, PeerReviewProtocol, Protocol
@@ -54,6 +55,7 @@ class CouncilConfig:
     estimated_cost_usd: float = 0.0
     answer_response_format: dict[str, object] | None = None
     prompt_hint: str = ""
+    normalizer: AnswerNormalizer | None = None
 
 
 class CouncilPolicy:
@@ -115,6 +117,7 @@ class CouncilPolicy:
             estimated_cost_usd=0.0,
             answer_response_format=rf,
             prompt_hint=task_profile.prompt_hint,
+            normalizer=task_profile.normalizer,
         )
 
         # Tier 2 — standard_deliberation: peer review, agreement-gated, task-aware agg.
@@ -151,6 +154,7 @@ class CouncilPolicy:
             estimated_cost_usd=0.0,
             answer_response_format=rf,
             prompt_hint=task_profile.prompt_hint,
+            normalizer=task_profile.normalizer,
         )
 
         return [fast, standard]

@@ -80,6 +80,28 @@ def _build_topology(name: str, n_agents: int) -> Any:
     return cls(n_agents)
 
 
+def _build_ranking(cfg: str | dict[str, Any]) -> Any:
+    """Factory: ranking config → Ranking instance.
+
+    cfg is a bare string or dict with a ``name`` key:
+      null       → NullRanking (default — no preference extraction)
+      regex      → RegexOrdinalRanking (text-pattern extraction)
+      structured → StructuredRanking (JSON-primary, regex fallback)
+    """
+    from council.ranking import NullRanking, RegexOrdinalRanking, StructuredRanking
+
+    name = cfg if isinstance(cfg, str) else cfg.get("name", "null")
+    if name == "null":
+        return NullRanking()
+    if name == "regex":
+        return RegexOrdinalRanking()
+    if name == "structured":
+        return StructuredRanking()
+    raise ValueError(
+        f"Unknown ranking {name!r}. Valid options: null, regex, structured"
+    )
+
+
 def _build_aggregation(
     name: str,
     normalizer: Any,
@@ -119,7 +141,7 @@ def _build_aggregation(
             "normalizer": normalizer,
             "output_schema": output_schema,
         }
-        for key in ("temperature", "max_tokens", "system_prompt"):
+        for key in ("temperature", "max_tokens", "system_prompt", "max_rounds_to_include"):
             if key in cfg:
                 kwargs[key] = cfg[key]
 
@@ -179,12 +201,17 @@ def _parse_agents(models_cfg: list[Any]) -> tuple[list[Any], list[str]]:
 
 
 def _build_termination(
-    name: str,
+    cfg: str | dict[str, Any],
     total_rounds: int,
     normalizer: Any,
     budget_usd: float,
 ) -> Any:
-    """Factory: termination name → TerminationStrategy instance. Raises ValueError on unknown name."""
+    """Factory: termination config → TerminationStrategy instance.
+
+    cfg may be a bare string (e.g. ``"fixed"``) or a dict:
+        {name: agreement, agreement_threshold: 0.95}
+    Unset dict keys fall back to the defaults shown below.
+    """
     from council.termination import (
         AgreementThreshold,
         BudgetExhaustion,
@@ -192,20 +219,27 @@ def _build_termination(
         FixedRounds,
     )
 
+    if isinstance(cfg, str):
+        name = cfg
+        extra: dict[str, Any] = {}
+    else:
+        name = cfg.get("name", "fixed")
+        extra = {k: v for k, v in cfg.items() if k != "name"}
+
+    agreement_threshold: float = extra.get("agreement_threshold", 0.8)
+
     if name == "fixed":
         return FixedRounds(total_rounds)
     if name == "agreement":
-        # AgreementThreshold with a FixedRounds safety cap.
         return CompositeTermination(
-            AgreementThreshold(0.8, normalizer=normalizer),
+            AgreementThreshold(agreement_threshold, normalizer=normalizer),
             FixedRounds(total_rounds),
         )
     if name == "budget":
         return BudgetExhaustion(budget_usd)
     if name == "composite":
-        # Agreement OR budget exhausted OR fixed cap — whichever fires first.
         return CompositeTermination(
-            AgreementThreshold(0.8, normalizer=normalizer),
+            AgreementThreshold(agreement_threshold, normalizer=normalizer),
             BudgetExhaustion(budget_usd),
             FixedRounds(total_rounds),
         )
@@ -354,7 +388,8 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     protocol_name: str = council_cfg.get("protocol", "peer_review")
     topology_name: str = council_cfg.get("topology", "complete")
     aggregation_name: str = council_cfg.get("aggregation", "majority_vote")
-    termination_name: str = council_cfg.get("termination", "fixed")
+    termination_cfg: str | dict[str, Any] = council_cfg.get("termination", "fixed")
+    ranking_cfg: str | dict[str, Any] = council_cfg.get("ranking", "null")
     # meta_judge: structured dict of synthesis-judge overrides.
     meta_judge_cfg: dict[str, Any] | None = council_cfg.get("meta_judge")
 
@@ -382,7 +417,11 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
 
     # Convenience map for transcript formatting: agent-0 → full model string
     model_map = {f"agent-{i}": m for i, m in enumerate(models)}
-    model_client = LiteLLMClient()
+    models_global_cfg: dict[str, Any] = config.get("models", {})
+    model_client = LiteLLMClient(
+        timeout=float(models_global_cfg.get("timeout_seconds", 60.0)),
+        max_retries=int(models_global_cfg.get("max_retries", 3)),
+    )
 
     topology = _build_topology(topology_name, len(agents))
     # Request structured JSON only when the profile declares an output schema.
@@ -400,7 +439,8 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         response_format=answer_rf,
         output_schema=output_schema,
     )
-    termination = _build_termination(termination_name, total_rounds, normalizer, budget_usd)
+    termination = _build_termination(termination_cfg, total_rounds, normalizer, budget_usd)
+    ranking = _build_ranking(ranking_cfg)
 
     # --- Load tasks -------------------------------------------------------
     loader = REGISTRY[dataset_name]
@@ -430,7 +470,8 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     print(f"Experiment: {cfg_name}  |  dataset: {dataset_name}  |  tasks: {task_limit or 'all'}")
     print(f"Models: {', '.join(m.split('/')[-1] for m in models)}")
     print(f"Protocol: {protocol_name}  |  deliberation_cycles: {max_rounds}  |  total_rounds: {total_rounds}")
-    print(f"Topology: {topology_name}  |  aggregation: {aggregation_name}  |  termination: {termination_name}")
+    termination_label = termination_cfg if isinstance(termination_cfg, str) else termination_cfg.get("name", "?")
+    print(f"Topology: {topology_name}  |  aggregation: {aggregation_name}  |  termination: {termination_label}")
     print(f"{'=' * 72}\n")
 
     for task_idx, task in enumerate(tasks):
@@ -445,6 +486,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 protocol=protocol,
                 aggregation=aggregation,
                 termination=termination,
+                ranking=ranking,
                 answer_response_format=answer_rf,
                 task_hint=prompt_hint,
             )
@@ -520,7 +562,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 "protocol": protocol_name,
                 "topology": topology_name,
                 "aggregation": aggregation_name,
-                "termination": termination_name,
+                "termination": termination_label,
                 "meta_judge_model": (meta_judge_cfg or {}).get("model") or models[0],
                 "meta_judge_temperature": (meta_judge_cfg or {}).get("temperature", ""),
                 "meta_judge_max_tokens": (meta_judge_cfg or {}).get("max_tokens", ""),

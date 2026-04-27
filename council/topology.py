@@ -78,13 +78,13 @@ class DynamicStarTopology(Topology):
         n = self.num_agents
         m = [[False] * n for _ in range(n)]
         if round_index % 2 == 0:
-            # Fan-out: hub (0) → peripherals
-            for j in range(1, n):
-                m[0][j] = True
-        else:
-            # Fan-in: peripherals → hub (0)
+            # Fan-out: peripherals read hub (adjacency[i][0] = "i sees 0")
             for i in range(1, n):
                 m[i][0] = True
+        else:
+            # Fan-in: hub reads peripherals (adjacency[0][j] = "0 sees j")
+            for j in range(1, n):
+                m[0][j] = True
         return m
 
 
