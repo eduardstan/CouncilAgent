@@ -174,6 +174,7 @@ class MetaJudge(Aggregation):
         max_tokens: int = 2048,
         system_prompt: str | None = None,
         output_schema: dict[str, object] | None = None,
+        max_rounds_to_include: int | None = None,
     ) -> None:
         self._model = model
         self._model_client = model_client
@@ -184,16 +185,20 @@ class MetaJudge(Aggregation):
         self._max_tokens = max_tokens
         self._system_prompt = system_prompt
         self._output_schema = output_schema
+        self._max_rounds_to_include = max_rounds_to_include
 
     def _format_debate(self, round_history: list[AgentResponse]) -> str:
-        """Format the full deliberation history as a phase-labelled transcript.
+        """Format the deliberation history as a phase-labelled transcript.
 
-        Agent labels are stable across rounds: the same agent_id is always
-        rendered as the same "Response X" marker, derived from a sort over
-        the union of agent_ids seen in the history. This lets the synthesis
-        model track how each participant's position evolved — critical for
-        the "informed Area Chair" reading of the debate.
+        When max_rounds_to_include is set, only the last N rounds are included
+        to prevent lost-in-the-middle attention decay on long deliberations.
+        Agent labels are stable across the included rounds.
         """
+        if self._max_rounds_to_include is not None and round_history:
+            all_rounds = sorted({r.round_index for r in round_history})
+            cutoff = all_rounds[-self._max_rounds_to_include]
+            round_history = [r for r in round_history if r.round_index >= cutoff]
+
         by_round: dict[int, list[AgentResponse]] = defaultdict(list)
         for r in round_history:
             by_round[r.round_index].append(r)

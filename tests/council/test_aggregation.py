@@ -489,6 +489,36 @@ class TestMetaJudge:
             result = await agg.aggregate(responses, round_history=None)
             assert isinstance(result, AggregationResult)
 
+    async def test_audit_s6_regression_max_rounds_to_include_caps_transcript(self) -> None:
+        """Audit §6: MetaJudge with max_rounds_to_include=1 omits round-0 content from prompt."""
+        from council.context import AgentResponse
+        from council.models import FakeModelClient
+
+        captured: list[str] = []
+
+        def handler(req):  # type: ignore[no-untyped-def]
+            captured.append(req.prompt)
+            return "synthesized"
+
+        agg = MetaJudge(
+            model="fake/m",
+            model_client=FakeModelClient({}, call_handler=handler),
+            max_rounds_to_include=1,
+        )
+
+        def _ar(content: str, round_index: int) -> AgentResponse:
+            return AgentResponse(
+                agent_id="a", content=content, round_index=round_index,
+                tokens_in=1, tokens_out=1, cost=0.0,
+            )
+
+        history = [_ar("round-zero-content", 0), _ar("round-one-content", 1)]
+        await agg.aggregate([_ar("round-one-content", 1)], round_history=history)
+
+        assert captured, "synthesis model was never called"
+        assert "round-one-content" in captured[0]
+        assert "round-zero-content" not in captured[0]
+
 
 # ---------------------------------------------------------------------------
 # Cross-layer isolation
