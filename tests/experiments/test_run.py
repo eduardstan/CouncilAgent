@@ -14,6 +14,7 @@ import pytest
 from experiments.run import (
     ExperimentSummary,
     _build_aggregation,
+    _build_ranking,
     _build_termination,
     _build_topology,
     _parse_agents,
@@ -282,6 +283,33 @@ class TestBuildTermination:
         from council.termination import FixedRounds
         t = _build_termination("fixed", total_rounds=5, normalizer=self._normalizer(), budget_usd=1.0)
         assert isinstance(t, FixedRounds)
+
+
+class TestBuildRanking:
+    def test_null_returns_null_ranking(self) -> None:
+        from council.ranking import NullRanking
+        assert isinstance(_build_ranking("null"), NullRanking)
+
+    def test_regex_returns_regex_ordinal_ranking(self) -> None:
+        from council.ranking import RegexOrdinalRanking
+        assert isinstance(_build_ranking("regex"), RegexOrdinalRanking)
+
+    def test_structured_returns_structured_ranking(self) -> None:
+        from council.ranking import StructuredRanking
+        assert isinstance(_build_ranking("structured"), StructuredRanking)
+
+    def test_dict_form_accepted(self) -> None:
+        from council.ranking import StructuredRanking
+        assert isinstance(_build_ranking({"name": "structured"}), StructuredRanking)
+
+    def test_default_bare_string_is_null(self) -> None:
+        """Audit §1 regression: omitting ranking from YAML defaults to NullRanking."""
+        from council.ranking import NullRanking
+        assert isinstance(_build_ranking("null"), NullRanking)
+
+    def test_unknown_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Unknown ranking"):
+            _build_ranking("magic_ranking")
 
 
 class TestMissingModelsRaises:

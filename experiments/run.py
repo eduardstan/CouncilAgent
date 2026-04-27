@@ -80,6 +80,28 @@ def _build_topology(name: str, n_agents: int) -> Any:
     return cls(n_agents)
 
 
+def _build_ranking(cfg: str | dict[str, Any]) -> Any:
+    """Factory: ranking config → Ranking instance.
+
+    cfg is a bare string or dict with a ``name`` key:
+      null       → NullRanking (default — no preference extraction)
+      regex      → RegexOrdinalRanking (text-pattern extraction)
+      structured → StructuredRanking (JSON-primary, regex fallback)
+    """
+    from council.ranking import NullRanking, RegexOrdinalRanking, StructuredRanking
+
+    name = cfg if isinstance(cfg, str) else cfg.get("name", "null")
+    if name == "null":
+        return NullRanking()
+    if name == "regex":
+        return RegexOrdinalRanking()
+    if name == "structured":
+        return StructuredRanking()
+    raise ValueError(
+        f"Unknown ranking {name!r}. Valid options: null, regex, structured"
+    )
+
+
 def _build_aggregation(
     name: str,
     normalizer: Any,
@@ -367,6 +389,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
     topology_name: str = council_cfg.get("topology", "complete")
     aggregation_name: str = council_cfg.get("aggregation", "majority_vote")
     termination_cfg: str | dict[str, Any] = council_cfg.get("termination", "fixed")
+    ranking_cfg: str | dict[str, Any] = council_cfg.get("ranking", "null")
     # meta_judge: structured dict of synthesis-judge overrides.
     meta_judge_cfg: dict[str, Any] | None = council_cfg.get("meta_judge")
 
@@ -417,6 +440,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
         output_schema=output_schema,
     )
     termination = _build_termination(termination_cfg, total_rounds, normalizer, budget_usd)
+    ranking = _build_ranking(ranking_cfg)
 
     # --- Load tasks -------------------------------------------------------
     loader = REGISTRY[dataset_name]
@@ -462,6 +486,7 @@ async def run_experiment(config: dict[str, Any]) -> ExperimentSummary:
                 protocol=protocol,
                 aggregation=aggregation,
                 termination=termination,
+                ranking=ranking,
                 answer_response_format=answer_rf,
                 task_hint=prompt_hint,
             )

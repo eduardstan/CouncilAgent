@@ -49,6 +49,7 @@ council:
     max_tokens: 2048
     system_prompt: "You are a synthesis judge reviewing a multi-agent deliberation. Identify the most defensible answer, weigh the critiques fairly, and return a single concise final answer."
 
+  ranking: null             # null | regex | structured  (structured needed for borda/condorcet)
   termination: fixed        # fixed | agreement | budget | composite
   max_rounds: 1             # 1 deliberation cycle (generate → critique → revise)
   budget_usd: 0.10
