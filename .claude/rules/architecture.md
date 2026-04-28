@@ -1,72 +1,188 @@
 # Architecture Rules (binding)
 
-These rules encode Constitution §3 and §8 at file-and-symbol granularity. A PR that violates any of these is rejected unless the user explicitly overrides.
+These rules encode the 12-principle Constitution at file-and-symbol granularity. A PR that violates any of them is rejected unless the user explicitly overrides.
 
 ## Layer responsibilities
 
-| Layer | File | May do | May NOT do |
-|-------|------|--------|-----------|
-| **Topology** | `council/topology.py` | Return `adjacency_matrix(round_index)`, declare `communication_mode` | Construct prompts, call models, know about protocols, hardcode "chairman" or any privileged agent |
-| **Protocol** | `council/protocol.py` | Build a single-agent prompt from a `VisibilityContext` | Read `state["round_history"]` directly, filter by agent identity, embed anonymization logic |
-| **Ranking** | `council/ranking.py` | Parse rankings/scores from a text response | Call models, reshape responses, decide winners |
-| **Aggregation** | `council/aggregation.py` | Reduce responses + preferences to a final answer | Construct deliberation prompts, mutate state history, hardcode the synthesis model |
-| **Normalizer** | `council/normalizer.py` | Turn raw text into a canonical answer key | Do embedding calls inside `MajorityVote` (embedding normalizers are allowed, but via their own class) |
-| **Termination** | `council/termination.py` | Read `CouncilState`, return `(should_stop, reason)` | Mutate state, call aggregation |
-| **Core pipeline** | `council/core.py` | Compose the above; read adjacency matrix; build `VisibilityContext`; centralize anonymization | Import `langgraph`, `hydra`, `mlflow`, or any framework |
-| **Agent** | `council/agent.py` | Wrap `run_council` in the single-LLM `complete()` interface; compute confidence from agreement | Re-implement pipeline logic |
-| **Policy** | `council/policy.py` | Map `(prompt, TaskProfile, budget)` → `CouncilConfig` | Execute councils |
-| **ModelClient** | `council/models.py` | Route calls to LiteLLM or OpenRouter; cache; meter; retry; inject faults | Know about topology, protocols, or rankings |
+| Layer | File(s) | May do | May NOT do |
+|---|---|---|---|
+| **L0 dialect/moves** | `council/dialect/moves.py` | Define the typed `Move` ADT (`Propose | Challenge | Concede | Retract | Question | Clarify | Vote | Abstain`), `Claim`, `Force`, `ClaimDomain` | Call models; reference protocols, topologies, aggregators; embed admissibility rules (those live in `protocols/`) |
+| **L0 dialect/trace** | `council/dialect/trace.py` | Provide immutable `Trace` operations: `by_id`, `at_round`, `by_force`, `append`, `to_events` | Mutate state; depend on protocol-automaton internals; embed semantics |
+| **L0 dialect/protocols** | `council/dialect/protocols/{base,deliberation,persuasion,inquiry,composite,socratic}.py` | Define `ProtocolAutomaton` ABC and concrete automata; expose `state(trace)`, `legal_forces(trace, agent_id)`, `is_terminal(trace)`, `is_answer_phase(trace)` | Construct prompts (that's `dialect/surface.py`); call models; read external state |
+| **L0 dialect/parsers, surface** | `council/dialect/{parsers,surface}.py` | Parse LLM output → `Move`; render `Move` → NL | Embed business logic about admissibility |
+| **L1 symbolic/verify** | `council/symbolic/verify/*` | Compile LTL₍f₎ properties → DFA; step monitors over `Trace.to_events()`; encode `(automaton, trace)` → ISPL/SMV; emit interventions | Construct prompts; call generation models; reach into aggregators |
+| **L2 symbolic/argue** | `council/symbolic/argue/*` | Build BAF/QBAF from `Trace`; apply gradual semantics; export DOT/Mermaid | Re-extract arguments from raw text on the headline path; mutate the trace; call generation models on the headline path. A **fallback** mining hook is allowed under §4 and must be tagged `tier="argument-mining-fallback"` |
+| **L3 calibrate** | `council/calibrate/*` | Compute JSD / MUSE / privileged-knowledge calibration; produce `Confidence` values; expose `JSDDivergenceTermination`, `ConFreezeTermination` | Construct prompts; mutate the trace; call generation models |
+| **L4 cascade** | `council/cascade/*` | Decide which agent / model handles which step; track $/token; trigger escalation | Construct deliberation prompts; mutate the trace; reach into aggregators |
+| **L5 evolve** | `council/evolve/*` | Search the genome space via QD; compute behavioural descriptors **from L1+L2 outputs**; manage Pareto fronts | Call deliberation directly (always via `evaluate.py` → `run_council`); reach into protocol internals beyond what the genome exposes; use generation-model calls in the no-extras path |
+| **L6 symbolic/ilp** | `council/symbolic/ilp/*` | Run Popper/ILASP4 over labelled traces; enforce ASP integrity constraints via clingo; verify induced rules via MCMAS | Mutate the trace at runtime; replace `dialect/` automata at runtime (only at genome-creation time, via `rule_to_automaton.py`) |
+| **Core** | `council/core.py` | Compose the layers; build `VisibilityContext` (single source of anonymisation); thread response formats; honour interventions; assemble `ProvenanceReceipt` skeleton | Import `langgraph`, `hydra`, `mlflow`, `opentelemetry`, `langchain`, `pyribs`, `spot`, `clingo` |
+| **Agent** | `council/agent.py` | Wrap `run_council` in the single-LLM `complete()` interface; finalise `ProvenanceReceipt`; route to escalation | Re-implement pipeline logic; recompute confidence in raw-text space |
+| **Policy** | `council/policy.py` | Map `(prompt, TaskProfile, budget)` → `CouncilGenome` (drawing from the QD archive when present) | Execute councils; embed hardcoded model tiers |
+| **ModelClient** | `council/models.py` | Route calls to LiteLLM; cache; meter; retry; inject faults | Know about topology/protocol/ranking semantics |
+| **ToolClient** | `council/tools.py` | Route tool calls (MCP / Z3 / clingo / Lean / Python sandbox / web) | Construct prompts; call generation models |
 
-## Forbidden imports
-- `council/core.py`, `council/agent.py`, `council/policy.py` MUST NOT import `langgraph`, `hydra`, `mlflow`, `opentelemetry`, `langchain`, `langchain_*`.
-- Any `council/*.py` MUST NOT import from `evaluation/` or `experiments/`.
-- Any layer module (topology, protocol, ranking, aggregation, normalizer, termination) MUST NOT import another layer module. They communicate only through dataclasses defined in `council/context.py`.
+## Forbidden imports (rejected by CI)
 
-### Approved exception — `council/aggregation.py` may import `council/models.py`
-`MetaJudge` (an `Aggregation` subclass) calls an LLM to synthesize a final answer. It receives a `ModelClient` at construction time — the model is injected, never hardcoded. This is an aggregation-internal operation, distinct from deliberation-phase prompt construction. The import is approved and permanent:
-```python
-from council.models import ModelClient, ModelFailure, ModelRequest
-```
-No other layer module may import from `council/models.py`.
+- `council/core.py`, `agent.py`, `policy.py`, and any module under `dialect/`, `calibrate/`, `cascade/`, `evolve/` MUST NOT import: `langgraph`, `hydra`, `mlflow`, `opentelemetry`, `langchain`, `langchain_*`, `pyribs` (without the `evolve` extra guard), `spot` (without the `verify` extra guard), `clingo` (without the `ilp` extra guard).
+- Any `council/*.py` MUST NOT import from `evaluation/`, `experiments/`, `apps/`, or `legacy_council/`.
+- Layer modules MUST NOT import each other except through dataclasses defined in `council/context.py` and `council/dialect/moves.py`. Exceptions are explicitly listed below.
 
-### Approved exception — `evaluation/` may import from `council/`
-`evaluation/` is downstream of the pipeline (benchmark mode only, never imported by `council/`).
-It is not a peer layer and is explicitly excluded from the peer-layer mutual-import prohibition.
-`evaluation/metrics.py` imports `council.context.CouncilState` (to read round_history) and
-`council.normalizer.AnswerNormalizer` (for smart task_accuracy matching). This is approved and permanent.
-No `council/` module may import from `evaluation/` — the direction is one-way.
+## Approved exceptions (permanent)
+
+1. **`council/symbolic/argue/aggregator.py` → `council/calibrate/jsd.py`** — to build calibrated base scores. Documented; no other path.
+2. **`council/cascade/strategies.py` → `council/models.py`** — to invoke escalated/upgraded models. The model is *injected* via the strategy's `__init__`, never hardcoded.
+3. **`council/evolve/evaluate.py` → `council/core.run_council`** — to evaluate genomes. The only allowed path from L5 into the pipeline.
+4. **`council/symbolic/verify/interventions.py` → `council/dialect/moves.py`** — to inject `Move`s on `⊥` verdicts (e.g. `ForceChallenge`).
+5. **`evaluation/` → `council/`** but never the reverse. One-way.
+6. **`apps/` → `council/` and `evaluation/`** but never the reverse.
 
 ## Required contracts
-- `Protocol.build_prompt(ctx: VisibilityContext) -> str` — build the prompt for one agent in one round.
-- `Protocol.is_answer_round(round_index: int) -> bool` — True if agents produce a final answer this round. Default: all rounds are answer rounds. PeerReviewProtocol returns False for odd (critique) rounds. Core pipeline gates `response_format` and aggregation input on this predicate.
-- `Protocol.cycle_length() -> int` — number of raw rounds per deliberation cycle. DirectAnswer/Simultaneous = 1, PeerReview = 2 (critique + revision). Used by the runner to translate config `max_rounds` (deliberation cycles) to total raw rounds: `total = 1 + max_rounds * cycle_length()`.
-- `Topology.get_adjacency_matrix(round_index: int) -> list[list[bool]]` — pure function of round.
-- `Aggregation.aggregate(responses, preferences=None, *, round_history=None, original_prompt=None)` — `round_history` and `original_prompt` are optional kwargs. Blind aggregators (`MajorityVote`, `BordaCount`, `CondorcetAggregation`) ignore both. `MetaJudge` uses both: `round_history` to trace the debate arc with phase labels, `original_prompt` to anchor the synthesis prompt. Core pipeline always passes both; aggregations declare `**kwargs` to absorb extras.
-- Every layer base class lives in its own module and uses `abc.ABC` with `@abstractmethod`.
-- `StarTopology` is a **pure relay** — it returns a complete graph or an explicit 2-hop relay. It must NOT alternate on round parity. Round-dependent visibility lives in `DynamicStarTopology`.
 
-## Per-agent configuration (`AgentConfig` in `council/core.py`)
-`AgentConfig` carries per-member overrides applied by `_build_request()`:
-- `temperature: float | None` — overrides `ModelRequest` default (0.7) when set.
-- `max_tokens: int | None` — overrides `ModelRequest` default (2048) when set.
-- `system_prompt: str | None` — when set, `LiteLLMClient` prepends `{"role": "system", "content": ...}` ahead of the user turn. Absent = user-only message list (unchanged behavior).
+```python
+# L0 — speech-act algebra
+class ProtocolAutomaton(ABC):
+    @abstractmethod
+    def state(self, trace: Trace) -> tuple[str, str]: ...
+    @abstractmethod
+    def legal_forces(self, trace: Trace, agent_id: str) -> frozenset[Force]: ...
+    @abstractmethod
+    def is_terminal(self, trace: Trace) -> bool: ...
+    @abstractmethod
+    def is_answer_phase(self, trace: Trace) -> bool: ...
 
-None means "use the model default" — these fields are additive overrides, not replacements.
+# L1 — runtime monitor
+class LTL3Monitor(ABC):
+    @abstractmethod
+    def step(self, event: dict) -> Verdict: ...      # Verdict = Top | Bottom | Unknown
+    @abstractmethod
+    def reset(self) -> None: ...
+
+class Property(ABC):
+    name: ClassVar[str]
+    formula: ClassVar[str]                           # LTL_f source
+    @abstractmethod
+    def compile(self) -> LTL3Monitor: ...
+
+class Intervention(ABC):
+    @abstractmethod
+    async def execute(self, trace: Trace, violated: Property,
+                      ctx: CouncilContext) -> Trace: ...
+
+# L2 — argumentation aggregator
+class GradualSemantics(ABC):
+    @abstractmethod
+    def evaluate(self, baf: QBAF) -> dict[str, float]: ...
+
+class Aggregator(ABC):
+    @abstractmethod
+    async def aggregate(self, trace: Trace, *, original_question: str) -> AggregationResult: ...
+
+# L3 — calibration
+class Calibrator(ABC):
+    @abstractmethod
+    def calibrate(self, raw_confidence: float, agent_id: str,
+                  claim_domain: ClaimDomain) -> float: ...
+
+# L4 — cascade
+class RoutingStrategy(ABC):
+    @abstractmethod
+    async def route(self, trace: Trace, ctx: CouncilContext) -> AgentSpec: ...
+
+# L5 — evolve
+class Emitter(ABC):
+    @abstractmethod
+    def emit(self, archive: Archive) -> list[CouncilGenome]: ...
+
+class Descriptor(ABC):
+    @abstractmethod
+    def compute(self, result: CouncilResult) -> float: ...
+
+# L6 — ILP
+class RuleMiner(ABC):
+    @abstractmethod
+    async def mine(self, traces: list[LabelledTrace]) -> list[ASPRule]: ...
+```
+
+Every layer base class lives in its own module, uses `abc.ABC` with `@abstractmethod`, and has a corresponding test base class in `tests/`.
+
+## Type-level invariants enforced by mypy strict
+
+- `AgentResponse.move: Move` — no `Any`, no `Optional`. (Constitution §4.)
+- `CouncilResponse.confidence: Confidence` where `Confidence = JSDConfidence | BAFMarginConfidence | MonitorVerdictConfidence | CopelandConfidence`. (§5; **plurality fraction is type-impossible.**)
+- `Aggregator.aggregate(trace: Trace, *, original_question: str)` — no `responses: list[AgentResponse]` overload; the trace is the only input.
+- `ProtocolAutomaton.legal_forces(trace, agent_id) -> frozenset[Force]` — return is immutable.
+
+## Per-genome configuration
+
+`CouncilGenome` (in `council/evolve/genome.py`) is a **frozen `slots=True` dataclass** with these fields:
+- `members: tuple[AgentSpec, ...]` — `(model_id, persona, decoding, tools)` per agent.
+- `topology: TopologySpec`
+- `protocol: ProtocolAutomatonSpec`
+- `aggregator: AggregatorSpec`
+- `monitors: tuple[PropertyName, ...]`
+- `calibration: CalibrationSpec`
+- `termination: tuple[TerminationSpec, ...]`
+- `cascade: CascadeSpec | None = None`
+
+Every spec is round-trippable to YAML. The genome is the unit of search in L5 and the unit of provenance in `ProvenanceReceipt`.
 
 ## YAML runner schema (`experiments/run.py`)
-`experiments/run.py` is the fast-mode benchmark runner. Its YAML contract:
-- `council.models` — list of entries; each is either a bare model string or a dict `{model, temperature?, max_tokens?, system_prompt?}`. Dict fields map 1:1 onto `AgentConfig`. Parsed by `_parse_agents()` into `list[AgentConfig]`.
-- `council.meta_judge` — optional dict `{model?, temperature?, max_tokens?, system_prompt?}` for the synthesis judge. `model` falls back to `models[0]` when absent.
 
-`MetaJudge.__init__` accepts `system_prompt: str | None = None` and forwards it to its internal `ModelRequest`. `_build_aggregation()` wires the YAML dict into that kwarg.
+```yaml
+genome:
+  members:
+    - {model: "openai/gpt-4o-mini", temperature: 0.7, persona: "skeptic"}
+    - {model: "anthropic/claude-3.5-sonnet", temperature: 0.4}
+    - {model: "openrouter/google/gemma-3-27b-it:free"}
+  topology: {name: "CompleteGraphTopology"}
+  protocol: {name: "DeliberationAutomaton", params: {max_phases: 5}}
+  aggregator:
+    name: "ArgumentationAggregator"
+    semantics: "DFQuAD"
+    calibrator: "JSD"
+  calibration:
+    name: "MUSE"
+    privileged_per_domain: true
+  monitors:
+    - "NoSycophancyCascade"
+    - "EventuallyDecide"
+    - "NoPrematureConsensus"
+    - "ProvenanceCompleteness"
+  termination:
+    - {name: "LTLfMonitorTermination"}
+    - {name: "JSDDivergenceTermination", threshold: 0.05}
+    - {name: "FixedRounds", max_rounds: 3}
+  cascade:
+    name: "InContextDistillationCascade"
+    student_pool: ["openrouter/google/gemma-3-27b-it:free"]
+    teacher_pool: ["anthropic/claude-3.5-sonnet"]
+task:
+  profile: "frontiermath_t4"
+budget:
+  max_usd: 10.0
+  max_tokens: 200000
+  max_seconds: 1200
+```
 
-## Task-aware prompting (`TaskProfile.prompt_hint` and `VisibilityContext.task_hint`)
-`TaskProfile.prompt_hint` (defined in `council/task_profile.py`) is the per-dataset answer-format instruction. It flows: `TaskProfile` → `CouncilConfig.prompt_hint` → `run_council(task_hint=...)` → `VisibilityContext.task_hint` → appended to Protocol prompts on answer rounds only. Critique rounds deliberately omit the hint. YAML configs may override via `council.prompt_hint`; the TaskProfile default is the fallback. Per-dataset TaskProfile presets live in `tasks/profiles.py` (not in `council/`).
+## ProtocolAutomaton-derived predicates
+
+`is_answer_round(round_index)` and `cycle_length()` (from the legacy stack) are **derived** from the automaton's `is_answer_phase(trace)` and terminal-state predicates. There is no round-parity hardcoding anywhere — that defect (D8) is fixed at the type level.
+
+## Task-aware prompting
+
+Per-dataset answer-format instructions are subsumed by:
+- `Claim.domain` (typed at L0) — answer-format is determined by domain.
+- `dialect/surface.py` — domain-conditioned NL rendering.
+- `tasks/profiles.py` — per-dataset overrides expose a `surface_overrides: dict[str, str]` field.
 
 ## Framework adapters
+
 - LangGraph wrapper lives ONLY in `council/adapters/langgraph.py`.
 - Hydra entry points live ONLY in `experiments/`.
 - MLflow logging lives ONLY in `evaluation/` and `experiments/`.
+- OpenTelemetry instrumentation lives ONLY in `council/adapters/otel.py` and is enabled by `experiments/`.
 
 ## When in doubt
-If you cannot place a piece of logic cleanly in one of the layers above, the abstraction is wrong. Stop and ask the user — do not paper over it with a cross-layer helper.
+
+If you cannot place a piece of logic cleanly in one of the layers above, the abstraction is wrong. **Stop and ask the user — do not paper over it with a cross-layer helper.** §3 violations are the most common failure mode and the type system catches some — but not all — of them.

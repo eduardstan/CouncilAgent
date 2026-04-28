@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "council-agent"
-version = "0.1.0dev0"
-description = "CouncilAgent — a drop-in multi-model LLM replacement with calibrated confidence from inter-agent agreement."
+name = "councilagent"
+version = "0.2.0.dev0"
+description = "CouncilAgent — the first multi-LLM council you can model-check. A neuro-symbolic deliberation framework with typed Move/Trace, LTL_f runtime monitoring, BAF/QBAF gradual-semantics aggregation, calibrated disagreement, cost-aware cascade, quality-diversity over compositions, and ILP-induced protocols."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -18,6 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Development tooling: pytest, mypy strict, ruff, freezegun.
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -29,6 +30,7 @@ dev = [
     "mypy>=1.11",
     "types-requests",
 ]
+# Benchmark statistics: bootstrap, Wilcoxon, AIPW, Bradley-Terry, mixed-effects.
 benchmark = [
     "datasets>=2.19",
     "mlflow>=2.14",
@@ -38,17 +40,48 @@ benchmark = [
     "numpy>=1.26",
     "hydra-core>=1.3",
 ]
-# sentence-transformers requires torch, which is large (~2 GB with CUDA).
-# Install torch-cpu first, then this group:
+# Embedding-based metrics (sentence-transformers, ~2 GB with CUDA).
+# Install torch first if needed:
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
-#   uv pip install 'council-agent[embeddings]'
+#   uv pip install 'councilagent[embeddings]'
 embeddings = [
     "sentence-transformers>=3.0",
 ]
+# L1 — verification spine (SPOT for LTL_f → Büchi → DFA).
+verify = [
+    "spot>=2.11",
+]
+# L2 — argumentation (pure Python; ASP-extension semantics need clingo).
+argue = [
+]
+# L2 — ASP-backed extension semantics (preferred / stable / grounded).
+argue-asp = [
+    "clingo>=5.7",
+]
+# L3 — calibration (numpy + scipy + scikit-learn already in `benchmark`).
+calibrate = [
+]
+# L4 — cascade (no extra deps; uses LiteLLM).
+cascade = [
+]
+# L5 — quality-diversity (CMA-MAE on pyribs; pure-Python random-search fallback exists).
+evolve = [
+    "ribs>=0.7",
+    "cma>=4.0",
+]
+# L6 — ILP / ASP rule mining.
+ilp = [
+    "clingo>=5.7",
+    # Popper and ILASP4 are external binaries — installed separately.
+]
+# Full NS install: every layer's dependencies.
+full = [
+    "councilagent[dev,benchmark,embeddings,verify,argue-asp,evolve,ilp]",
+]
 
 [tool.setuptools.packages.find]
-include = ["council*", "evaluation*", "tasks*", "experiments*"]
-exclude = ["tests*", "specs*"]
+include = ["council*"]
+exclude = ["tests*", "legacy_council*", "papers*", "apps*", "experiments*", "evaluation*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -82,7 +115,7 @@ exclude_lines = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = [".venv", "LLMCouncil_Deep_Review.md"]
+extend-exclude = [".venv", "legacy_council", "LLMCouncil_Deep_Review.md", "COUNCIL_NS_PLAN.md", "COUNCILAGENT_NS_MASTER_PLAN.md", "papers"]
 
 [tool.ruff.lint]
 select = [
@@ -100,6 +133,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011", "SIM117"]
 
+# NS Constitution §3 + §4 + §5 are type-enforced — mypy strict on ALL of council/.
 [tool.mypy]
 python_version = "3.11"
 warn_unused_configs = true
@@ -107,19 +141,26 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 no_implicit_optional = true
 check_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = [
-    "council.context",
-    "council.core",
-    "council.agent",
-]
 strict = true
+exclude = [
+    "legacy_council/",
+    "papers/",
+]
 
+# Third-party libraries without stubs.
 [[tool.mypy.overrides]]
 module = [
     "litellm",
     "litellm.*",
+    "ribs",
+    "ribs.*",
+    "cma",
+    "spot",
+    "clingo",
+    "mlflow",
+    "mlflow.*",
+    "hydra",
+    "hydra.*",
 ]
 ignore_missing_imports = true
 

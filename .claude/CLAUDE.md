@@ -1,93 +1,130 @@
 # CouncilAgent — Project Brief for Claude
 
 ## Vision
-**The council is an agent, not a benchmark.** A `CouncilAgent` is a drop-in replacement for a single LLM call: same `complete(prompt) → response` interface, but internally dispatches to multiple models, deliberates, aggregates, and returns a synthesized answer *with calibrated confidence derived from inter-agent agreement*. The benchmarking apparatus is the *evaluation layer* of this agent — never the product.
+**The first multi-LLM council you can model-check.** A `CouncilAgent` is a drop-in replacement for a single LLM call: same `complete(prompt) → CouncilResponse` interface, but internally dispatches to multiple models, deliberates over a typed `ProtocolAutomaton`, aggregates via an argumentation-derived BAF/QBAF, calibrates confidence through information-theoretic disagreement, and returns a synthesized answer **with a `ProvenanceReceipt`** (typed `Trace`, QBAF, monitor verdicts, ASP groundings, cost ledger). The benchmarking apparatus is the *evaluation layer* of this agent — never the product.
 
-Reference docs (frozen, in repo root):
-- [plan.md](../plan.md) — original research plan (taxonomy, hypotheses, classical foundations)
-- [LLMCouncil_Deep_Review.md](../LLMCouncil_Deep_Review.md) — architectural review and phased roadmap. **This is the source of truth for implementation.**
+## Reference docs (frozen, in repo root)
+- [`COUNCIL_NS_PLAN.md`](../COUNCIL_NS_PLAN.md) — the bible (vision, taxonomy, layer specs L0–L6, theorems T1–T13, references).
+- [`COUNCILAGENT_NS_MASTER_PLAN.md`](../COUNCILAGENT_NS_MASTER_PLAN.md) — the executable plan (workstreams W0–W7, sprint roadmap M1–M6, paper-deadline coupling, tutorial).
+- [`legacy_council/`](../legacy_council/) — frozen v0.1.0 code, kept as seed/context only. Not importable. Not wired into the pipeline. Removed entirely at M3.
 
-The previous attempt lives in `../LLMCouncil/` (gitignored). It is **reference only** — we are building fresh per the deep review.
+## The Constitution (12 principles, immutable)
 
-## The Constitution (immutable)
-Every design decision is evaluated against these. Violations require explicit user approval.
+Every design decision is evaluated against these. Violations require explicit user approval. Several principles are **type-enforced** (mypy strict catches them).
 
 1. **The council is an agent, not a benchmark.** If a decision helps benchmarking but hurts the agent interface, choose the agent.
-2. **Same interface as a single LLM.** `council.complete(prompt) → response` with zero caller changes.
-3. **Topology controls visibility. Protocol controls presentation. Aggregation controls decision.** No layer does another's job. No privileged agents in a topology. No visibility filtering inside a protocol. No prompt construction inside aggregation.
-4. **Structured output over regex parsing.** Ask for JSON at prompt time; parse with `json.loads()`. Regex is a fallback only.
-5. **Calibrated confidence is the council's unique value.** Derived from inter-agent agreement, not self-report. It drives termination, escalation, and user-facing reliability.
-6. **Every council run must beat majority-vote-without-deliberation** on the same models. If it doesn't, the protocol is burning tokens.
+2. **Same interface as a single LLM.** `CouncilAgent.complete(prompt) → CouncilResponse` with zero caller changes. `CouncilResponse` carries the answer plus a `ProvenanceReceipt`.
+3. **Topology controls visibility. Protocol controls *admissibility*. Aggregator controls decision.** **TYPE-ENFORCED.** Protocols are typed `ProtocolAutomaton`s — finite-state machines over speech-acts — not free-form prompt builders. `Aggregator` is parameterised by `Trace`, never by raw text.
+4. **Structured types over free text.** **TYPE-ENFORCED.** Every `AgentResponse` carries a `Move`. Free text is a *fallback* path tagged `tier="text-fallback"`.
+5. **Calibrated confidence is the council's unique value.** **TYPE-ENFORCED.** `CouncilResponse.confidence` is a tagged `Confidence` value: `JSDConfidence | BAFMarginConfidence | MonitorVerdictConfidence | CopelandConfidence`. Plurality fraction is type-impossible. Derivation hierarchy: `MonitorVerdictConfidence` > `BAFMarginConfidence` > `JSDConfidence` > `CopelandConfidence`.
+6. **Every council run must beat (matched-compute) Mixture-of-Agents on at least one Pareto axis.** Matched-compute means equal output tokens by default and equal $-cost when both are reportable. Tables in every paper report both.
 7. **Cost is first-class.** Every response carries its cost. Every config has an estimated cost. Budgets are enforced.
-8. **The core pipeline has zero framework dependencies.** `council/core.py` is pure Python + asyncio. LangGraph, Hydra, MLflow live at the edges.
-9. **Correctness before features.** A correct `MajorityVote` on 3 problems beats a broken one on 1000.
-10. **Anonymize by default.** Agent identities are a confound — strip during deliberation, preserve in metadata.
+8. **The core pipeline has zero framework dependencies.** `council/core.py`, `agent.py`, `policy.py`, `dialect/`, `symbolic/`, `calibrate/`, `cascade/`, `evolve/` are pure Python + asyncio. LangGraph, Hydra, MLflow, OpenTelemetry, pyribs, SPOT, clingo live in `council/adapters/` or behind optional extras (`[verify]`, `[argue-asp]`, `[evolve]`, `[ilp]`). The no-extras path always works (pure-Python fallbacks).
+9. **Correctness before features.** A correct DF-QuAD aggregator on 3 problems beats a broken one on 1000.
+10. **Anonymise by default.** Agent identities are stripped during deliberation, preserved in metadata. Anonymisation lives in **exactly one place** (`core._build_visibility_context`).
+11. **Symbolic outputs are first-class.** Every `CouncilResponse` carries a `ProvenanceReceipt` with: typed `Trace`, QBAF (when applicable), monitor verdicts (when applicable), ASP groundings (when applicable), Lean/Z3 certificates (when applicable), per-move cost ledger. Receipts are always emitted when the corresponding layer is active in the genome — no silent omission. `ProvenanceReceipt.is_complete()` returns True iff every move has cost, every Vote has ≥ 1 evidence atom, every ⊥ verdict triggered an intervention, and the QBAF's argument count equals the Propose count.
+12. **The verifier can intervene.** `LTLfMonitorTermination` and `Intervention` permit the symbolic layer to *redirect* deliberation, not merely observe it. On a `⊥` verdict from any active monitor, the configured intervention executes before the next deliberation round. This is "LLM-Modulo at the dialogue level".
 
 ## Layered Architecture
+
 ```
-CouncilAgent        (agent.py)      — drop-in LLM interface, confidence, escalation
-CouncilPolicy       (policy.py)     — task profile + budget → config
-run_council()       (core.py)       — pure async pipeline: generate → deliberate → rank → aggregate
-Topology | Protocol | Ranking | Aggregation | Normalizer | Termination
-ModelClient         (models.py)     — LiteLLM/OpenRouter wrapper: cache, meter, retry, fault-inject
-Evaluation layer    (evaluation/)   — metrics, baselines, Shapley, statistics, MLflow — benchmark mode only
+CouncilAgent              (agent.py)        — drop-in LLM interface, ProvenanceReceipt assembly
+CouncilPolicy             (policy.py)       — task profile + budget → CouncilGenome
+run_council()             (core.py)         — pure async pipeline: generate → deliberate → monitor → aggregate → terminate
+                                              composes Topology, ProtocolAutomaton, Ranker, Aggregator, Calibrator, Termination
+─────────────────────────  SYMBOLIC STRATUM  ──────────────────────────
+L6 ILP / ASP rule mining  (symbolic/ilp/)         Popper, ILASP4, clingo
+L5 QD over compositions   (evolve/)               CMA-MAE on pyribs + LLM-mutation (GEPA, AlphaEvolve)
+L4 cost-aware cascade     (cascade/)              in-context distillation, multi-tier router
+L3 calibrated disagreement(calibrate/)            JSD, MUSE, ConFreeze, privileged-knowledge per-domain
+L2 argumentation          (symbolic/argue/)       BAF/QBAF + DF-QuAD / QE / Euler / Strategic-Coupled gradual
+L1 verification spine     (symbolic/verify/)      LTL_f LTL3 monitors via SPOT, offline MCMAS
+L0 speech-act algebra     (dialect/)              typed Move/Trace + ProtocolAutomaton
+─────────────────────────  NEURAL STRATUM  ────────────────────────────
+ModelClient               (models.py)       LiteLLM wrapper: cache, meter, retry, fault-inject
+ToolClient                (tools.py)        MCP, Z3, clingo, Lean, Python sandbox, web
+Evaluation                (evaluation/)     metrics, baselines (MoA, Self-MoA, ConFreeze, KarpathyLLMCouncil), Shapley, AIPW, Bradley-Terry, mixed-effects
 ```
 
 ## Tech Stack
-- **Language**: Python ≥ 3.11, async-first (`asyncio`)
-- **Model access**: LiteLLM is the single backend (`LiteLLMClient`). It routes all providers — `openai/*`, `anthropic/*`, `openrouter/*` (including `:free` tier models), `ollama/*`, etc. — via one `litellm.acompletion` call. Never call providers directly from core code.
-- **Orchestration**: LangGraph *only* as a thin adapter in `council/adapters/langgraph.py`. The core pipeline must run without it.
-- **Config**: Hydra (YAML composition) for experiments. The `CouncilAgent` itself must be usable without Hydra.
-- **Tracking**: MLflow for experiments, OpenTelemetry for distributed tracing.
-- **Testing**: pytest + pytest-asyncio. Structured-output fixtures over free-text fixtures.
-- **Lint/format**: ruff. Type-check: mypy (strict in `council/core.py`, `council/agent.py`).
 
-## Target Repository Layout
-```
-council/
-  agent.py          policy.py        core.py          context.py
-  models.py         topology.py      protocol.py      ranking.py
-  aggregation.py    normalizer.py    termination.py   task_profile.py
-  adapters/langgraph.py
-evaluation/
-  metrics.py  baselines.py  shapley.py  statistical.py
-tasks/              experiments/     analysis/        configs/         tests/
-  tasks/profiles.py  — per-dataset TaskProfile registry (single source of truth for normalizer,
-                        output_schema, recommended_aggregation, prompt_hint)
-```
-Do not create these files until the corresponding Phase task (see the deep review, Part IV) is active.
+- **Language:** Python ≥ 3.11; `mypy --strict` on all of `council/` (per `pyproject.toml`).
+- **Async:** `asyncio` everywhere I/O touches; never `ThreadPoolExecutor`.
+- **Model access:** **LiteLLM** is the single backend (`LiteLLMClient`) — `openai/*`, `anthropic/*`, `openrouter/*` (incl. `:free`), `ollama/*`. Never call providers directly from core.
+- **Tools:** **MCP** is the universal tool integration. Z3 / clingo / Lean / Python sandbox / web exposed via MCP servers; council code talks to `ToolClient` only.
+- **Verification:** SPOT (preferred), `ltl2mon` fallback (pure Python), MCMAS via subprocess. Optional `[verify]`.
+- **Argumentation:** pure Python by default; clingo for ASP-extensions optional `[argue-asp]`.
+- **Calibration:** numpy + scipy + scikit-learn (in `[benchmark]`).
+- **Evolution:** **pyribs** for CMA-MAE; pure-Python random-search fallback. Optional `[evolve]`.
+- **ILP:** Popper (Cropper-Morel), ILASP4 (Law et al.); both shell out. Optional `[ilp]`.
+- **Orchestration:** LangGraph **only** as a thin adapter in `council/adapters/langgraph.py`. The core pipeline runs without it.
+- **Config:** Hydra (YAML composition) for `experiments/`. The `CouncilAgent` itself works without Hydra.
+- **Tracking:** MLflow for experiments; OpenTelemetry for distributed tracing; both in `experiments/` and `evaluation/`.
+- **Testing:** pytest + pytest-asyncio. Structured-output fixtures over free-text fixtures. Target: ≥ 1500 functions in `tests/` by M6.
+- **Lint/format:** ruff. Type-check: `mypy --strict council/`.
 
-## Phased Roadmap (from the Deep Review)
-- **Phase 0** — Foundation corrections (merged into Phase 1) ✅
-- **Phase 1** — Core abstractions: `VisibilityContext`, `CommunicationMode`, pure `core.py`, `AnswerNormalizer`, structured output, multi-round peer review ✅
-- **Phase 2** — Termination & control: `TerminationStrategy`, `TaskProfile`, cost estimation ✅
-- **Phase 3** — `CouncilAgent`, `CouncilPolicy`, `EscalationStrategy`, Condorcet/Copeland ✅
-- **Phase 4** — Benchmark infrastructure: MLflow, AIPW, Hydra sweeps, Shapley ✅
-- **Phase 5** — Pipeline hardening: `is_answer_round`, `cycle_length`, loop restructure, debate-aware aggregation, `response_format` threading ✅
-- **Phase 6** — Runner configurability & correctness fixes: configurable topology/aggregation/termination in runner, `_deliberate()` multi-round visibility, `task_accuracy` numeric extraction, StarTopology differentiation. Extended with per-agent config (`temperature`, `max_tokens`, `system_prompt`), `TaskProfile.prompt_hint` → Protocol injection on answer rounds, `MetaJudge` `original_prompt` threading, per-dataset `tasks/profiles.py` registry ✅
-- **Phase 7** — Hypothesis testing (H1, H3, H5, H6, H10 + council-vs-single-LLM)
-- **Phase 8** — Polish, demos, thesis integration
+## Workstream Roadmap
+
+- **W0** — Substrate (L0): typed Move algebra + protocol automata + pure-async pipeline → M1.
+- **W1** — Verification spine (L1): LTL_f / LTL3 monitors, ISPL/MCMAS, named-property library, interventions → M2.
+- **W2** — Argumentation aggregator (L2): BAF/QBAF, DF-QuAD / QE / Euler / Strategic-Coupled, Mermaid visualisers → M2.
+- **W3** — Calibrated disagreement (L3): JSD, MUSE, privileged-knowledge per-domain, isotonic → M3.
+- **W4** — Cost-aware cascade (L4): in-context distillation, multi-tier router, budget tracker → M3.
+- **W5** — QD over compositions (L5): genome, descriptors, archives, emitters, Pareto, red-team archive, co-evolution → M4.
+- **W6** — ILP / ASP (L6): Popper, ILASP4, ASP integrity constraints, MCMAS-verified learned protocols → M5.
+- **W7** — Evaluation, demos, papers: benchmarks, baselines, novel metrics, MLflow/OTEL, Streamlit demo, paper reproductions → continuously, sealed at M6.
+
+## Publication Track
+
+Five papers + a flagship — see [`COUNCILAGENT_NS_MASTER_PLAN.md`](../COUNCILAGENT_NS_MASTER_PLAN.md) §9.
+- **P1** Verified Deliberation — AAMAS 2027 main.
+- **P2** Strategic Gradual Argumentation — AAAI 2027.
+- **P3** Quality-Diversity over Deliberation Behaviour — **NeurIPS 2026 main** (load-bearing).
+- **P4** Co-evolutionary Red/Blue Teaming — AAMAS 2027 companion.
+- **P5** Inductive Discovery of Multi-Agent Dialogue Protocols — KR 2026.
+- **F** A Neuro-Symbolic Multi-Agent LLM Council Framework — JAIR / AIJ flagship (Apr 2027 → v1.0.0).
 
 ## Git Workflow
-- `main` — protected, release-tagged only
-- `develop` — integration branch, default working branch
-- `feature/<phase>-<slug>` — one branch per deep-review task (e.g. `feature/p1-visibility-context`)
-- Never commit to `main` directly. Never force-push `develop` or `main`.
-- Commits on `develop` are allowed for infra/docs (like this .claude setup). Code work goes on feature branches.
+
+- `main` — frozen at `legacy/v0.1.0` (PyPI `council-agent==0.1.0`); the student's reference. Untouched by NS work until v1.0.0 merge.
+- `develop` — student's working branch off `main`; not used here.
+- `council-ns` — long-lived development branch (this branch). PyPI `councilagent`, version stepping `0.2.0.dev0` → `1.0.0`.
+- `feature/ns-w<n>-<slug>` — short-lived (≤ 2 weeks) per workstream task.
+- Never commit to `main` directly. Never force-push `develop`, `main`, or `council-ns`.
 
 ## Operating Rules for Claude
-- **Read `LLMCouncil_Deep_Review.md` before touching any architectural decision.** It contains the tradeoff analysis for every major choice.
-- **Do not port code from `../LLMCouncil/`.** It is reference only. Build fresh.
-- **When uncertain about a layering call, stop and ask.** Constitution §3 violations are the most common failure mode.
-- **Follow the phased roadmap.** Do not skip ahead (e.g. don't add Shapley values before `CouncilAgent` works end-to-end).
-- **Rules files** in `.claude/rules/` are binding. Subagents in `.claude/agents/` handle reviews and scaffolding — use them.
+
+- **Read [`COUNCIL_NS_PLAN.md`](../COUNCIL_NS_PLAN.md) before touching any architectural decision.** It contains the tradeoff analysis for every major choice and the layer specifications. Note: the bible writes `council_ns/` for clarity in its migration narrative; on this branch the package is just `council/`.
+- **Read [`COUNCILAGENT_NS_MASTER_PLAN.md`](../COUNCILAGENT_NS_MASTER_PLAN.md) §11 (Tutorial) before invoking agents/skills.** The tutorial maps each workstream and each paper to the right agent/skill chain.
+- **Do NOT port code from `legacy_council/`.** It is a frozen seed for context only. Copy-pasting legacy classes preserves the defects D1–D17 we are fixing.
+- **When uncertain about a layering call, stop and ask.** §3 violations are the most common failure mode. The type system catches some — but not all; resist `Any` and `cast`.
+- **Follow workstream order.** Don't skip ahead.
+- **Rules files** in `.claude/rules/` are binding.
+- **Provenance receipts are non-negotiable.** Any new aggregator, monitor, calibrator, or strategy must emit its contribution to the receipt (§11).
 
 ## Common Commands
+
 ```bash
+# Tests
 uv run pytest tests/                          # full unit test suite
-uv run pytest tests/ -q                       # quiet mode
-uv run pytest tests/ -k "test_name"           # single test
-RUN_INTEGRATION=1 uv run pytest tests/integration/  # real model calls (needs API keys)
-uv run ruff check council/ evaluation/        # lint
-uv run mypy council/core.py council/agent.py  # type-check (strict)
+uv run pytest tests/dialect/                  # one workstream
+RUN_INTEGRATION=1 uv run pytest tests/integration/
+
+# Lint + type-check
+uv run ruff check council/ evaluation/ tasks/ experiments/
+uv run mypy council/                          # strict on all of council/
+
+# Constitution audit
+.claude/skills/check-constitution/run.sh
+
+# Experiments
+uv run python -m experiments.run --config-name fast
+uv run python -m experiments.sweep --multirun
+uv run python -m experiments.evolve --config-name qd_arc_agi_2
+
+# Paper reproductions
+bash experiments/reproduce/p3_qd.sh
+
+# Streamlit demo
+uv run streamlit run apps/streamlit_demo.py
 ```

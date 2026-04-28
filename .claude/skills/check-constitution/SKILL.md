@@ -1,64 +1,88 @@
 ---
 name: check-constitution
-description: Runs a fast, scripted audit of the current working tree against the CouncilAgent Constitution. Use when the user says "check constitution", "audit", or "/check-constitution". Reports blockers with file:line citations. Faster than invoking the constitution-reviewer subagent — use the subagent for a nuanced review, this skill for a rapid pre-commit gate.
+description: Runs a fast, scripted audit of council/ against the 12-principle Constitution (in .claude/CLAUDE.md). Complements the constitution-reviewer subagent. Use as a pre-commit gate for council/ changes.
 ---
 
 # check-constitution
 
-A rapid, grep-driven audit that pins the most common Constitution violations. Complements (does not replace) the `constitution-reviewer` subagent.
+A rapid, grep-driven audit pinning the most common Constitution violations. Complements (does not replace) the `constitution-reviewer` subagent.
 
 ## Procedure
 
-1. Run these greps in parallel. Each one that returns a match is a BLOCKER.
+Run these greps in parallel. Each match in the BLOCKER section is a hard fail.
 
-   ```bash
-   # §3 — layering: core must have no framework imports
-   rg -n '^(import|from)\s+(langgraph|hydra|mlflow|opentelemetry|langchain)' council/core.py council/agent.py council/policy.py 2>/dev/null
+```bash
+# §3 — typed protocol enforcement (Aggregator must take Trace, not list[AgentResponse])
+rg -n 'Aggregator.*responses:\s*list\[AgentResponse\]' council/
 
-   # §3 — layers must not cross-import
-   rg -n '^from council\.(protocol|aggregation|ranking|topology) import' council/topology.py council/protocol.py council/ranking.py council/aggregation.py 2>/dev/null
+# §3 — peer-layer cross-imports (forbidden)
+rg -n '^from council\.(symbolic\.argue|calibrate|cascade|evolve|symbolic\.verify|symbolic\.ilp) import' \
+   council/symbolic/argue/ council/calibrate/ council/cascade/ council/evolve/ \
+   council/symbolic/verify/ council/symbolic/ilp/ 2>/dev/null
 
-   # §4 — hardcoded models in aggregation (MetaJudge must inject)
-   rg -n '"(openai|anthropic|google|openrouter)/' council/aggregation.py council/topology.py council/protocol.py 2>/dev/null
+# §4 — typed Move enforcement
+rg -n '\bcontent:\s*str\b' council/context.py
+rg -n '\bresponse\.content\b' council/core.py council/agent.py council/policy.py 2>/dev/null
 
-   # Issue 1 — chairman smuggling
-   rg -n 'agent_ids\[0\]|chairman' council/topology.py 2>/dev/null
+# §5 — plurality-fraction confidence (banned)
+rg -n 'winner_count\s*/\s*(len|total)' council/
+rg -n 'confidence\s*=\s*\d+\s*/\s*\d+' council/
 
-   # §4 — raw Counter on response content
-   rg -n 'Counter\(.*\.content' council/ 2>/dev/null
+# §8 — framework imports in core (extras-guarded only)
+rg -n '^(import|from)\s+(langgraph|hydra|mlflow|opentelemetry|langchain)' \
+  council/core.py council/agent.py council/policy.py \
+  council/dialect/ council/calibrate/ council/cascade/ council/evolve/ 2>/dev/null
 
-   # §9 — substring answer match
-   rg -n 'if\s+\w+\s+in\s+\w+:.*# accuracy|g\s+in\s+p' evaluation/metrics.py 2>/dev/null
+# §11 — receipt completeness
+rg -n 'ProvenanceReceipt\b' council/
 
-   # Style — print statements
-   rg -n '\bprint\(' council/ evaluation/ 2>/dev/null
+# §12 — interventions registered for each property
+rg -n 'class.*\(Property\):' council/symbolic/verify/properties.py 2>/dev/null
+rg -n 'class.*\(Intervention\):' council/symbolic/verify/interventions.py 2>/dev/null
 
-   # Style — silent except
-   rg -n 'except\s+Exception\s*:\s*pass' council/ evaluation/ 2>/dev/null
+# Argumentation layer cleanliness — no LLM extraction in the headline path
+rg -n 'model_client|acompletion' council/symbolic/argue/builders.py 2>/dev/null \
+  | rg -v 'argument-mining-fallback'
 
-   # §10 — agent_id leaked into protocol prompts
-   rg -n '\{.*agent_id.*\}|resp\.agent_id' council/protocol.py 2>/dev/null
-   ```
+# Hardcoded model names in cascade strategies
+rg -n '"(openai|anthropic|google|openrouter)/' council/cascade/ 2>/dev/null
 
-2. Collect all matches. Group into BLOCKERS (§3, §4, Issue 1, §10) and WARNINGS (style, substring match).
+# Round-parity in aggregation (banned in NS — D13)
+rg -n 'round_index\s*%\s*2' council/symbolic/argue/ 2>/dev/null
 
-3. Report in this format:
+# Style — print, silent except, mutable defaults
+rg -n '\bprint\(' council/ evaluation/ 2>/dev/null
+rg -n 'except\s+Exception\s*:\s*pass' council/ evaluation/ 2>/dev/null
+```
 
-   ```
-   ## Constitution Check — <branch>
+## Output
 
-   BLOCKERS: <N>
-   - council/topology.py:45 — "agent_ids[0]" — Issue 1 (chairman)
-   - ...
+Group findings:
+- **BLOCKERS** — §3, §4, §5, §8, §11, §12 violations.
+- **WARNINGS** — argumentation layer dirtying, hardcoded model names, round-parity.
+- **NITS** — style.
 
-   WARNINGS: <N>
-   - ...
+Then:
 
-   RESULT: <BLOCK | PASS>
-   ```
+```
+## NS Constitution Check — <branch>
 
-4. If `council/` does not yet exist (early project), report `RESULT: PASS (council/ not created yet)` and exit.
+BLOCKERS: <N>
+- <file>:<line> — <quoted snippet> — <which §> — <fix sketch>
+
+WARNINGS: <N>
+- ...
+
+NITS: <N>
+- ...
+
+RESULT: <BLOCK | PASS>
+```
+
+If `council/` does not yet have NS layout (e.g. on `main` before substrate landed), report `RESULT: PASS (NS layout not created yet)` and exit.
 
 ## When NOT to use this
-- Nuanced architectural review → use `constitution-reviewer` subagent instead
-- Checking test coverage or correctness → this skill only pattern-matches
+
+- Nuanced architectural review → use `constitution-reviewer-ns` subagent.
+- Theorem audit → use `theorem-checker` agent.
+- Argumentation builder review → use `qbaf-reviewer` agent.
