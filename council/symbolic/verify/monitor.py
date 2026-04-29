@@ -29,7 +29,6 @@ from council.symbolic.verify.ltlf import (
     WeakUntil,
 )
 
-
 # ---------------------------------------------------------------------------
 # Verdict — three-valued LTL3 truth value
 # ---------------------------------------------------------------------------
@@ -165,11 +164,11 @@ class _AndMonitor(_Compiled):
         self._right = right
 
     def step(self, event: dict[str, object]) -> Verdict:
-        l = self._left.step(event)
-        r = self._right.step(event)
-        if l is Verdict.BOTTOM or r is Verdict.BOTTOM:
+        left_v = self._left.step(event)
+        right_v = self._right.step(event)
+        if left_v is Verdict.BOTTOM or right_v is Verdict.BOTTOM:
             return Verdict.BOTTOM
-        if l is Verdict.TOP and r is Verdict.TOP:
+        if left_v is Verdict.TOP and right_v is Verdict.TOP:
             return Verdict.TOP
         return Verdict.UNKNOWN
 
@@ -186,11 +185,11 @@ class _OrMonitor(_Compiled):
         self._right = right
 
     def step(self, event: dict[str, object]) -> Verdict:
-        l = self._left.step(event)
-        r = self._right.step(event)
-        if l is Verdict.TOP or r is Verdict.TOP:
+        left_v = self._left.step(event)
+        right_v = self._right.step(event)
+        if left_v is Verdict.TOP or right_v is Verdict.TOP:
             return Verdict.TOP
-        if l is Verdict.BOTTOM and r is Verdict.BOTTOM:
+        if left_v is Verdict.BOTTOM and right_v is Verdict.BOTTOM:
             return Verdict.BOTTOM
         return Verdict.UNKNOWN
 
