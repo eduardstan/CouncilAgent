@@ -48,8 +48,9 @@ embeddings = [
     "sentence-transformers>=3.0",
 ]
 # L1 — verification spine (SPOT for LTL_f → Büchi → DFA).
+# SPOT must be installed separately: conda install -c conda-forge spot
+# or built from source (https://spot.lrde.epita.fr/install.html)
 verify = [
-    "spot>=2.11",
 ]
 # L2 — argumentation (pure Python; ASP-extension semantics need clingo).
 argue = [
