@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from typing import TYPE_CHECKING
 
 from council.context import (
     CopelandConfidence,
@@ -21,6 +22,14 @@ from council.dialect.parsers import parse_move
 from council.dialect.surface import render_move
 from council.dialect.trace import Trace
 from council.models import ModelFailure, ModelRequest
+from council.termination import (
+    CompositeTermination,
+    LTLfMonitorTermination,
+    MonitorVerdict,
+)
+
+if TYPE_CHECKING:
+    from council.symbolic.verify.monitor import Property
 
 
 def _build_visibility_context(
@@ -126,18 +135,40 @@ async def run_council(
 ) -> CouncilResponse:
     """Pure async council pipeline.
 
-    Runs rounds until termination fires, then assembles CouncilResponse with
-    a ProvenanceReceipt. No framework dependencies.
+    Runs rounds until termination fires, then assembles CouncilResponse with a
+    ProvenanceReceipt. When the termination strategy is an
+    `LTLfMonitorTermination` (W1/PR8), violations trigger a pending Intervention
+    that is applied before the next round, up to `max_interventions` times
+    (Constitution §12).
+
+    No framework dependencies.
     """
     trace = Trace()
     round_index = 0
     cost_ledger: list[tuple[str, float]] = []
+    monitor_verdicts: list[MonitorVerdict] = []
     total_input = 0
     total_output = 0
 
+    ltlf_term = _find_ltlf_termination(context.termination)
+
     while True:
         stop, _ = context.termination.should_stop(trace, round_index)
+        # Drain accumulated verdicts each round if any L1 termination is wired in
+        if ltlf_term is not None:
+            monitor_verdicts.extend(ltlf_term.consume_verdicts())
         if stop:
+            # Constitution §12: honour pending intervention before stopping
+            if ltlf_term is not None:
+                pending = ltlf_term.pending_intervention()
+                if pending is not None:
+                    violated = _find_violated_property(ltlf_term, monitor_verdicts)
+                    if violated is not None:
+                        trace = await pending.execute(trace, violated, context)
+                        ltlf_term.acknowledge_intervention()
+                        monitor_verdicts.extend(ltlf_term.consume_verdicts())
+                        round_index += 1
+                        continue
             break
 
         results = await asyncio.gather(*[
@@ -157,9 +188,37 @@ async def run_council(
     receipt = ProvenanceReceipt(
         trace=trace,
         cost_ledger=tuple(cost_ledger),
+        monitor_verdicts=tuple(monitor_verdicts),
         total_input_tokens=total_input,
         total_output_tokens=total_output,
     )
     confidence = CopelandConfidence(value=0.5)
 
     return CouncilResponse(answer=answer, confidence=confidence, receipt=receipt)
+
+
+def _find_violated_property(
+    termination: LTLfMonitorTermination,
+    verdicts: list[MonitorVerdict],
+) -> Property | None:
+    """Locate the Property instance whose most recent verdict is BOTTOM."""
+    for v in reversed(verdicts):
+        if v.verdict == "bottom":
+            for prop, _ in termination._compiled:
+                if prop.name == v.property_name:
+                    return prop
+    return None
+
+
+def _find_ltlf_termination(strategy: object) -> LTLfMonitorTermination | None:
+    """Walk a TerminationStrategy (possibly wrapped in CompositeTermination) to
+    find the embedded LTLfMonitorTermination, if any.
+    """
+    if isinstance(strategy, LTLfMonitorTermination):
+        return strategy
+    if isinstance(strategy, CompositeTermination):
+        for inner in strategy._strategies:
+            found = _find_ltlf_termination(inner)
+            if found is not None:
+                return found
+    return None

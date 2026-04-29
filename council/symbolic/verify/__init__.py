@@ -57,6 +57,7 @@ from council.symbolic.verify.spot_backend import (
     is_spot_available,
     make_monitor,
 )
+from council.termination import LTLfMonitorTermination, MonitorVerdict
 
 __all__ = [
     "INTERVENTION_AGENT_ID",
@@ -77,7 +78,9 @@ __all__ = [
     "Intervention",
     "LTL3Monitor",
     "LTLf",
+    "LTLfMonitorTermination",
     "ModalitySafe",
+    "MonitorVerdict",
     "Neg",
     "Next",
     "NoMonotoneAgreementCollapse",

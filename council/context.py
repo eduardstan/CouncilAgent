@@ -12,7 +12,7 @@ from typing import ClassVar
 from council.dialect.moves import Move
 from council.dialect.trace import Trace
 from council.models import ModelClient
-from council.termination import TerminationStrategy
+from council.termination import MonitorVerdict, TerminationStrategy
 from council.tools import ToolClient
 from council.topology import Topology
 
@@ -58,7 +58,7 @@ Confidence = JSDConfidence | BAFMarginConfidence | MonitorVerdictConfidence | Co
 class ProvenanceReceipt:
     trace: Trace
     qbaf: object | None = None
-    monitor_verdicts: tuple[object, ...] = ()
+    monitor_verdicts: tuple[MonitorVerdict, ...] = ()
     asp_groundings: tuple[str, ...] = ()
     cost_ledger: tuple[tuple[str, float], ...] = ()
     total_input_tokens: int = 0
