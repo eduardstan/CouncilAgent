@@ -1,163 +1,194 @@
-# Installing SPOT (and MCMAS, NuSMV) for the W1 verification spine
+# Installing SPOT, MCMAS, and NuSMV for the W1 verification spine
+
+> **Status (2026-04-29):** SPOT 2.15.1 is verified working from source on
+> Ubuntu 24.04 (this document was written and tested on that system). MCMAS
+> access is currently blocked — see [ADR 0003](../specs/adrs/0003-mcmas-access-deferred.md).
+> NuSMV is available but not via apt; download from <https://nusmv.fbk.eu>.
 
 The `[verify]` extra of `councilagent` enables hardware-accelerated LTL_f
-monitoring via the **SPOT** library. SPOT is a C++ toolkit with Python bindings
-written by the LRDE/EPITA group; it is **not** a pip package. This document
-covers installation across Linux, macOS, and from source. We do **not** support
-conda installations (per project convention — the development environment uses `uv`).
+monitoring via the **SPOT** library. SPOT is a C++17 toolkit with Python
+bindings written by the LRDE/EPITA group; **it is not a pip package**.
+Without SPOT installed, `make_monitor()` falls back to the pure-Python
+`ProgressionMonitor`, so SPOT is a performance optimisation. The no-extras
+path is always functional.
 
-> **TL;DR:** without SPOT installed, `make_monitor()` falls back to the pure-Python
-> `ProgressionMonitor`. SPOT is a performance optimisation; the no-extras path is
-> always functional.
+## Critical: do NOT `pip install spot`
+
+The PyPI package named `spot` is **not** the SPOT model checker — it is an
+unrelated DotCloud / MongoDB / Redis service helper. If you `pip install spot`
+your tests will silently use the wrong package, then `import spot` will
+expose a `Dotcloud / Mongodb / ...` namespace, and the `is_spot_available()`
+detector will report True while behaviours fail mysteriously.
+
+Always use either the apt-repository path or the source-build path documented
+below.
 
 ## SPOT — required for `[verify]` extra
 
-### Ubuntu / Debian (recommended for project development)
+### Path A: apt repository (recommended if you have sudo)
+
+The LRE/EPITA group at EPITA hosts a Debian apt repository for SPOT. As of
+2026-04-29 it tracks SPOT 2.15.1 (released 2026-04-25). The repo is built for
+Debian Trixie (stable) — Ubuntu 22.04 / 24.04 are compatible.
 
 ```bash
-sudo apt update
-sudo apt install spot python3-spot libspot-dev
-```
+# 1. Add the LRE-EPITA GPG key
+sudo wget -q -O /etc/apt/keyrings/lre-epita.gpg \
+  https://www.lre.epita.fr/repo/debian.gpg
 
-Verify:
+# 2. Add the apt source
+echo "deb [signed-by=/etc/apt/keyrings/lre-epita.gpg] http://www.lre.epita.fr/repo/debian/ stable/" \
+  | sudo tee /etc/apt/sources.list.d/lre-epita.list
 
-```bash
+# 3. Install (any subset of these)
+sudo apt-get update
+sudo apt-get install spot libspot-dev spot-doc python3-spot
+
+# 4. Verify
 python3 -c "import spot; print(spot.version())"
-# Expected output: e.g. 2.13.2
+# Expected: 2.15.1 (or later)
 ```
 
-If `python3-spot` is not in your distribution's package archive, see "Source build" below.
+GPG fingerprint (per the official site, valid until 2032):
+`209B 7362 CFD6 FECF B41D 717F 03D9 9E74 44F2 A84A`
 
-### Arch Linux
+For the development branch (unstable), replace `stable/` with `unstable/`.
+
+### Path B: source build (no sudo required) — **VERIFIED 2026-04-29**
+
+This path was used today to install SPOT 2.15.1 into `~/.local` and was
+verified by running our SPOT-gated tests successfully (13 of 13 passed).
+
+#### Prerequisites
 
 ```bash
-yay -S spot
-# or with paru:
-paru -S spot
+sudo apt install build-essential libpython3-dev
+g++ --version    # must be 10.0 or later for C++20
 ```
 
-The AUR `spot` package builds Python bindings by default.
-
-### macOS (Homebrew)
+#### Build steps
 
 ```bash
-brew install spot
-# Spot's Homebrew formula installs the CLI tools but the Python bindings may
-# require an extra step depending on your Python interpreter:
-brew install --build-from-source --HEAD spot
-# or use the upstream tarball below.
+# 1. Download the latest tarball (check https://spot.lre.epita.fr for newer)
+mkdir -p /tmp/spot-build && cd /tmp/spot-build
+curl -LO https://www.lre.epita.fr/dload/spot/spot-2.15.1.tar.gz
+tar xzf spot-2.15.1.tar.gz
+cd spot-2.15.1/
+
+# 2. Configure — point at the project's venv Python so `import spot` works in
+# the project. Replace the .venv path below with yours.
+PROJECT_VENV=/home/USER/Dropbox/Projects/CouncilAgent/.venv
+PYTHON=$PROJECT_VENV/bin/python3 ./configure \
+  --prefix=$HOME/.local \
+  --with-pythondir=$PROJECT_VENV/lib/python3.12/site-packages
+
+# 3. Build (5–15 minutes on a modern laptop; uses all CPU cores)
+make -j$(nproc)
+
+# 4. Install (binaries to ~/.local/bin, libraries to ~/.local/lib,
+# Python module to your project venv)
+make install
+
+# 5. Add ~/.local/bin to PATH for the CLI tools (optional)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+
+# 6. Verify
+uv run python -c "import spot; print(spot.version())"
+# Expected: 2.15.1
 ```
 
-Verify:
+**Why `--with-pythondir=$PROJECT_VENV/...`?** SPOT's `configure` defaults to
+the system or conda Python — its bindings end up where your project venv
+cannot see them. Pointing at the project venv's `site-packages` puts the
+bindings exactly where `uv run python` finds them.
 
-```bash
-python3 -c "import spot"
-```
+#### After install
 
-If `import spot` fails after `brew install`, fall back to the source build below
-or use the LRDE-provided macOS wheel (when available; check
-[spot.lre.epita.fr/install.html](https://spot.lre.epita.fr/install.html)).
-
-### Source build (any platform with a recent C++17 compiler)
-
-```bash
-# 1. Get the latest tarball from https://spot.lre.epita.fr
-curl -O https://www.lrde.epita.fr/dload/spot/spot-2.13.2.tar.gz
-tar xzf spot-2.13.2.tar.gz
-cd spot-2.13.2/
-
-# 2. Configure with Python bindings
-./configure --prefix=$HOME/.local
-
-# 3. Build and install (parallel for speed)
-make -j$(nproc) && make install
-
-# 4. Add to your environment
-export PATH="$HOME/.local/bin:$PATH"
-export PYTHONPATH="$HOME/.local/lib/python3.12/site-packages:$PYTHONPATH"
-# (adjust the python3.X version to match your interpreter)
-
-# 5. Verify
-python3 -c "import spot; print(spot.version())"
-```
-
-For permanent installation, add the `export` lines to `~/.bashrc` or `~/.zshrc`.
-
-### Verifying the install
-
-After installing SPOT by any method, run the project's test suite:
+Run the SPOT-gated tests:
 
 ```bash
 uv run pytest tests/symbolic/verify/test_spot_backend.py -v
 ```
 
-Tests that previously skipped (`@skipif(not is_spot_available())`) should now
-execute and pass.
+Tests previously skipped (`@skipif(not is_spot_available())`) should now run
+and pass.
 
-## MCMAS — required only for offline ISPL verification (PR6)
+## MCMAS — DEFERRED (see ADR 0003)
 
-MCMAS verifies CTLK / ATL formulae over interpreted systems. Used in
-`tests/integration/test_mcmas_offline.py` (gated by `RUN_INTEGRATION=1`).
+**Currently blocked.** As of 2026-04-29 we cannot locate an authoritative,
+working download URL for MCMAS. The historical hosting at
+`https://www.doc.ic.ac.uk/~alessio/MCMAS/` returns 404, and several alternate
+URLs (mcmas.org.uk, vas.doc.ic.ac.uk, sail.doc.ic.ac.uk) do not respond.
 
-### Linux
+See [`specs/adrs/0003-mcmas-access-deferred.md`](../specs/adrs/0003-mcmas-access-deferred.md)
+for the full decision record.
 
-Download the latest binary from
-[mcmas.org.uk/download.html](https://mcmas.org.uk/download.html):
+**Effect on the project:**
+- `tests/integration/test_mcmas_offline.py` is gated by `RUN_INTEGRATION=1`
+  AND `mcmas` on PATH. Without MCMAS, it skips. The test code is correct.
+- The W1 acceptance criterion in §7 of [`COUNCILAGENT_NS_MASTER_PLAN.md`](../COUNCILAGENT_NS_MASTER_PLAN.md)
+  is **partially satisfied**: ISPL generation is unit-tested, but end-to-end
+  MCMAS verification is pending.
+- T3 in [`docs/theory.md`](theory.md) is currently a counterexample
+  demonstration; full mechanised CTLK verification waits for MCMAS access.
+
+If you obtain an MCMAS binary, place it on `PATH` and re-run:
 
 ```bash
-wget https://mcmas.org.uk/files/mcmas-linux64.tgz
-tar xzf mcmas-linux64.tgz
-sudo mv mcmas /usr/local/bin/
-mcmas --version
+RUN_INTEGRATION=1 uv run pytest tests/integration/test_mcmas_offline.py
 ```
 
-### macOS
+The test should pass. Then please update ADR 0003 with the working URL.
 
-The maintained Linux binary works under Rosetta 2; native arm64 macOS
-binaries are not currently published. Build from source by cloning
-[github.com/lomuscio/mcmas](https://github.com/lomuscio/mcmas).
+## NuSMV — interim CTL path (optional)
 
-## NuSMV — optional, alternative to MCMAS for SMV-format verification
+For the CTL fragment (which covers W1's `EventuallyDecide` and
+`RefutationReachable` acceptance properties) NuSMV is a workable interim
+substitute. NuSMV does **not** support CTLK/ATL (those need MCMAS); use it
+only for plain-CTL checks.
 
-```bash
-# Ubuntu / Debian
-sudo apt install nusmv
-
-# macOS
-brew install nusmv
-```
-
-Verify:
+NuSMV 2.7.1 is the latest release (2026-04-29) and is available at
+<https://nusmv.fbk.eu>. The project is alive and maintained at FBK's Tools
+group.
 
 ```bash
+# Visit https://nusmv.fbk.eu and follow "Downloads"
+#   - Source code: free, requires academic-use form
+#   - Pre-compiled binaries: free for Linux x86_64, macOS
+
+# After install, check it's on PATH:
 NuSMV -version
 ```
 
-## Project configuration
+**Licence:** free for academic / educational research. Commercial use needs a
+separate agreement with FBK.
 
-The `[verify]` extra in `pyproject.toml` does not pin a `spot` package because
-SPOT is a system install. The extra exists to reserve the namespace and to
-document the system dependency. Installing the extra is a no-op:
-
-```bash
-uv pip install -e ".[verify]"
-# (Confirms project install; does not install SPOT — see above.)
-```
-
-The runtime check `is_spot_available()` is the source of truth for whether
-the SPOT-backed path is active.
-
-## Troubleshooting
-
-- `ModuleNotFoundError: No module named 'spot'` → SPOT not installed or
-  `PYTHONPATH` does not include the SPOT site-packages directory.
-- `import spot` succeeds but `spot.translate(...)` raises `AttributeError` →
-  SPOT version too old (we target SPOT ≥ 2.10).
-- `make: *** No rule to make target` during source build → C++17 compiler
-  required (`g++` ≥ 7 or `clang++` ≥ 5).
+NuSMV input is generated by [`council/symbolic/verify/smv.py`](../council/symbolic/verify/smv.py) — see
+the structural tests in `tests/symbolic/verify/test_smv.py` for example
+output.
 
 ## CI / publishing
 
-The published package on PyPI does not depend on SPOT. CI runs the no-extras
-test path (which uses `ProgressionMonitor`) by default; a separate CI matrix
-job installs SPOT and runs the SPOTMonitor tests for regression coverage.
+The published package on PyPI does not depend on SPOT, MCMAS, or NuSMV. CI
+runs the no-extras test path (which uses `ProgressionMonitor`) by default; a
+separate CI matrix job installs SPOT and runs the SPOT-gated tests for
+regression coverage. MCMAS / NuSMV integration tests are gated by
+`RUN_INTEGRATION=1` and run only on systems where the binary is present.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'spot'` | SPOT not installed, or installed for a different Python | Reinstall with `--with-pythondir=$VENV/lib/python3.X/site-packages` |
+| `import spot` succeeds but `spot.version()` looks like `Dotcloud / Mongodb` | You did `pip install spot` and got the wrong PyPI package | `uv pip uninstall spot`; then follow Path A or Path B above |
+| `import buddy` fails | SPOT installed but BuDDy bindings missing | The source build installs both; `apt install python3-spot` should pull `python3-buddy` as a dependency |
+| `make: *** No rule to make target` during source build | C++20 compiler missing or too old | `sudo apt install build-essential` then `g++ --version` ≥ 10 |
+| `RUN_INTEGRATION=1` test skips silently | `mcmas` not on PATH | Either install MCMAS (see ADR 0003) or run the NuSMV-substitute path manually |
+
+## Why apt-repo (Path A) is generally preferred over source build (Path B)
+
+- Path A: ~30 seconds of work, system-wide install, automatic updates via apt
+- Path B: ~10 minutes of work, user-space install, manual update each release
+
+Use Path B when you don't have sudo (e.g., shared servers) or when you need a
+specific SPOT version that's no longer in the apt repo.
