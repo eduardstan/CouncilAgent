@@ -59,23 +59,36 @@ def _parse_single(
 
     match force:
         case Force.PROPOSE:
+            claim_obj = obj.get("claim")
+            if isinstance(claim_obj, dict):
+                surface = str(claim_obj.get("surface", ""))
+                domain_str = str(claim_obj.get("domain", obj.get("claim_domain", "free")))
+            else:
+                surface = str(obj.get("claim_surface", ""))
+                domain_str = str(obj.get("claim_domain", "free"))
             return Propose(
                 move_id=move_id,
                 agent_id=agent_id,
                 round_index=round_index,
                 claim=Claim(
-                    surface=str(obj.get("claim_surface", "")),
-                    domain=ClaimDomain(str(obj.get("claim_domain", "free"))),
+                    surface=surface,
+                    domain=ClaimDomain(domain_str),
                 ),
                 confidence=float(str(obj.get("confidence", 0.5))),
             )
         case Force.CHALLENGE:
+            reason_obj = obj.get("reason")
+            reason_surface = (
+                str(reason_obj.get("surface", ""))
+                if isinstance(reason_obj, dict)
+                else str(obj.get("reason_surface", ""))
+            )
             return Challenge(
                 move_id=move_id,
                 agent_id=agent_id,
                 round_index=round_index,
                 target=str(obj.get("target", "")),
-                reason=Claim(surface=str(obj.get("reason_surface", ""))),
+                reason=Claim(surface=reason_surface),
             )
         case Force.CONCEDE:
             return Concede(
@@ -92,27 +105,45 @@ def _parse_single(
                 own=str(obj.get("own", "")),
             )
         case Force.QUESTION:
+            query_obj = obj.get("query")
+            query_surface = (
+                str(query_obj.get("surface", ""))
+                if isinstance(query_obj, dict)
+                else str(obj.get("query_surface", ""))
+            )
             return Question(
                 move_id=move_id,
                 agent_id=agent_id,
                 round_index=round_index,
                 target=str(obj.get("target", "")),
-                query=Claim(surface=str(obj.get("query_surface", ""))),
+                query=Claim(surface=query_surface),
             )
         case Force.CLARIFY:
+            restated_obj = obj.get("restated")
+            restated_surface = (
+                str(restated_obj.get("surface", ""))
+                if isinstance(restated_obj, dict)
+                else str(obj.get("restated_surface", ""))
+            )
             return Clarify(
                 move_id=move_id,
                 agent_id=agent_id,
                 round_index=round_index,
                 target=str(obj.get("target", "")),
-                restated=Claim(surface=str(obj.get("restated_surface", ""))),
+                restated=Claim(surface=restated_surface),
             )
         case Force.VOTE:
+            option_obj = obj.get("option")
+            option_surface = (
+                str(option_obj.get("surface", ""))
+                if isinstance(option_obj, dict)
+                else str(obj.get("option_surface", ""))
+            )
             return Vote(
                 move_id=move_id,
                 agent_id=agent_id,
                 round_index=round_index,
-                option=Claim(surface=str(obj.get("option_surface", ""))),
+                option=Claim(surface=option_surface),
                 confidence=float(str(obj.get("confidence", 0.5))),
             )
         case Force.ABSTAIN:
