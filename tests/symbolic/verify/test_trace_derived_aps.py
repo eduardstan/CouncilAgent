@@ -3,7 +3,7 @@
 Covers has_evidence, has_prior_challenge, same_agent_concede_run_ge_3.
 """
 
-from council.dialect.moves import Challenge, Claim, Concede, Force, Propose, Vote
+from council.dialect.moves import Challenge, Claim, Concede, Propose, Vote
 from council.dialect.trace import Trace
 
 
@@ -148,7 +148,7 @@ def test_same_agent_concede_run_ge_3_stays_true_on_fourth() -> None:
 
 
 def test_same_agent_concede_run_reset_by_propose() -> None:
-    """Concede–Propose–Concede–Concede: run resets; last event has run=2, flag=False."""
+    """Concede-Propose-Concede-Concede: run resets; last event has run=2, flag=False."""
     trace = _make_trace(_conc("A", 0), _prop("A", 1), _conc("A", 2), _conc("A", 3))
     events = trace.to_events()
     assert events[0]["same_agent_concede_run_ge_3"] is False  # run=1

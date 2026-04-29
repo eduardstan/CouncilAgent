@@ -17,7 +17,6 @@ from council.symbolic.verify.ltlf import (
     to_spot_str,
 )
 
-
 # ---------------------------------------------------------------------------
 # Round-trip idempotence: to_spot_str(parse(s)) == to_spot_str(parse(to_spot_str(parse(s))))
 # ---------------------------------------------------------------------------

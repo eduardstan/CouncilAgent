@@ -128,6 +128,49 @@ def test_council_response_is_frozen() -> None:
 # VisibilityContext — anonymisation carrier (Constitution §10)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# CouncilContext — tool_client field (W1 Patch B)
+# ---------------------------------------------------------------------------
+
+def test_council_context_default_tool_client_is_none() -> None:
+    """CouncilContext.tool_client defaults to None — no callsite changes required."""
+    from council.context import CouncilContext
+    from council.models import FakeModelClient
+    from council.termination import FixedRounds
+    from council.topology import CompleteGraphTopology
+
+    ctx = CouncilContext(
+        agents=("a", "b"),
+        model_client=FakeModelClient(),
+        protocol=object(),
+        topology=CompleteGraphTopology(2),
+        termination=FixedRounds(1),
+    )
+    assert ctx.tool_client is None
+
+
+def test_council_context_accepts_tool_client() -> None:
+    """CouncilContext accepts an explicit ToolClient instance (StubToolClient here)."""
+    from council.context import CouncilContext
+    from council.models import FakeModelClient
+    from council.termination import FixedRounds
+    from council.tools import StubToolClient
+    from council.topology import CompleteGraphTopology
+
+    stub = StubToolClient()
+    ctx = CouncilContext(
+        agents=("a", "b"),
+        model_client=FakeModelClient(),
+        protocol=object(),
+        topology=CompleteGraphTopology(2),
+        termination=FixedRounds(1),
+        tool_client=stub,
+    )
+    assert ctx.tool_client is stub
+
+
+# ---------------------------------------------------------------------------
+
 def test_visibility_context_carries_anonymize_flag() -> None:
     from council.context import VisibilityContext
 
