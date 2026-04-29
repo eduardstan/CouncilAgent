@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from council.dialect.moves import Claim, Force, Propose
+from council.dialect.moves import Claim, Propose
 from council.dialect.trace import Trace
 from council.models import FakeModelClient
-
 
 # ---------------------------------------------------------------------------
 # FixedRounds + run_council — 3-agent 2-round happy path
@@ -27,7 +26,6 @@ from council.models import FakeModelClient
 async def test_run_council_3agents_2rounds_returns_response() -> None:
     from council.context import (
         BAFMarginConfidence,
-        Confidence,
         CopelandConfidence,
         CouncilContext,
         CouncilResponse,
@@ -87,7 +85,7 @@ async def test_run_council_trace_accumulates_moves() -> None:
 
     result = await run_council("Test prompt", context=ctx)
 
-    # 3 agents × 2 rounds = 6 moves minimum
+    # 3 agents x 2 rounds = 6 moves minimum
     assert len(result.receipt.trace.moves) >= 6
 
 
@@ -202,4 +200,4 @@ async def test_run_council_handles_model_failure() -> None:
     result = await run_council("Prompt", context=ctx)
     # Should complete without raising; all moves are Abstain
     abstains = [m for m in result.receipt.trace.moves if isinstance(m, Abstain)]
-    assert len(abstains) == 2  # 2 agents × 1 round
+    assert len(abstains) == 2  # 2 agents x 1 round

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Value objects
 # ---------------------------------------------------------------------------
 
 def test_model_request_is_frozen() -> None:
     import dataclasses
+
     from council.models import ModelRequest
     r = ModelRequest(model="openai/gpt-4o-mini", prompt="hello")
     with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
@@ -27,6 +27,7 @@ def test_model_request_defaults() -> None:
 
 def test_model_response_is_frozen() -> None:
     import dataclasses
+
     from council.models import ModelResponse
     r = ModelResponse(model="x", content="hi", input_tokens=5, output_tokens=3, cost_usd=0.0)
     with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
@@ -35,6 +36,7 @@ def test_model_response_is_frozen() -> None:
 
 def test_model_failure_is_frozen() -> None:
     import dataclasses
+
     from council.models import ModelFailure
     f = ModelFailure(model="x", error="timeout")
     with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):

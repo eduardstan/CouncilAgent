@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Union
 
 
 class Force(StrEnum):
@@ -129,4 +128,4 @@ class Abstain:
     why: str = ""
 
 
-Move = Union[Propose, Challenge, Concede, Retract, Question, Clarify, Vote, Abstain]
+Move = Propose | Challenge | Concede | Retract | Question | Clarify | Vote | Abstain

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 
 def _json_move(force: str, agent_id: str = "A", round_index: int = 0, **extra: object) -> str:
     base = {"force": force, "agent_id": agent_id, "round_index": round_index}

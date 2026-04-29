@@ -33,8 +33,9 @@ def test_fixed_rounds_stops_at_zero_rounds() -> None:
 
 
 def test_fixed_rounds_is_frozen() -> None:
-    from council.termination import FixedRounds
     import dataclasses
+
+    from council.termination import FixedRounds
 
     fr = FixedRounds(max_rounds=2)
     with pytest.raises(dataclasses.FrozenInstanceError):

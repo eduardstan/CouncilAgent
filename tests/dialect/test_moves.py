@@ -126,20 +126,35 @@ def test_move_union_has_eight_members() -> None:
 
 def test_move_union_match_exhaustive() -> None:
     from council.dialect.moves import (
-        Abstain, Challenge, Clarify, Concede, Move,
-        Propose, Question, Retract, Vote,
+        Abstain,
+        Challenge,
+        Clarify,
+        Concede,
+        Move,
+        Propose,
+        Question,
+        Retract,
+        Vote,
     )
 
     def _dispatch(move: Move) -> str:
         match move:
-            case Propose():   return "propose"
-            case Challenge(): return "challenge"
-            case Concede():   return "concede"
-            case Retract():   return "retract"
-            case Question():  return "question"
-            case Clarify():   return "clarify"
-            case Vote():      return "vote"
-            case Abstain():   return "abstain"
+            case Propose():
+                return "propose"
+            case Challenge():
+                return "challenge"
+            case Concede():
+                return "concede"
+            case Retract():
+                return "retract"
+            case Question():
+                return "question"
+            case Clarify():
+                return "clarify"
+            case Vote():
+                return "vote"
+            case Abstain():
+                return "abstain"
 
     sample: list[Move] = [
         Propose(move_id="p", agent_id="A", round_index=0),

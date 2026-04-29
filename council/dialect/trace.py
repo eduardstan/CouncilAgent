@@ -20,8 +20,8 @@ class Trace:
 
     moves: tuple[Move, ...] = ()
 
-    def append(self, move: Move) -> "Trace":
-        return Trace(moves=self.moves + (move,))
+    def append(self, move: Move) -> Trace:
+        return Trace(moves=(*self.moves, move))
 
     def by_id(self, move_id: str) -> Move:
         for m in self.moves:

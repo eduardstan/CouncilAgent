@@ -5,8 +5,14 @@ from __future__ import annotations
 
 def _all_moves() -> list:
     from council.dialect.moves import (
-        Abstain, Challenge, Clarify, Concede,
-        Propose, Question, Retract, Vote,
+        Abstain,
+        Challenge,
+        Clarify,
+        Concede,
+        Propose,
+        Question,
+        Retract,
+        Vote,
     )
     return [
         Propose(move_id="p", agent_id="agent_0", round_index=0),

@@ -1,7 +1,7 @@
 """ToolClient — universal tool integration skeleton (W0 stub).
 
 Real MCP / Z3 / clingo / Lean / Python-sandbox / web integrations are wired
-in W1–W6. Core pipeline interacts only through this module (Constitution §8).
+in W1-W6. Core pipeline interacts only through this module (Constitution §8).
 """
 
 from __future__ import annotations

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
+
 import pytest
 
+from council.dialect.moves import Claim, Propose
 from council.dialect.trace import Trace
-from council.dialect.moves import Claim, ClaimDomain, Force, Propose
-
 
 # ---------------------------------------------------------------------------
 # Confidence tagged union — Constitution §5
@@ -40,14 +40,13 @@ def test_confidence_values_are_frozen() -> None:
 
 
 def test_confidence_is_tagged_type_union() -> None:
+
     from council.context import (
         BAFMarginConfidence,
-        Confidence,
         CopelandConfidence,
         JSDConfidence,
         MonitorVerdictConfidence,
     )
-    import typing
 
     # Each subtype is in the Confidence union
     for cls in (JSDConfidence, BAFMarginConfidence, MonitorVerdictConfidence, CopelandConfidence):

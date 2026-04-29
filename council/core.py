@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import TYPE_CHECKING
 
 from council.context import (
     CopelandConfidence,
@@ -21,7 +20,7 @@ from council.dialect.moves import Abstain, Force, Move, Propose
 from council.dialect.parsers import parse_move
 from council.dialect.surface import render_move
 from council.dialect.trace import Trace
-from council.models import ModelFailure, ModelRequest, ModelResponse
+from council.models import ModelFailure, ModelRequest
 
 
 def _build_visibility_context(
