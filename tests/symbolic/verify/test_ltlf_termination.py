@@ -132,18 +132,28 @@ def test_ltlf_termination_only_steps_new_events() -> None:
 
 
 def test_ltlf_termination_resets_correctly() -> None:
-    """reset() restores the initial state for monitor + counters + accumulator."""
+    """reset() restores the initial state for monitor + counters + accumulator.
+
+    Behaviour-only assertions (no private-field access): after reset,
+      - subsequent step over a fresh trace produces no carry-over verdicts;
+      - the intervention budget is restored (max_interventions-exhausted
+        does not fire on the first call).
+    """
     term = LTLfMonitorTermination([EventuallyDecide()], max_interventions=1)
     term.acknowledge_intervention()
-    term.should_stop(Trace().append(Vote(move_id="v", agent_id="A", round_index=0,
-                                         option=Claim(surface="y"))), 0)
+    term.should_stop(
+        Trace().append(Vote(move_id="v", agent_id="A", round_index=0,
+                            option=Claim(surface="y"))),
+        0,
+    )
     term.reset()
-    assert term._intervention_count == 0
-    assert term._last_event_idx == 0
-    assert term._verdicts == []
-    # After reset, can run again from scratch
-    stop, _ = term.should_stop(Trace(), 0)
+    # No leftover verdicts after reset
+    assert term.consume_verdicts() == ()
+    # Intervention budget is restored: should_stop on an empty trace returns
+    # (False, "") rather than the "max-interventions-exhausted" sentinel.
+    stop, reason = term.should_stop(Trace(), 0)
     assert stop is False
+    assert reason == ""
 
 
 # ---------------------------------------------------------------------------

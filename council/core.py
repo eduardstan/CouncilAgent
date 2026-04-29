@@ -211,9 +211,9 @@ def _find_violated_property(
     """Locate the Property instance whose most recent verdict is BOTTOM."""
     for v in reversed(verdicts):
         if v.verdict == "bottom":
-            for prop, _ in termination._compiled:
-                if prop.name == v.property_name:
-                    return prop
+            prop = termination.find_property(v.property_name)
+            if prop is not None:
+                return prop
     return None
 
 
@@ -224,7 +224,7 @@ def _find_ltlf_termination(strategy: object) -> LTLfMonitorTermination | None:
     if isinstance(strategy, LTLfMonitorTermination):
         return strategy
     if isinstance(strategy, CompositeTermination):
-        for inner in strategy._strategies:
+        for inner in strategy.strategies:
             found = _find_ltlf_termination(inner)
             if found is not None:
                 return found
