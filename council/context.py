@@ -13,6 +13,7 @@ from council.dialect.moves import Move
 from council.dialect.trace import Trace
 from council.models import ModelClient
 from council.termination import TerminationStrategy
+from council.tools import ToolClient
 from council.topology import Topology
 
 # Defer import of ProtocolAutomaton to avoid circular — imported at function call sites
@@ -98,6 +99,7 @@ class CouncilContext:
     termination: TerminationStrategy
     anonymize: bool = True
     original_question: str = ""
+    tool_client: ToolClient | None = None  # wired by TriggerVerifier intervention (W1)
 
 
 # ---------------------------------------------------------------------------
