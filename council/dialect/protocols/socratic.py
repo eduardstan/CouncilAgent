@@ -1,0 +1,50 @@
+"""SocraticAutomaton — question-driven dialogue for eliciting assumptions.
+
+One agent (the questioner) drives via Question/Challenge; others respond with
+Clarify/Concede/Retract. Ends when the questioner issues a Vote or after max_rounds.
+"""
+
+from __future__ import annotations
+
+from council.dialect.moves import Force
+from council.dialect.protocols.base import ProtocolAutomaton
+from council.dialect.trace import Trace
+
+_OPEN = frozenset({
+    Force.PROPOSE, Force.QUESTION, Force.CLARIFY, Force.CHALLENGE,
+    Force.CONCEDE, Force.RETRACT, Force.PASS,
+})
+_VOTE = frozenset({Force.VOTE, Force.ABSTAIN})
+
+
+class SocraticAutomaton(ProtocolAutomaton):
+    def __init__(self, *, max_rounds: int = 4, agents: list[str]) -> None:
+        self._max_rounds = max_rounds
+        self._n = len(agents)
+
+    def _rounds_elapsed(self, trace: Trace) -> int:
+        if not trace.moves:
+            return 0
+        return max(m.round_index for m in trace.moves) + 1
+
+    def _in_vote_phase(self, trace: Trace) -> bool:
+        return self._rounds_elapsed(trace) >= self._max_rounds
+
+    def state(self, trace: Trace) -> tuple[str, str]:
+        if self.is_terminal(trace):
+            return ("closed", "terminal")
+        if self._in_vote_phase(trace):
+            return ("vote", "answer")
+        return ("open", "socratic")
+
+    def legal_forces(self, trace: Trace, agent_id: str) -> frozenset[Force]:
+        if self.is_terminal(trace):
+            return frozenset()
+        return _VOTE if self._in_vote_phase(trace) else _OPEN
+
+    def is_terminal(self, trace: Trace) -> bool:
+        votes = len(trace.by_force(Force.VOTE)) + len(trace.by_force(Force.ABSTAIN))
+        return self._in_vote_phase(trace) and votes >= self._n
+
+    def is_answer_phase(self, trace: Trace) -> bool:
+        return self._in_vote_phase(trace) and not self.is_terminal(trace)
