@@ -1,5 +1,10 @@
 """L1 verification spine — LTL_f / LTL3 monitors, ISPL/MCMAS, interventions. (W1)"""
 
+from council.symbolic.verify.ltl2mon_backend import (
+    ProgressionMonitor,
+    progression,
+    simplify,
+)
 from council.symbolic.verify.ltlf import (
     And,
     Atom,
@@ -35,11 +40,14 @@ __all__ = [
     "Neg",
     "Next",
     "Or",
+    "ProgressionMonitor",
     "Property",
     "PurePythonLTL3Monitor",
     "Until",
     "Verdict",
     "WeakUntil",
     "parse",
+    "progression",
+    "simplify",
     "to_spot_str",
 ]
