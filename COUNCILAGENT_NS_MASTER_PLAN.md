@@ -1138,7 +1138,7 @@ Every config is checked in. Every random seed is logged. Every cost is tallied.
 ### 12.2 Releases
 
 - **Semantic versioning** for both `council-agent` and `councilagent`.
-- **NS release cadence.** v0.1.0 at M1 (substrate); v0.2.0 at M2 (verification + argumentation); v0.3.0 at M3 (QD); v0.4.0 at M4 (co-evolution); v0.5.0 at M5 (ILP); **v1.0.0 at M6 (flagship)**.
+- **NS release cadence.** v0.2.0 at M1 (substrate); v0.3.0 at M2 (verification + argumentation); v0.4.0 at M3 (QD); v0.5.0 at M4 (co-evolution); v0.6.0 at M5 (ILP); **v1.0.0 at M6 (flagship)**.
 - **Each release.** GitHub release notes; PyPI publish; Zenodo DOI auto-mint via CITATION.cff.
 
 ### 12.3 Telemetry
@@ -1851,7 +1851,7 @@ For each of P1–P5, F:
 | **M2** (end Jul 2026) | `v0.3.0` | W0, W1, W2 | LTL₍f₎ monitors live; argumentation aggregator working; P1 + P2 ready to submit |
 | **M3** (end Sep 2026) | `v0.4.0` | + W3, W4, W5 (start) | first verified ARC-AGI-2 submission; legacy_council/ deleted; P3 draft ready |
 | **M4** (end Dec 2026) | `v0.5.0` | + W5 (full) | co-evolutionary loop scaling; P3 + P4 in submission |
-| **M5** (end Feb 2027) | `v0.9.0` | + W6 | learned protocols re-verified by MCMAS; P5 in submission |
+| **M5** (end Feb 2027) | `v0.6.0` | + W6 | learned protocols re-verified by MCMAS; P5 in submission |
 | **M6** (end Apr 2027) | **`v1.0.0`** | F integrates all | flagship F submitted (JAIR/AIJ); Streamlit demo live; ARC Prize stamp |
 
 The merge `council-ns` → `main` happens **once**, at v1.0.0. Until then, `main` stays at `legacy/v0.1.0` for the student.
