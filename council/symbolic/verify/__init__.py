@@ -27,6 +27,11 @@ from council.symbolic.verify.monitor import (
     PurePythonLTL3Monitor,
     Verdict,
 )
+from council.symbolic.verify.spot_backend import (
+    SPOTMonitor,
+    is_spot_available,
+    make_monitor,
+)
 
 __all__ = [
     "And",
@@ -43,9 +48,12 @@ __all__ = [
     "ProgressionMonitor",
     "Property",
     "PurePythonLTL3Monitor",
+    "SPOTMonitor",
     "Until",
     "Verdict",
     "WeakUntil",
+    "is_spot_available",
+    "make_monitor",
     "parse",
     "progression",
     "simplify",
