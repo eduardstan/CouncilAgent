@@ -9,12 +9,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from council.dialect.moves import Move
+from council.dialect.moves import Move, Vote
 from council.dialect.trace import Trace
 from council.models import ModelClient
 from council.termination import MonitorVerdict, TerminationStrategy
 from council.tools import ToolClient
 from council.topology import Topology
+
+#: Synthetic moderator agent ID used for all moves injected by W1 Interventions.
+#: Lives in core (context.py) because is_complete() needs it for the §11
+#: bottom-verdict-intervention check; interventions.py re-imports it.
+INTERVENTION_AGENT_ID = "_w1_intervention"
 
 # Defer import of ProtocolAutomaton to avoid circular — imported at function call sites
 
@@ -65,11 +70,45 @@ class ProvenanceReceipt:
     total_output_tokens: int = 0
 
     def is_complete(self) -> bool:
-        """True iff every move in the trace has a cost entry."""
+        """Constitution §11 receipt-completeness check.
+
+        Returns True iff:
+          (a) every move in the trace has a cost entry (intervention moves
+              must use cost=0.0 — they are symbolic, not model-charged);
+          (b) every Vote in the trace carries at least one evidence atom
+              (Votes are committed decisions and must justify themselves);
+          (c) every BOTTOM monitor verdict is followed by an intervention
+              move (a move from INTERVENTION_AGENT_ID at >= the verdict's
+              round_index) — every ⊥ verdict triggered an intervention.
+
+        The QBAF-argument-count clause from §11 is W2 territory and is
+        evaluated separately when self.qbaf is not None (deferred).
+        """
         if not self.trace.moves:
             return True
+
+        # (a) cost-ledger clause
         cost_keys = {k for k, _ in self.cost_ledger}
-        return all(m.move_id in cost_keys for m in self.trace.moves)
+        if not all(m.move_id in cost_keys for m in self.trace.moves):
+            return False
+
+        # (b) Vote-evidence clause
+        for m in self.trace.moves:
+            if isinstance(m, Vote) and not m.option.evidence:
+                return False
+
+        # (c) bottom-verdict-intervention clause
+        for v in self.monitor_verdicts:
+            if v.verdict == "bottom":
+                covered = any(
+                    m.agent_id == INTERVENTION_AGENT_ID
+                    and m.round_index >= v.round_index
+                    for m in self.trace.moves
+                )
+                if not covered:
+                    return False
+
+        return True
 
 
 # ---------------------------------------------------------------------------

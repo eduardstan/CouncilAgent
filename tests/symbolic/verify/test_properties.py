@@ -9,6 +9,7 @@ import pytest
 
 from council.symbolic.verify.monitor import LTL3Monitor, Property, Verdict
 from council.symbolic.verify.properties import (
+    L1_EQUIVALENCE_GROUPS,
     PROPERTY_REGISTRY,
     BoundedRound,
     ChallengeBeforeConsensus,
@@ -70,6 +71,34 @@ def test_every_property_compiles_to_a_monitor(cls: type[Property]) -> None:
     p = cls()
     monitor = p.compile()
     assert isinstance(monitor, LTL3Monitor)
+
+
+# ---------------------------------------------------------------------------
+# L1-equivalence groups (documented in properties.py)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("group", L1_EQUIVALENCE_GROUPS)
+def test_l1_equivalence_groups_share_formula(group: tuple[str, ...]) -> None:
+    """All names in an L1_EQUIVALENCE_GROUPS tuple compile to the same LTL_f formula.
+
+    This codifies the constitution-audit WARNING 4 finding: at L1 some property
+    pairs (ChallengeBeforeConsensus / RefutationReachable; EventuallyDecide /
+    BoundedRound) are syntactically the same and intentionally so. Differentiation
+    happens at higher layers (L2 argumentation roles; termination-layer k).
+    """
+    formulas = {PROPERTY_REGISTRY[name].formula for name in group}
+    assert len(formulas) == 1, (
+        f"L1-equivalence group {group} expected to share a formula, got {formulas}"
+    )
+
+
+def test_l1_equivalence_groups_have_distinct_property_names() -> None:
+    """Inside each L1-equivalence group, the property NAMES still differ — so
+    MonitorVerdicts produced by them remain distinguishable downstream."""
+    for group in L1_EQUIVALENCE_GROUPS:
+        assert len(group) == len(set(group)), (
+            f"L1-equivalence group {group} contains duplicate names"
+        )
 
 
 # ---------------------------------------------------------------------------

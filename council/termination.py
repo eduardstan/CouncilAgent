@@ -56,6 +56,11 @@ class CompositeTermination(TerminationStrategy):
                 return (True, reason)
         return (False, "")
 
+    @property
+    def strategies(self) -> tuple[TerminationStrategy, ...]:
+        """Read-only view of the constituent strategies (for traversal callers)."""
+        return tuple(self._strategies)
+
 
 # ---------------------------------------------------------------------------
 # MonitorVerdict — referenced by ProvenanceReceipt
@@ -157,6 +162,13 @@ class LTLfMonitorTermination(TerminationStrategy):
         verdicts = tuple(self._verdicts)
         self._verdicts = []
         return verdicts
+
+    def find_property(self, name: str) -> Property | None:
+        """Look up a configured Property by name. Returns None if absent."""
+        for prop, _ in self._compiled:
+            if prop.name == name:
+                return prop
+        return None
 
     def reset(self) -> None:
         """Reset all monitors and internal state — for reuse across run_council calls."""

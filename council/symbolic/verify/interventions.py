@@ -26,6 +26,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from council.context import INTERVENTION_AGENT_ID
 from council.dialect.moves import (
     Abstain,
     Challenge,
@@ -45,14 +46,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Synthetic moderator agent ID used for all injected moves.
-INTERVENTION_AGENT_ID = "_w1_intervention"
+# INTERVENTION_AGENT_ID lives in council/context.py — see ProvenanceReceipt.is_complete()
+# (Constitution §11). Re-exported here so existing imports keep working.
+__all__ = [
+    "INTERVENTION_AGENT_ID",
+    "EscalateModel",
+    "ForceChallenge",
+    "FreezeAndAccept",
+    "Intervention",
+    "ReprompCorrective",
+    "TriggerVerifier",
+]
+
+
+#: Project-local UUID namespace for deterministic intervention move IDs.
+#: Generated once via uuid.uuid4() and frozen here so re-runs of the same
+#: (violated_name, trace_len) input always produce the same move_id.
+#: NAMESPACE_OID would have semantically misled (it's reserved for OSI OIDs);
+#: a project-local namespace is the right primitive per RFC 4122 §4.3.
+_W1_INTERVENTION_NAMESPACE = uuid.UUID("4d6e1c8f-2c5b-5a8a-9f47-7b62d60fa1c0")
 
 
 def _next_move_id(violated_name: str, trace_len: int) -> str:
     """Deterministic move_id for an intervention move: stable across reruns."""
     seed = f"{violated_name}:{trace_len}"
-    return f"intervention-{uuid.uuid5(uuid.NAMESPACE_OID, seed)}"
+    return f"intervention-{uuid.uuid5(_W1_INTERVENTION_NAMESPACE, seed)}"
 
 
 def _current_round_index(trace: Trace) -> int:
@@ -208,14 +226,21 @@ class TriggerVerifier(Intervention):
 class EscalateModel(Intervention):
     """Bump the offending agent to a stronger model tier.
 
+    The upgraded-model identifier is REQUIRED at construction — there is
+    deliberately no default. Per code-style.md "No hardcoded model names
+    anywhere outside `configs/` and tests"; configuring the escalation tier
+    is a deployment-time decision that must be auditable, not a library
+    default that hides behind every callsite.
+
     PR7 deterministic version: injects (a) an Abstain move from the offending
     agent and (b) a placeholder Propose from the synthetic moderator with a
     surface marker indicating the upgraded model. The actual model.complete()
-    call is wired in PR8 (LTLfMonitorTermination + core.py loop) once the
-    prompt context is available.
+    call is wired in a future PR once the prompt context is available.
     """
 
-    def __init__(self, upgraded_model: str = "anthropic/claude-3.5-sonnet") -> None:
+    def __init__(self, upgraded_model: str) -> None:
+        if not upgraded_model:
+            raise ValueError("EscalateModel.upgraded_model must be a non-empty string")
         self.upgraded_model = upgraded_model
 
     async def execute(

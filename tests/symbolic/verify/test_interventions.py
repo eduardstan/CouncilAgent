@@ -184,7 +184,7 @@ async def test_trigger_verifier_handles_tool_failure() -> None:
 @pytest.mark.asyncio
 async def test_escalate_model_injects_abstain_and_propose() -> None:
     trace = _trace_with_propose("A")
-    result = await EscalateModel().execute(trace, EventuallyDecide(), _make_ctx())
+    result = await EscalateModel(upgraded_model="test/upgraded-model").execute(trace, EventuallyDecide(), _make_ctx())
     assert len(result.moves) == len(trace.moves) + 2
     abstain = result.moves[-2]
     upgraded_propose = result.moves[-1]
@@ -205,10 +205,33 @@ async def test_escalate_model_propose_surface_contains_upgraded_model() -> None:
     assert "claude-3.5-sonnet" in upgraded.claim.surface
 
 
+def test_escalate_model_requires_upgraded_model_argument() -> None:
+    """EscalateModel must NOT default to a hardcoded model name.
+
+    Per code-style.md "No hardcoded model names anywhere outside `configs/`
+    and tests" — the upgraded model must be supplied explicitly so the
+    decision is auditable and configurable.
+    """
+    with pytest.raises(TypeError):
+        EscalateModel()  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+async def test_escalate_model_preserves_explicit_model_name() -> None:
+    """Explicit upgraded_model is round-tripped to the injected Propose surface."""
+    trace = _trace_with_propose("A")
+    result = await EscalateModel(upgraded_model="openrouter/some/exotic-model").execute(
+        trace, EventuallyDecide(), _make_ctx(),
+    )
+    upgraded = result.moves[-1]
+    assert isinstance(upgraded, Propose)
+    assert "openrouter/some/exotic-model" in upgraded.claim.surface
+
+
 @pytest.mark.asyncio
 async def test_escalate_model_empty_trace() -> None:
     """No moves: still injects Abstain + Propose with empty offender."""
-    result = await EscalateModel().execute(Trace(), EventuallyDecide(), _make_ctx())
+    result = await EscalateModel(upgraded_model="test/upgraded-model").execute(Trace(), EventuallyDecide(), _make_ctx())
     assert len(result.moves) == 2
 
 
@@ -217,7 +240,7 @@ async def test_escalate_model_falls_back_to_last_move_when_no_propose() -> None:
     """If no Propose exists, offender is the last move's author."""
     trace = Trace().append(Vote(move_id="v0", agent_id="X", round_index=0,
                                 option=Claim(surface="yes")))
-    result = await EscalateModel().execute(trace, EventuallyDecide(), _make_ctx())
+    result = await EscalateModel(upgraded_model="test/upgraded-model").execute(trace, EventuallyDecide(), _make_ctx())
     abstain = result.moves[-2]
     assert isinstance(abstain, Abstain)
     assert abstain.agent_id == "X"
@@ -275,7 +298,7 @@ async def test_all_interventions_inject_typed_moves_only() -> None:
     interventions: list[Intervention] = [
         ReprompCorrective(),
         ForceChallenge(),
-        EscalateModel(),
+        EscalateModel(upgraded_model="test/upgraded-model"),
         FreezeAndAccept(),
     ]
     for iv in interventions:

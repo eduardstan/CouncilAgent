@@ -197,7 +197,16 @@ class BoundedRound(Property):
     """Eventually decide within k rounds (k enforced at the termination layer).
 
     Formal at L1: F(is_vote)  — bound k is checked by FixedRounds termination.
-    The k parameter is exposed as an instance attribute for reading by W8 wiring.
+    The k parameter is exposed as an instance attribute for reading by future
+    YAML-runner wiring.
+
+    .. note::
+       BoundedRound is the only Property in PROPERTY_REGISTRY whose ``__init__``
+       takes a parameter (``k``, default 10). YAML-driven code that does
+       ``PROPERTY_REGISTRY["BoundedRound"](k=5)`` works; the no-arg form
+       ``PROPERTY_REGISTRY["BoundedRound"]()`` falls back to the default.
+       Future YAML runners (W8) should special-case parameterised properties
+       — see L1_PARAMETERISED_PROPERTIES below.
     """
 
     name: ClassVar[str] = "BoundedRound"
@@ -233,3 +242,26 @@ PROPERTY_REGISTRY: dict[PropertyName, type[Property]] = {
         BoundedRound,
     )
 }
+
+#: Pairs of property names whose LTL_f formulas are syntactically identical
+#: at L1 but are intended to be differentiated at L2 (W2) via argumentation
+#: attack/support roles or by termination-layer parameters. Documented so
+#: that callers configuring multiple-aliases are not surprised when both
+#: monitors fire simultaneously with the same verdict.
+#:
+#: - (ChallengeBeforeConsensus, RefutationReachable): both encode
+#:   F(is_challenge && F(is_vote)). At L2, RefutationReachable will additionally
+#:   require the Challenge to attack the Vote in the QBAF.
+#: - (EventuallyDecide, BoundedRound): both encode F(is_vote). BoundedRound
+#:   carries an instance-attr k that the termination layer honours via FixedRounds.
+L1_EQUIVALENCE_GROUPS: tuple[tuple[PropertyName, ...], ...] = (
+    ("ChallengeBeforeConsensus", "RefutationReachable"),
+    ("EventuallyDecide", "BoundedRound"),
+)
+
+#: Properties whose constructors take parameters beyond no-args. YAML-driven
+#: callers must inspect this set and pass the right kwargs (e.g.
+#: ``PROPERTY_REGISTRY["BoundedRound"](k=5)``) rather than blindly doing
+#: ``cls()``. Empty tuple means "all parameterless" — that is the case for
+#: every property except BoundedRound today.
+L1_PARAMETERISED_PROPERTIES: tuple[PropertyName, ...] = ("BoundedRound",)
