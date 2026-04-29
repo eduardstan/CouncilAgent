@@ -26,6 +26,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from council.context import INTERVENTION_AGENT_ID
 from council.dialect.moves import (
     Abstain,
     Challenge,
@@ -45,8 +46,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Synthetic moderator agent ID used for all injected moves.
-INTERVENTION_AGENT_ID = "_w1_intervention"
+# INTERVENTION_AGENT_ID lives in council/context.py — see ProvenanceReceipt.is_complete()
+# (Constitution §11). Re-exported here so existing imports keep working.
+__all__ = [
+    "EscalateModel",
+    "ForceChallenge",
+    "FreezeAndAccept",
+    "INTERVENTION_AGENT_ID",
+    "Intervention",
+    "ReprompCorrective",
+    "TriggerVerifier",
+]
 
 
 def _next_move_id(violated_name: str, trace_len: int) -> str:

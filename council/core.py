@@ -164,7 +164,14 @@ async def run_council(
                 if pending is not None:
                     violated = _find_violated_property(ltlf_term, monitor_verdicts)
                     if violated is not None:
+                        # Snapshot trace length so we can ledger any moves the
+                        # intervention appends with cost=0.0 (Constitution §11:
+                        # intervention moves come from the symbolic layer, not
+                        # from a model call, so their cost is structurally zero).
+                        prev_len = len(trace.moves)
                         trace = await pending.execute(trace, violated, context)
+                        for m in trace.moves[prev_len:]:
+                            cost_ledger.append((m.move_id, 0.0))
                         ltlf_term.acknowledge_intervention()
                         monitor_verdicts.extend(ltlf_term.consume_verdicts())
                         round_index += 1
