@@ -3,6 +3,7 @@
 from council.symbolic.verify.ltlf import (
     And,
     Atom,
+    Boolean,
     Finally,
     Globally,
     Implies,
@@ -25,6 +26,7 @@ from council.symbolic.verify.monitor import (
 __all__ = [
     "And",
     "Atom",
+    "Boolean",
     "Finally",
     "Globally",
     "Implies",

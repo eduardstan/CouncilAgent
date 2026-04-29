@@ -18,6 +18,7 @@ from typing import ClassVar
 from council.symbolic.verify.ltlf import (
     And,
     Atom,
+    Boolean,
     Finally,
     Globally,
     Implies,
@@ -205,12 +206,12 @@ class _OrMonitor(_Compiled):
 def _is_propositional(formula: LTLf) -> bool:
     """True iff formula contains no temporal operator (X, U, W, F, G)."""
     match formula:
-        case Atom():
+        case Boolean() | Atom():
             return True
         case Neg(arg=a):
             return _is_propositional(a)
-        case And(left=l, right=r) | Or(left=l, right=r) | Implies(left=l, right=r):
-            return _is_propositional(l) and _is_propositional(r)
+        case And(left=lf, right=rf) | Or(left=lf, right=rf) | Implies(left=lf, right=rf):
+            return _is_propositional(lf) and _is_propositional(rf)
         case Next() | Until() | WeakUntil() | Finally() | Globally():
             return False
     return False
@@ -223,16 +224,18 @@ def _eval_prop(formula: LTLf, event: dict[str, object]) -> bool:
     Raises ValueError if the formula contains a temporal operator.
     """
     match formula:
+        case Boolean(value=v):
+            return v
         case Atom(name=n):
             return bool(event.get(n, False))
         case Neg(arg=a):
             return not _eval_prop(a, event)
-        case And(left=l, right=r):
-            return _eval_prop(l, event) and _eval_prop(r, event)
-        case Or(left=l, right=r):
-            return _eval_prop(l, event) or _eval_prop(r, event)
-        case Implies(left=l, right=r):
-            return (not _eval_prop(l, event)) or _eval_prop(r, event)
+        case And(left=lf, right=rf):
+            return _eval_prop(lf, event) and _eval_prop(rf, event)
+        case Or(left=lf, right=rf):
+            return _eval_prop(lf, event) or _eval_prop(rf, event)
+        case Implies(left=lf, right=rf):
+            return (not _eval_prop(lf, event)) or _eval_prop(rf, event)
         case _:
             raise ValueError(f"_eval_prop: not a propositional formula: {formula}")
 

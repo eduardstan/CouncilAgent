@@ -28,6 +28,16 @@ class LTLf(ABC):
 
 
 @dataclass(frozen=True, slots=True)
+class Boolean(LTLf):
+    """Constant truth value. Produced by progression simplification, never by parse()."""
+
+    value: bool
+
+    def __str__(self) -> str:
+        return "TRUE" if self.value else "FALSE"
+
+
+@dataclass(frozen=True, slots=True)
 class Atom(LTLf):
     name: str
 
@@ -123,6 +133,8 @@ def to_spot_str(f: LTLf) -> str:
     This renderer is the bridge used by spot_backend.py.
     """
     match f:
+        case Boolean(value=v):
+            return "1" if v else "0"
         case Atom(name=n):
             return n
         case Neg(arg=a):
