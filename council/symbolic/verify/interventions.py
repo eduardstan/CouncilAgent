@@ -59,10 +59,18 @@ __all__ = [
 ]
 
 
+#: Project-local UUID namespace for deterministic intervention move IDs.
+#: Generated once via uuid.uuid4() and frozen here so re-runs of the same
+#: (violated_name, trace_len) input always produce the same move_id.
+#: NAMESPACE_OID would have semantically misled (it's reserved for OSI OIDs);
+#: a project-local namespace is the right primitive per RFC 4122 §4.3.
+_W1_INTERVENTION_NAMESPACE = uuid.UUID("4d6e1c8f-2c5b-5a8a-9f47-7b62d60fa1c0")
+
+
 def _next_move_id(violated_name: str, trace_len: int) -> str:
     """Deterministic move_id for an intervention move: stable across reruns."""
     seed = f"{violated_name}:{trace_len}"
-    return f"intervention-{uuid.uuid5(uuid.NAMESPACE_OID, seed)}"
+    return f"intervention-{uuid.uuid5(_W1_INTERVENTION_NAMESPACE, seed)}"
 
 
 def _current_round_index(trace: Trace) -> int:
