@@ -233,3 +233,19 @@ PROPERTY_REGISTRY: dict[PropertyName, type[Property]] = {
         BoundedRound,
     )
 }
+
+#: Pairs of property names whose LTL_f formulas are syntactically identical
+#: at L1 but are intended to be differentiated at L2 (W2) via argumentation
+#: attack/support roles or by termination-layer parameters. Documented so
+#: that callers configuring multiple-aliases are not surprised when both
+#: monitors fire simultaneously with the same verdict.
+#:
+#: - (ChallengeBeforeConsensus, RefutationReachable): both encode
+#:   F(is_challenge && F(is_vote)). At L2, RefutationReachable will additionally
+#:   require the Challenge to attack the Vote in the QBAF.
+#: - (EventuallyDecide, BoundedRound): both encode F(is_vote). BoundedRound
+#:   carries an instance-attr k that the termination layer honours via FixedRounds.
+L1_EQUIVALENCE_GROUPS: tuple[tuple[PropertyName, ...], ...] = (
+    ("ChallengeBeforeConsensus", "RefutationReachable"),
+    ("EventuallyDecide", "BoundedRound"),
+)
