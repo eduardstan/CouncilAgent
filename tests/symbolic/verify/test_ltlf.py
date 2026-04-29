@@ -5,6 +5,7 @@ import pytest
 from council.symbolic.verify.ltlf import (
     And,
     Atom,
+    Boolean,
     Finally,
     Globally,
     Implies,
@@ -210,6 +211,26 @@ def test_named_property_formulae_parse(formula: str) -> None:
 
 def test_to_spot_str_atom() -> None:
     assert to_spot_str(Atom("is_vote")) == "is_vote"
+
+
+def test_to_spot_str_boolean_true() -> None:
+    assert to_spot_str(Boolean(value=True)) == "1"
+
+
+def test_to_spot_str_boolean_false() -> None:
+    assert to_spot_str(Boolean(value=False)) == "0"
+
+
+def test_boolean_str_repr() -> None:
+    assert str(Boolean(value=True)) == "TRUE"
+    assert str(Boolean(value=False)) == "FALSE"
+
+
+def test_boolean_is_frozen_and_equal() -> None:
+    """Boolean(True) == Boolean(True), Boolean instances are hashable."""
+    assert Boolean(value=True) == Boolean(value=True)
+    assert Boolean(value=True) != Boolean(value=False)
+    assert hash(Boolean(value=True)) == hash(Boolean(value=True))
 
 
 def test_to_spot_str_neg() -> None:
