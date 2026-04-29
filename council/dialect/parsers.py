@@ -67,7 +67,7 @@ def _parse_single(
                     surface=str(obj.get("claim_surface", "")),
                     domain=ClaimDomain(str(obj.get("claim_domain", "free"))),
                 ),
-                confidence=float(obj.get("confidence", 0.5)),
+                confidence=float(str(obj.get("confidence", 0.5))),
             )
         case Force.CHALLENGE:
             return Challenge(
@@ -113,7 +113,7 @@ def _parse_single(
                 agent_id=agent_id,
                 round_index=round_index,
                 option=Claim(surface=str(obj.get("option_surface", ""))),
-                confidence=float(obj.get("confidence", 0.5)),
+                confidence=float(str(obj.get("confidence", 0.5))),
             )
         case Force.ABSTAIN:
             return Abstain(
