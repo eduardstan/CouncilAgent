@@ -15,6 +15,12 @@ from council.symbolic.verify.ltlf import (
     parse,
     to_spot_str,
 )
+from council.symbolic.verify.monitor import (
+    LTL3Monitor,
+    Property,
+    PurePythonLTL3Monitor,
+    Verdict,
+)
 
 __all__ = [
     "And",
@@ -22,11 +28,15 @@ __all__ = [
     "Finally",
     "Globally",
     "Implies",
+    "LTL3Monitor",
     "LTLf",
     "Neg",
     "Next",
     "Or",
+    "Property",
+    "PurePythonLTL3Monitor",
     "Until",
+    "Verdict",
     "WeakUntil",
     "parse",
     "to_spot_str",
