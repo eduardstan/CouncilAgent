@@ -1,25 +1,35 @@
 """L1 verification — SPOT-backed LTL3 monitor (optional `[verify]` extra).
 
 SPOT (https://spot.lre.epita.fr) is the reference automata-theoretic LTL toolkit.
-When available, we delegate formula-to-DFA compilation to SPOT for speed and to
-benefit from SPOT's mature handling of complex temporal formulas. When SPOT is
-not installed, the import is guarded and `make_monitor()` falls back to the
-pure-Python `ProgressionMonitor` (`ltl2mon_backend.py`).
+When available, we delegate formula-to-DFA compilation to SPOT and run the
+canonical Bauer-Leucker-Schallhart 2011 dual-DFA LTL3 monitor (one automaton for
+phi, one for !phi; verdict at any prefix = the emptiness pattern of their
+languages from the current state).
+
+When SPOT is not installed, the import is guarded and `make_monitor()` falls
+back to the pure-Python `ProgressionMonitor` (`ltl2mon_backend.py`) which
+covers the full LTL_f fragment.
 
 Installation: see `docs/install_spot.md`. SPOT is NOT a pip dependency; it is
-installed as a system package (apt / homebrew / source) with Python bindings.
+installed as a Debian apt package (lre.epita.fr repo) or built from source.
+The PyPI package named "spot" is unrelated.
 
 Constitution §8 invariant: `import spot` must be guarded so the no-extras
-path always works. Tests for SPOTMonitor are gated by `@skipif(not _spot_available())`.
+path always works.
 """
 
 from __future__ import annotations
+
+import logging
 
 from council.symbolic.verify.ltl2mon_backend import ProgressionMonitor
 from council.symbolic.verify.ltlf import LTLf, to_spot_str
 from council.symbolic.verify.monitor import LTL3Monitor, Verdict
 
+logger = logging.getLogger(__name__)
+
 try:
+    import buddy as _buddy  # type: ignore[import-untyped]  # SPOT's BDD library, installed alongside spot
     import spot as _spot  # optional [verify] extra; runtime-checked
     _SPOT_AVAILABLE = True
 except ImportError:
@@ -32,18 +42,26 @@ def is_spot_available() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# SPOTMonitor — wraps spot.translate() output as an LTL3Monitor
+# SPOTMonitor — Bauer 2011 dual-DFA LTL3 monitor
 # ---------------------------------------------------------------------------
 
 class SPOTMonitor(LTL3Monitor):
-    """LTL3 monitor backed by SPOT's on-the-fly DFA compilation.
+    """LTL3 monitor backed by SPOT's deterministic automata.
 
-    Compiles the formula via spot.translate() into a deterministic Buchi automaton
-    over the LTL_f safety/co-safety fragment as recognised by SPOT, then steps the
-    automaton by evaluating each event against the active edge labels.
+    Implements the Bauer-Leucker-Schallhart 2011 dual-DFA construction:
+      - aut_phi    = automaton accepting the language of phi
+      - aut_neg    = automaton accepting the language of !phi
 
-    Construction raises ImportError if SPOT is not installed; callers should use
-    make_monitor() which selects the appropriate backend automatically.
+    At each step, both automata are advanced on the event valuation. The
+    verdict at the resulting state pair is:
+      - BOTTOM if the language of aut_phi from the current phi-state is empty
+        (no extension can satisfy phi)
+      - TOP    if the language of aut_neg from the current neg-state is empty
+        (no extension can violate phi, equivalently phi is universally satisfied)
+      - UNKNOWN otherwise
+
+    Construction raises ImportError if SPOT is not installed; callers should
+    use make_monitor() which selects the appropriate backend automatically.
     """
 
     def __init__(self, formula: LTLf) -> None:
@@ -51,29 +69,45 @@ class SPOTMonitor(LTL3Monitor):
             raise ImportError(
                 "SPOT Python bindings are not installed. "
                 "See docs/install_spot.md, or use make_monitor(prefer_spot=False) "
-                "to fall back to ProgressionMonitor."
+                "to fall back to ProgressionMonitor.",
             )
-        self._formula = formula
-        self._spot_formula = _spot.formula(to_spot_str(formula))
-        # Translate to a deterministic Buchi automaton with finite-trace semantics.
-        # spot.translate() with 'finite' option gives LTL_f compilation when supported.
-        self._automaton = _spot.translate(self._spot_formula, "BA", "deterministic")
-        self._reset_state()
-
-    def _reset_state(self) -> None:
-        """Set the current state to the automaton's initial state."""
-        self._current_state: int = int(self._automaton.get_init_state_number())
-        self._verdict: Verdict = self._compute_verdict()
+        spot_formula_str = to_spot_str(formula)
+        # Build phi-automaton and (!phi)-automaton, both deterministic.
+        self._aut_phi = _spot.translate(spot_formula_str, "BA", "deterministic")
+        self._aut_neg = _spot.translate(f"!({spot_formula_str})", "BA", "deterministic")
+        self._phi_state = int(self._aut_phi.get_init_state_number())
+        self._neg_state = int(self._aut_neg.get_init_state_number())
+        # Cache initial state numbers for reset()
+        self._init_phi = self._phi_state
+        self._init_neg = self._neg_state
+        # Compute initial verdict
+        self._verdict = self._compute_verdict()
 
     def step(self, event: dict[str, object]) -> Verdict:
         if self._verdict is not Verdict.UNKNOWN:
             return self._verdict  # absorbing
-        self._current_state = self._next_state(self._current_state, event)
+        # Step both automata. If aut_phi has no matching transition the
+        # phi-language is empty from this point → BOTTOM. Symmetrically for
+        # aut_neg → TOP.
+        next_phi = self._next_state(self._aut_phi, self._phi_state, event)
+        next_neg = self._next_state(self._aut_neg, self._neg_state, event)
+        if next_phi is None:
+            self._verdict = Verdict.BOTTOM
+            return self._verdict
+        if next_neg is None:
+            self._verdict = Verdict.TOP
+            return self._verdict
+        self._phi_state = next_phi
+        self._neg_state = next_neg
         self._verdict = self._compute_verdict()
         return self._verdict
 
     def reset(self) -> None:
-        self._reset_state()
+        self._phi_state = self._init_phi
+        self._neg_state = self._init_neg
+        self._aut_phi.set_init_state(self._init_phi)
+        self._aut_neg.set_init_state(self._init_neg)
+        self._verdict = self._compute_verdict()
 
     @property
     def current_verdict(self) -> Verdict:
@@ -81,75 +115,51 @@ class SPOTMonitor(LTL3Monitor):
 
     # --- internals --------------------------------------------------------
 
-    def _next_state(self, state: int, event: dict[str, object]) -> int:
-        """Pick the unique edge whose label is satisfied by the event.
-
-        Raises ValueError if no edge matches (formula error) or multiple match
-        (non-deterministic automaton — should not happen with 'deterministic' flag).
+    @staticmethod
+    def _build_event_bdd(automaton: object, event: dict[str, object]) -> object:
+        """Build a BDD that is the conjunction of (ap or !ap) per atomic prop in `automaton`,
+        according to the truth value in `event` (missing keys default to False).
         """
-        bdict = self._automaton.get_dict()
-        matched: list[int] = []
-        for edge in self._automaton.out(state):
-            if _label_satisfied(edge.cond, event, bdict, self._spot_formula):
-                matched.append(int(edge.dst))
-        if len(matched) == 0:
-            # Empty language reached → BOTTOM (no path forward)
-            return state  # stay; verdict-extraction handles it
-        if len(matched) > 1:
-            raise ValueError(
-                f"SPOTMonitor: non-deterministic transition from state {state} "
-                f"on event {event}; check 'deterministic' translation."
-            )
-        return matched[0]
+        bdd_dict = automaton.get_dict()  # type: ignore[attr-defined]
+        result = _buddy.bddtrue
+        for ap in automaton.ap():  # type: ignore[attr-defined]
+            ap_name = ap.ap_name()
+            ap_bdd = _spot.formula_to_bdd(ap, bdd_dict, automaton)
+            result = result & ap_bdd if bool(event.get(ap_name, False)) else result & -ap_bdd
+        return result
+
+    def _next_state(
+        self,
+        automaton: object,
+        state: int,
+        event: dict[str, object],
+    ) -> int | None:
+        """Find the unique transition out of `state` whose label is satisfied by `event`.
+
+        Returns None if no transition matches — this means the automaton's
+        language from `state` does not include any extension starting with
+        `event`, equivalent to the automaton being empty from that state.
+        """
+        event_bdd = self._build_event_bdd(automaton, event)
+        for edge in automaton.out(state):  # type: ignore[attr-defined]
+            if (edge.cond & event_bdd) != _buddy.bddfalse:
+                return int(edge.dst)
+        return None
 
     def _compute_verdict(self) -> Verdict:
-        """Two-DFA LTL3 verdict: TOP if every reachable state is accepting, BOTTOM
-        if no reachable state is accepting, else UNKNOWN.
-
-        Bauer-Leucker-Schallhart 2011: build A_phi and A_!phi, compose, derive verdict.
-        For practical use we approximate via SPOT's empty/full-language checks on the
-        automaton restricted to the current state.
+        """Bauer 2011 verdict via emptiness of phi-language and neg-phi-language
+        from the current state pair.
         """
-        # For a runtime-monitoring-grade approximation:
-        # - If the current state's language is universally accepting (no reachable
-        #   non-accepting), → TOP.
-        # - If the current state's language is empty (no reachable accepting), → BOTTOM.
-        # - Else → UNKNOWN.
-        try:
-            cur = self._automaton.copy()
-            cur.set_init_state(self._current_state)
-            if cur.is_empty():
-                return Verdict.BOTTOM
-            # Build complement automaton; if its language from current state is empty,
-            # then the formula is satisfied on every extension → TOP.
-            comp = _spot.complement(cur)
-            if comp.is_empty():
-                return Verdict.TOP
-        except Exception:
-            # Any SPOT-side issue → fall through to UNKNOWN
-            return Verdict.UNKNOWN
+        # BOTTOM check: language of aut_phi from phi_state empty?
+        self._aut_phi.set_init_state(self._phi_state)
+        if self._aut_phi.is_empty():
+            return Verdict.BOTTOM
+        # TOP check: language of aut_neg from neg_state empty? (i.e. !phi is unsatisfiable
+        # from the current observed prefix → phi is universally satisfied → TOP)
+        self._aut_neg.set_init_state(self._neg_state)
+        if self._aut_neg.is_empty():
+            return Verdict.TOP
         return Verdict.UNKNOWN
-
-
-def _label_satisfied(
-    cond: object,  # spot.bdd
-    event: dict[str, object],
-    bdict: object,
-    formula: object,
-) -> bool:
-    """True iff the BDD edge condition `cond` is satisfied by the event valuation."""
-    # Build an assignment from the event for each propositional variable in the formula.
-    # SPOT exposes formula.ap() to enumerate atomic propositions.
-    aps = formula.atomic_prop_collect()  # type: ignore[attr-defined]
-    bdd_assignment = _spot.bddtrue
-    for ap in aps:
-        ap_name = ap.ap_name()
-        ap_bdd = _spot.formula_to_bdd(_spot.formula(ap_name), bdict, formula)
-        if bool(event.get(ap_name, False)):
-            bdd_assignment = bdd_assignment & ap_bdd
-        else:
-            bdd_assignment = bdd_assignment & (-ap_bdd)
-    return bool((cond & bdd_assignment) != _spot.bddfalse)
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,13 @@
 """W1 acceptance test (master plan §7): offline MCMAS check on a 4-agent /
 4-round trace verifies EventuallyDecide and RefutationReachable.
 
-Gated by RUN_INTEGRATION=1 AND `mcmas` available on PATH. See docs/install_spot.md
-for MCMAS installation instructions.
+Gated by RUN_INTEGRATION=1 AND `mcmas` available on PATH.
+
+STATUS (2026-04-29): MCMAS access is currently deferred — see
+specs/adrs/0003-mcmas-access-deferred.md. This test stays in the codebase and
+is correct; it will pass automatically once an MCMAS binary becomes available
+and is placed on PATH. The ISPL emitter that drives this test is fully
+verified by the 24 structural tests in tests/symbolic/verify/test_ispl.py.
 """
 
 from __future__ import annotations
