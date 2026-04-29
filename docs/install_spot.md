@@ -113,17 +113,23 @@ uv run pytest tests/symbolic/verify/test_spot_backend.py -v
 Tests previously skipped (`@skipif(not is_spot_available())`) should now run
 and pass.
 
-## MCMAS — DEFERRED (see ADR 0003)
+## MCMAS — email-gated access (see ADR 0003)
 
-**Currently blocked.** As of 2026-04-29 we cannot locate an authoritative,
-working download URL for MCMAS. The historical hosting at
-`https://www.doc.ic.ac.uk/~alessio/MCMAS/` returns 404, and several alternate
-URLs (mcmas.org.uk, vas.doc.ic.ac.uk, sail.doc.ic.ac.uk) do not respond.
+MCMAS is **not openly distributed**. Per the user manual at
+<https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf> §1, prospective users
+must email the maintainers at <mcmas@imperial.ac.uk> to request a
+pre-compiled binary appropriate for their platform.
+
+A ready-to-send email template is at
+[`docs/mcmas_request_email.md`](mcmas_request_email.md). Send it from your
+institutional email address.
 
 See [`specs/adrs/0003-mcmas-access-deferred.md`](../specs/adrs/0003-mcmas-access-deferred.md)
-for the full decision record.
+for the full decision record explaining why this access pattern blocks the
+W1 end-to-end acceptance check, why we ship anyway, and what changes when
+the binary arrives.
 
-**Effect on the project:**
+**Effect on the project until MCMAS arrives:**
 - `tests/integration/test_mcmas_offline.py` is gated by `RUN_INTEGRATION=1`
   AND `mcmas` on PATH. Without MCMAS, it skips. The test code is correct.
 - The W1 acceptance criterion in §7 of [`COUNCILAGENT_NS_MASTER_PLAN.md`](../COUNCILAGENT_NS_MASTER_PLAN.md)
@@ -131,14 +137,20 @@ for the full decision record.
   MCMAS verification is pending.
 - T3 in [`docs/theory.md`](theory.md) is currently a counterexample
   demonstration; full mechanised CTLK verification waits for MCMAS access.
+- For the CTL fragment, **NuSMV is a usable interim substitute** (see next section).
 
-If you obtain an MCMAS binary, place it on `PATH` and re-run:
+When the MCMAS binary arrives:
 
 ```bash
+# 1. Place on PATH and verify
+mcmas -version
+
+# 2. Re-run the W1 acceptance test
 RUN_INTEGRATION=1 uv run pytest tests/integration/test_mcmas_offline.py
 ```
 
-The test should pass. Then please update ADR 0003 with the working URL.
+Then update ADR 0003 (Status: Superseded) and replace this section with the
+verified install instructions you used.
 
 ## NuSMV — interim CTL path (optional)
 

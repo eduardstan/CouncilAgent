@@ -25,26 +25,36 @@ missing is the MCMAS binary itself, which is required by
 to actually run the verification and confirm the formulae hold on the
 generated ISPL.
 
-### MCMAS download attempts (2026-04-29)
+### MCMAS access procedure (clarified 2026-04-29)
 
-The following URLs did not resolve to a downloadable MCMAS binary or source:
+After investigation, the canonical MCMAS distribution channel is **email
+request to the maintainers**, not a direct download. The project's user
+manual at <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf> §1 states:
+
+> "We might be able to provide a pre-compiled binary version for your system,
+> please contact us at mcmas@imperial.ac.uk."
+
+The source code is **not** openly distributed. This is a deliberate choice
+by the maintainers (Alessio Lomuscio's group, Imperial College London) and
+constrains accessibility for any user of this project.
+
+#### Earlier failed download attempts (recorded for the public record)
 
 | URL | Outcome |
 |-----|---------|
-| `https://mcmas.org.uk/` | Did not respond (the URL referenced in the original docs/install_spot.md draft) |
+| `https://mcmas.org.uk/` | No response (referenced in earlier doc drafts) |
 | `https://www.doc.ic.ac.uk/~alessio/mcmas.html` | HTTP 404 |
 | `https://www.doc.ic.ac.uk/~alessio/MCMAS/` | HTTP 404 |
-| `https://vas.doc.ic.ac.uk/software/mcmas/` | Timed out repeatedly |
-| `https://sail.doc.ic.ac.uk/software/mcmas/` | Search results point here, but the page does not resolve consistently |
+| `https://vas.doc.ic.ac.uk/software/mcmas/` | Timed out |
+| `https://sail.doc.ic.ac.uk/software/mcmas/` | Page exists but not direct download |
+| `https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf` | **Resolves** — contains the email-request instructions |
 
-GitHub and SourceForge searches returned only:
-- A different project called `mcmassc` on SourceForge (a slot-checking variant, not the canonical model checker)
-- A `MCMAS-G` repository for quantitative trust (a derivative; not the canonical MCMAS)
-- A `mattvonrocketstein/docker-mcmas` repository (unmaintained Docker wrapper of an unspecified MCMAS version)
+GitHub / SourceForge contain only:
+- `mcmassc` on SourceForge (a different slot-checking variant)
+- `MCMAS-G` (a quantitative-trust derivative)
+- `mattvonrocketstein/docker-mcmas` (unmaintained, version unclear)
 
-We could not confirm a current, authoritative source for MCMAS as of 2026-04-29.
-The user and the development session both lack access. This is **not** a project
-mistake — it appears the canonical hosting has changed or temporarily lapsed.
+None of these are the canonical model checker.
 
 ## Decision
 
@@ -137,14 +147,34 @@ oracle would undermine the soundness claims that depend on the verifier.
 
 ### Future Development (when MCMAS is obtained)
 
-1. Add an `mcmas` install section to [`docs/install_spot.md`](../../docs/install_spot.md) with the
-   verified URL and any license terms.
-2. Re-enable `tests/integration/test_mcmas_offline.py` (already gated; should
-   pass automatically when `mcmas` is on PATH and `RUN_INTEGRATION=1`).
-3. Update T3 in `docs/theory.md` with the actual mechanised verification
+1. Send the email request at [`docs/mcmas_request_email.md`](../../docs/mcmas_request_email.md)
+   to <mcmas@imperial.ac.uk> from an institutional address.
+2. Once a binary arrives:
+   - Place `mcmas` on PATH; verify with `mcmas -version`.
+   - Add a verified install section to [`docs/install_spot.md`](../../docs/install_spot.md)
+     replacing the "MCMAS — DEFERRED" block.
+3. Re-run `RUN_INTEGRATION=1 uv run pytest tests/integration/test_mcmas_offline.py`
+   (already gated; should pass automatically once `mcmas` is on PATH).
+4. Update T3 in `docs/theory.md` with the actual mechanised CTLK verification
    results.
-4. Open a follow-up issue / branch `feature/ns-w1-mcmas-acceptance` to bundle
-   the binary install + test re-enable + T3 update.
+5. Open a follow-up branch `feature/ns-w1-mcmas-acceptance` to bundle the
+   binary install + test re-enable + T3 update; supersede this ADR.
+
+### Accessibility implication for downstream users
+
+The email-request gate means **any user of CouncilAgent‑NS who needs the
+W6 (ILP/ASP) MCMAS-verified-protocols pipeline must independently obtain
+MCMAS by emailing the Imperial College team**. The CouncilAgent‑NS repo
+**cannot bundle MCMAS** under its own license, and we cannot guarantee that
+every user will be able to obtain it. This affects reproducibility of
+publications P1 (AAMAS 2027) and P5 (KR 2026). Mitigation:
+
+- Document the gate prominently in `README.md` (when one is added).
+- When P1 / P5 reach submission, include in the artefact-evaluation README
+  a clear note that MCMAS is required for the corresponding ablation rows
+  and provide instructions for obtaining it.
+- Where feasible, include NuSMV-substituted CTL-only ablations as a public
+  fallback, marked clearly as "without epistemic / strategic operators."
 
 ## References
 
