@@ -100,3 +100,59 @@ the vote count.
 The full ablation row against `MajorityVote`, `BordaCount`, and
 `CondorcetAggregation` requires the L2 aggregator (W2) and remains W2/P1
 work; the counterexample half of T3 is now mechanised.
+
+## T4 — Recovery-of-Borda Lemma
+
+**Statement.** Let an N-candidate, K-voter Borda election be encoded as a
+"Borda BAF" `Q = (A, ∅, ∅)` where `A = {a_c | c is a candidate}`,
+`base_score(a_c) = Borda_count(c) / (K · (N-1))`, and there are no
+attack/support edges. Then DF-QuAD on `Q` produces strengths
+`s(a_c) = base_score(a_c) = Borda_count(c) / (K · (N-1))` — a strict
+monotone re-scaling of Borda counts.
+
+**Proof.** By the recursive definition of DF-QuAD's score function (Rago
+2016, Definition 3) on a no-edge graph:
+
+- For every argument `a` in `Q`: `R⁻(a) = ∅` and `R⁺(a) = ∅`.
+- Therefore `SEQ_𝒮ℱ₂(R⁻(a)) = ()` and `SEQ_𝒮ℱ₂(R⁺(a)) = ()`.
+- Lemma 1 gives `ℱ(()) = 0`, so `v_a = 0` and `v_s = 0`.
+- The combination function (Equation 19, since `v_a = v_s`) gives
+  `c(v_0, 0, 0) = v_0 - v_0 · |0 - 0| = v_0`.
+
+So `𝒮ℱ₂(a_c) = base_score(a_c) = Borda_count(c) / (K · (N-1))`. The map
+`f(x) = x / (K · (N-1))` is strictly monotone on `[0, K · (N-1)]`, and
+`s(a_c) = f(Borda_count(c))`. ∎
+
+**Why the richer encoding fails.** A natural alternative encodes per-voter
+preference as Support edges with weight `points_v(c) / (N-1)`. Under that
+encoding `v_s(c) = ℱ([points_v(c)/(N-1) for v in voters]) = 1 - ∏(1 - x_v)`.
+This saturating product is *not* monotone in `Σ x_v`: e.g., with two
+candidates each receiving total points 1.5 (N=3, K=2) but distributed as
+(1.0, 0.5) vs (0.75, 0.75), `ℱ` returns 1.0 vs 0.9375 — the same sum
+yields different aggregated strengths. So T4 holds *only* under the
+no-edge encoding; this is the precise meaning of "up to monotone
+re-scaling".
+
+**Implications.** DF-QuAD is consistent with classical Borda voting on
+the vote-only fragment of deliberation. This is a sanity check, not a
+strength claim; the value of L2 over plain Borda comes from non-trivial
+QBAF structure (Challenges, Concedes, calibrated base scores).
+
+**References.**
+- Rago, Toni, Aurisicchio, Baroni. *Discontinuity-Free Decision Support
+  with Quantitative Argumentation Debates*. KR 2016, Lemma 1
+  (closed-form ℱ), Equations 19–20 (combination function).
+- Borda, J.-C. *Mémoire sur les élections au scrutin*, 1781 — the
+  original positional voting rule.
+
+**Mechanisation.**
+- `tests/regressions/test_t4_borda.py::TestT4ClosedForm3Candidate` —
+  hand-derived 3-candidate election with closed-form expected
+  strengths (committed in
+  `tests/symbolic/argue/fixtures/borda_3candidate.json`).
+- `tests/regressions/test_t4_borda.py::TestT4PropertyRandomElections` —
+  property-based check across (N=2..6, K=3..10), seed 0; asserts that
+  the Borda equivalence-class structure equals the DF-QuAD
+  equivalence-class structure (handles ties correctly).
+- `tests/regressions/test_t4_borda.py::TestBordaBAFWellFormed` — sanity
+  invariants of the Borda BAF construction.

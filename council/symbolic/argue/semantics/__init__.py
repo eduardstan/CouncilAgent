@@ -5,5 +5,6 @@ Contains the GradualSemantics ABC (`base`) and concrete implementations
 """
 
 from council.symbolic.argue.semantics.base import GradualSemantics
+from council.symbolic.argue.semantics.df_quad import DFQuADSemantics
 
-__all__ = ["GradualSemantics"]
+__all__ = ["DFQuADSemantics", "GradualSemantics"]

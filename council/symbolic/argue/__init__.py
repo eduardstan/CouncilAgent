@@ -9,8 +9,11 @@ W2/PR1 ships the type-level skeleton:
 W2/PR2 ships the deterministic builder:
   - build_qbaf(trace, calibrator=None) → QBAF (`builders`)
 
-Concrete semantics, aggregators, and visualisers ship in W2/PR3-PR9. The
-Calibrator ABC consumed by `build_qbaf` lives at `council.calibrate.base`
+W2/PR3 ships DF-QuAD (the default gradual semantics):
+  - DFQuADSemantics — Rago-Toni-Aurisicchio-Baroni KR 2016 (`semantics.df_quad`)
+
+PR4-PR5 add Quadratic Energy, Euler-based, and Strategic-Coupled semantics.
+The Calibrator ABC consumed by `build_qbaf` lives at `council.calibrate.base`
 (ADR-0008).
 """
 
@@ -22,6 +25,7 @@ from council.symbolic.argue.aggregator_base import Aggregator
 from council.symbolic.argue.baf import QBAF, Argument, Attack, Support
 from council.symbolic.argue.builders import build_qbaf
 from council.symbolic.argue.semantics.base import GradualSemantics
+from council.symbolic.argue.semantics.df_quad import DFQuADSemantics
 
 __all__ = [
     "QBAF",
@@ -30,6 +34,7 @@ __all__ = [
     "AggregatorConfidence",
     "Argument",
     "Attack",
+    "DFQuADSemantics",
     "GradualSemantics",
     "Support",
     "build_qbaf",
