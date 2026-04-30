@@ -17,6 +17,7 @@ def test_public_api_re_exports() -> None:
         Attack,
         GradualSemantics,
         Support,
+        build_qbaf,
     )
 
     # Sanity: confirm the re-exports are the canonical objects.
@@ -28,6 +29,7 @@ def test_public_api_re_exports() -> None:
     from council.symbolic.argue.baf import Argument as _A
     from council.symbolic.argue.baf import Attack as _Att
     from council.symbolic.argue.baf import Support as _S
+    from council.symbolic.argue.builders import build_qbaf as _bqb
     from council.symbolic.argue.semantics.base import (
         GradualSemantics as _GS,
     )
@@ -39,6 +41,7 @@ def test_public_api_re_exports() -> None:
     assert Attack is _Att
     assert Support is _S
     assert GradualSemantics is _GS
+    assert build_qbaf is _bqb
     # AggregatorConfidence is a Union alias — just verify importability
     assert AggregatorConfidence is not None
 
@@ -64,5 +67,6 @@ def test_explicit_all() -> None:
         "Attack",
         "GradualSemantics",
         "Support",
+        "build_qbaf",
     }
     assert set(argue_pkg.__all__) == expected
