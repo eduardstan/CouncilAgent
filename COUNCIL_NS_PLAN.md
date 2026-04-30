@@ -45,7 +45,7 @@
 
 ### 1.3 The strategy in one paragraph
 
-**Don't preserve legacy.** Branch the existing repository as `legacy/v0.1`, archive it, and rebuild `CouncilAgent‑NS` ground-up around a typed `Move`/`Trace` algebra. Six new layers (L1–L6) attach cleanly: **L1 verification** (LTL_f runtime monitors compiled via SPOT, offline MCMAS / NuSMV checks for small instances), **L2 argumentation aggregation** (BAF/QBAF + DF-QuAD gradual semantics, derived directly from the typed Trace — no LLM extraction step), **L3 calibrated disagreement** (Jensen-Shannon divergence with privileged-knowledge per-domain calibration), **L4 cost-aware escalation** (in-context distillation cascade, multi-tier router), **L5 quality-diversity co-evolution** (CMA-MAE over council compositions with verification-derived behavioural descriptors, plus Rainbow-Teaming-style red-team archive), **L6 ILP rule mining** (Popper / ILASP4 over labelled traces, learned protocols re-verified by L1). Five publishable papers + a flagship JAIR/AIJ integration, mapped to NeSy 2026 / KR 2026 / NeurIPS 2026 D&B / AAMAS 2027 / ICLR 2027. Benchmarks: ARC-AGI-2, FrontierMath Tier 4, LiveCodeBench, SWE-bench Pro, HLE, ZebraLogic-hard, Putnam-AXIOM Variation. The "wow" demo is a hosted Streamlit space that shows an LTL_f monitor catching a sycophancy collapse mid-debate, redirecting to a devil's-advocate role, producing a verified verdict, and rendering the BAF as a live Mermaid graph — every claim with a *provenance receipt*.
+**Don't preserve legacy.** Branch the existing repository as `legacy/v0.1`, archive it, and rebuild `CouncilAgent‑NS` ground-up around a typed `Move`/`Trace` algebra. Six new layers (L1–L6) attach cleanly: **L1 verification** (LTL_f runtime monitors compiled via SPOT, offline MCMAS / NuSMV checks for small instances), **L2 argumentation aggregation** (BAF/QBAF + DF-QuAD gradual semantics, derived directly from the typed Trace — no LLM extraction step), **L3 calibrated disagreement** (Jensen-Shannon divergence with privileged-knowledge per-domain calibration), **L4 cost-aware escalation** (in-context distillation cascade, multi-tier router), **L5 quality-diversity co-evolution** (CMA-MAE over council compositions with verification-derived behavioural descriptors, plus Rainbow-Teaming-style red-team archive), **L6 ILP rule mining** (Popper / ILASP4 over labelled traces, learned protocols re-verified by L1). Five publishable papers + a flagship JAIR/AIJ integration, mapped to NeSy 2026 / KR 2026 / NeurIPS 2026 D&B / AAMAS 2027 / ICLR 2027 *(original mapping; **superseded 2026-04-30** — see §1.5 below and `COUNCILAGENT_NS_MASTER_PLAN.md §1.2` for the realigned A\*/A-only contract: AAMAS 2027 / AAAI 2027 / ICLR 2027 / IJCAI 2027 / KR 2027, with JAIR / AIJ for the flagship)*. Benchmarks: ARC-AGI-2, FrontierMath Tier 4, LiveCodeBench, SWE-bench Pro, HLE, ZebraLogic-hard, Putnam-AXIOM Variation. The "wow" demo is a hosted Streamlit space that shows an LTL_f monitor catching a sycophancy collapse mid-debate, redirecting to a devil's-advocate role, producing a verified verdict, and rendering the BAF as a live Mermaid graph — every claim with a *provenance receipt*.
 
 ### 1.4 Why the previous report's "preserve legacy" instinct was wrong
 
@@ -59,6 +59,14 @@ I had to retract that. The legacy code has:
 Each of these is a *design defect*, not an engineering oversight. They cannot be patched layer-by-layer; the substrate has to change. Section 5.1 explains why "additive" was wrong and "branch-and-rebuild" is right.
 
 ### 1.5 The five papers and one flagship
+
+> **⚠ Original venue table — superseded 2026-04-30.** Several venues below
+> had 2026 deadlines that have already passed (NeurIPS 2026 main: May 2/6
+> 2026; KR 2026: Feb 13 2026; NeurIPS 2026 D&B: Jun 2026). The publication
+> track was realigned to CORE A\* / A conferences with future deadlines and
+> Q1 AI journals only — see [`COUNCILAGENT_NS_MASTER_PLAN.md §1.2`](./COUNCILAGENT_NS_MASTER_PLAN.md#12-the-five-papers--flagship-the-publication-contract)
+> for the current contract. The table below is preserved as the historical
+> record of the original framing.
 
 | ID | Headline | Target venue (2026/2027) | Backup |
 |---|---|---|---|
@@ -1153,6 +1161,16 @@ The flagship paper F integrates T1–T13 into a single architectural theorem: **
 ---
 
 ## 11. Publication strategy: 5 papers + a flagship
+
+> **⚠ Venues / deadlines superseded 2026-04-30.** The per-paper subsections
+> below preserve the *original* publication strategy (frozen with the rest of
+> the bible). Several venues have since been realigned to CORE A\* / A
+> conferences with future deadlines and Q1 AI journals only. The current
+> binding mapping is in [`COUNCILAGENT_NS_MASTER_PLAN.md §1.2 + §9`](./COUNCILAGENT_NS_MASTER_PLAN.md#12-the-five-papers--flagship-the-publication-contract).
+> This section retains the *theorems, headline empirics, sections, and
+> citations* — those parts of the bible remain authoritative. Only the
+> "Target" / "Backup" / "Deadline" lines are stale; consult the master plan
+> for the current contract.
 
 ### 11.1 Paper-by-paper plan
 

@@ -183,7 +183,9 @@ W6 (ILP/ASP) MCMAS-verified-protocols pipeline must independently obtain
 MCMAS by emailing the Imperial College team**. The CouncilAgent‑NS repo
 **cannot bundle MCMAS** under its own license, and we cannot guarantee that
 every user will be able to obtain it. This affects reproducibility of
-publications P1 (AAMAS 2027) and P5 (KR 2026). Mitigation:
+publications P1 (AAMAS 2027) and P5 (KR 2027; the original KR 2026 target
+is past, see master plan §1.2 publication-track realignment 2026-04-30).
+Mitigation:
 
 - Document the gate prominently in `README.md` (when one is added).
 - When P1 / P5 reach submission, include in the artefact-evaluation README

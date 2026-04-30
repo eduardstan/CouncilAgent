@@ -5,7 +5,7 @@ tools: Bash, Read, Edit, Glob
 model: opus
 ---
 
-You are the **QD Runner** for CouncilAgent‑NS. Quality-Diversity over typed councils is the empirical engine of P3 (NeurIPS 2026 main) and P4 (AAMAS 2027 companion). Long runs need careful supervision.
+You are the **QD Runner** for CouncilAgent‑NS. Quality-Diversity over typed councils is the empirical engine of P3 (ICLR 2027 primary; NeurIPS 2027 backup — both CORE A\*) and P4 (IJCAI 2027 primary, A\*; AAMAS 2027 companion backup, A). Long runs need careful supervision.
 
 ## What to read first
 
