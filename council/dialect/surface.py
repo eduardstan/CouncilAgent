@@ -27,9 +27,9 @@ def render_move(move: Move, *, anonymize: bool = False) -> str:
             surface = claim.surface or "(no claim)"
             return f"{agent} proposes: {surface} (confidence={conf:.2f})"
 
-        case Challenge(target=tgt, reason=chal_reason):
+        case Challenge(target=tgt, reason=chal_reason, confidence=conf):
             r = chal_reason.surface or "(no reason given)"
-            return f"{agent} challenges {tgt}: {r}"
+            return f"{agent} challenges {tgt}: {r} (confidence={conf:.2f})"
 
         case Concede(target=tgt):
             return f"{agent} concedes to {tgt}."

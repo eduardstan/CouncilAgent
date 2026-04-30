@@ -209,3 +209,25 @@ def test_vote_confidence_default() -> None:
     from council.dialect.moves import Vote
     v = Vote(move_id="v1", agent_id="A", round_index=2)
     assert v.confidence == 0.5
+
+
+def test_challenge_confidence_default() -> None:
+    """Patch C (ADR-0006): Challenge has a confidence field, default 0.5."""
+    from council.dialect.moves import Challenge
+    c = Challenge(move_id="c1", agent_id="A", round_index=1)
+    assert c.confidence == 0.5
+
+
+def test_challenge_confidence_explicit() -> None:
+    from council.dialect.moves import Challenge, Claim
+    c = Challenge(
+        move_id="c1",
+        agent_id="A",
+        round_index=1,
+        target="p0",
+        reason=Claim(surface="bad citation"),
+        confidence=0.85,
+    )
+    assert c.confidence == 0.85
+    assert c.target == "p0"
+    assert c.reason.surface == "bad citation"

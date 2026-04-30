@@ -89,6 +89,7 @@ def _parse_single(
                 round_index=round_index,
                 target=str(obj.get("target", "")),
                 reason=Claim(surface=reason_surface),
+                confidence=float(str(obj.get("confidence", 0.5))),
             )
         case Force.CONCEDE:
             return Concede(

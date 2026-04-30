@@ -68,6 +68,7 @@ class Challenge:
     force: Force = Force.CHALLENGE
     target: str = ""
     reason: Claim = field(default_factory=lambda: Claim(surface=""))
+    confidence: float = 0.5  # Patch C (ADR-0006) — feeds Attack.weight in W2
 
 
 @dataclass(frozen=True, slots=True)

@@ -37,6 +37,27 @@ def test_parse_challenge_from_json() -> None:
     assert move.target == "m0"
 
 
+def test_parse_challenge_with_confidence() -> None:
+    """Patch C (ADR-0006): parser reads Challenge.confidence from JSON."""
+    from council.dialect.moves import Challenge
+    from council.dialect.parsers import parse_move
+    raw = _json_move(
+        "challenge", target="m0", reason_surface="Bad citation", confidence=0.85
+    )
+    move = parse_move(raw, agent_id="B", round_index=1, move_id="m1")
+    assert isinstance(move, Challenge)
+    assert move.confidence == 0.85
+
+
+def test_parse_challenge_without_confidence_defaults() -> None:
+    from council.dialect.moves import Challenge
+    from council.dialect.parsers import parse_move
+    raw = _json_move("challenge", target="m0", reason_surface="x")
+    move = parse_move(raw, agent_id="B", round_index=1, move_id="m1")
+    assert isinstance(move, Challenge)
+    assert move.confidence == 0.5
+
+
 def test_parse_vote_from_json() -> None:
     from council.dialect.moves import Force, Vote
     from council.dialect.parsers import parse_move

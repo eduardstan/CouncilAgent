@@ -73,3 +73,23 @@ def test_render_challenge_mentions_target() -> None:
     c = Challenge(move_id="c0", agent_id="B", round_index=1, target="p0")
     rendered = render_move(c)
     assert "p0" in rendered
+
+
+def test_render_challenge_renders_confidence() -> None:
+    """Patch C (ADR-0006): Challenge.confidence is rendered in the surface form."""
+    from council.dialect.moves import Challenge
+    from council.dialect.surface import render_move
+    c = Challenge(
+        move_id="c0", agent_id="B", round_index=1, target="p0", confidence=0.73
+    )
+    rendered = render_move(c)
+    assert "0.73" in rendered
+
+
+def test_render_challenge_default_confidence_appears() -> None:
+    from council.dialect.moves import Challenge
+    from council.dialect.surface import render_move
+    c = Challenge(move_id="c0", agent_id="B", round_index=1, target="p0")
+    rendered = render_move(c)
+    # Default is 0.5; assert it surfaces in the rendered string
+    assert "0.50" in rendered
