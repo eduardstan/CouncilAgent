@@ -1,0 +1,71 @@
+{
+  "_description": "Canonical 5-move trace exercising all build_qbaf rules. Used as a golden fixture across W2/PR3-PR7 (semantics, aggregator, visualisers). The fixture is committed; updating it is a deliberate spec change and should be paired with theorem regressions.",
+  "trace": [
+    {
+      "agent_id": "agent_a",
+      "round_index": 0,
+      "move_id": "p1",
+      "json": {
+        "force": "propose",
+        "claim_surface": "X is true",
+        "claim_domain": "free",
+        "confidence": 0.8
+      }
+    },
+    {
+      "agent_id": "agent_b",
+      "round_index": 0,
+      "move_id": "p2",
+      "json": {
+        "force": "propose",
+        "claim_surface": "X is false",
+        "claim_domain": "free",
+        "confidence": 0.6
+      }
+    },
+    {
+      "agent_id": "agent_b",
+      "round_index": 1,
+      "move_id": "c1",
+      "json": {
+        "force": "challenge",
+        "target": "p1",
+        "reason_surface": "counterexample C",
+        "confidence": 0.7
+      }
+    },
+    {
+      "agent_id": "agent_a",
+      "round_index": 1,
+      "move_id": "co1",
+      "json": {
+        "force": "concede",
+        "target": "p2"
+      }
+    },
+    {
+      "agent_id": "agent_a",
+      "round_index": 2,
+      "move_id": "v1",
+      "json": {
+        "force": "vote",
+        "option_surface": "X is true",
+        "confidence": 0.9
+      }
+    }
+  ],
+  "expected_qbaf": {
+    "arguments": [
+      {"arg_id": "p1", "claim_surface": "X is true", "base_score": 1.0, "withdrawn": false},
+      {"arg_id": "p2", "claim_surface": "X is false", "base_score": 0.6, "withdrawn": false},
+      {"arg_id": "c1", "claim_surface": "counterexample C", "base_score": 0.7, "withdrawn": false},
+      {"arg_id": "co1", "claim_surface": "(concession to p2)", "base_score": 1.0, "withdrawn": false}
+    ],
+    "attacks": [
+      {"source": "c1", "target": "p1", "weight": 0.7}
+    ],
+    "supports": [
+      {"source": "co1", "target": "p2", "weight": 1.0}
+    ]
+  }
+}

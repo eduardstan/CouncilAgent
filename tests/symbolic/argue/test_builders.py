@@ -17,6 +17,9 @@ fixture and the full multi-move determinism round-trip.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from council.calibrate import Calibrator, IdentityCalibrator
@@ -29,9 +32,12 @@ from council.dialect.moves import (
     Retract,
     Vote,
 )
+from council.dialect.parsers import parse_move
 from council.dialect.trace import Trace
-from council.symbolic.argue.baf import QBAF
+from council.symbolic.argue.baf import QBAF, Argument, Attack, Support
 from council.symbolic.argue.builders import build_qbaf
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -536,3 +542,150 @@ class TestRetractMarksWithdrawn:
         # (Gradual semantics will weight withdrawn arguments at 0; that is
         # the semantics' concern, not the builder's.)
         assert any(att.source == "c1" for att in baf.attacks)
+
+
+# ---------------------------------------------------------------------------
+# Slice D — Walton-Krabbe canonical golden fixture
+# ---------------------------------------------------------------------------
+
+
+def _load_walton_krabbe() -> tuple[Trace, QBAF]:
+    """Build the trace and expected QBAF from the committed JSON fixture."""
+    raw = (FIXTURES_DIR / "walton_krabbe.json").read_text()
+    fixture = json.loads(raw)
+    trace = Trace()
+    for entry in fixture["trace"]:
+        move = parse_move(
+            json.dumps(entry["json"]),
+            agent_id=entry["agent_id"],
+            round_index=entry["round_index"],
+            move_id=entry["move_id"],
+        )
+        trace = trace.append(move)
+    expected = QBAF(
+        arguments=tuple(
+            Argument(
+                arg_id=a["arg_id"],
+                claim_surface=a["claim_surface"],
+                base_score=a["base_score"],
+                withdrawn=a["withdrawn"],
+            )
+            for a in fixture["expected_qbaf"]["arguments"]
+        ),
+        attacks=tuple(
+            Attack(source=e["source"], target=e["target"], weight=e["weight"])
+            for e in fixture["expected_qbaf"]["attacks"]
+        ),
+        supports=tuple(
+            Support(source=e["source"], target=e["target"], weight=e["weight"])
+            for e in fixture["expected_qbaf"]["supports"]
+        ),
+    )
+    return trace, expected
+
+
+class TestWaltonKrabbeGolden:
+    def test_canonical_trace_matches_expected_qbaf(self) -> None:
+        trace, expected = _load_walton_krabbe()
+        actual = build_qbaf(trace)
+        assert actual == expected
+
+    def test_argument_ids_match_expected(self) -> None:
+        trace, expected = _load_walton_krabbe()
+        actual = build_qbaf(trace)
+        assert [a.arg_id for a in actual.arguments] == [
+            a.arg_id for a in expected.arguments
+        ]
+
+    def test_attack_chain_matches_expected(self) -> None:
+        trace, expected = _load_walton_krabbe()
+        actual = build_qbaf(trace)
+        assert actual.attacks == expected.attacks
+
+    def test_support_chain_matches_expected(self) -> None:
+        trace, expected = _load_walton_krabbe()
+        actual = build_qbaf(trace)
+        assert actual.supports == expected.supports
+
+
+# ---------------------------------------------------------------------------
+# Slice D — Full multi-move determinism round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestDeterminismFull:
+    def test_walton_krabbe_byte_equal_over_100_invocations(self) -> None:
+        trace, _ = _load_walton_krabbe()
+        baf1 = build_qbaf(trace)
+        for _ in range(100):
+            assert build_qbaf(trace) == baf1
+
+    def test_walton_krabbe_with_identity_calibrator_byte_equal(self) -> None:
+        trace, _ = _load_walton_krabbe()
+        baf_no = build_qbaf(trace)
+        baf_id = build_qbaf(trace, calibrator=IdentityCalibrator())
+        assert baf_no == baf_id
+
+    def test_complex_trace_with_all_move_types_deterministic(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X", confidence=0.5))
+            .append(_propose("p2", surface="Y", confidence=0.4))
+            .append(_challenge("c1", target="p1", confidence=0.6))
+            .append(_challenge("c2", target="c1", confidence=0.5))
+            .append(_concede("co1", target="p2"))
+            .append(_retract("r1", own="p1"))
+            .append(_vote("v1", surface="Y", confidence=0.3))
+        )
+        baf1 = build_qbaf(trace)
+        for _ in range(50):
+            assert build_qbaf(trace) == baf1
+
+
+# ---------------------------------------------------------------------------
+# Slice D — Self-attack detection deferred to PR8 (ADR-0007)
+# ---------------------------------------------------------------------------
+
+
+class TestSelfAttackDeferred:
+    """ADR-0007: build_qbaf does NOT detect self-attacks. PR8 adds them via
+    a [argue-asp] tool_client path; until then a Propose whose surface
+    contradicts its evidence enters the QBAF unattacked.
+    """
+
+    def test_arith_propose_contradicting_evidence_has_no_self_attack(self) -> None:
+        contradictory = Propose(
+            move_id="p1",
+            agent_id="A",
+            round_index=0,
+            claim=Claim(
+                surface="x = 5",
+                domain=ClaimDomain.ARITH,
+                evidence=("proof: x = 7",),
+            ),
+            confidence=0.9,
+        )
+        trace = Trace().append(contradictory)
+        baf = build_qbaf(trace)
+        # The argument enters the graph with its full base_score; no
+        # self-attack edge is generated. PR8 (ADR-0007) will add one when
+        # the [argue-asp] extra and tool_client are wired in.
+        assert baf.arguments[0].base_score == 0.9
+        assert baf.attacks == ()
+
+    def test_fol_propose_contradicting_evidence_has_no_self_attack(self) -> None:
+        # Same deferral applies to claim.domain == FOL
+        contradictory = Propose(
+            move_id="p1",
+            agent_id="A",
+            round_index=0,
+            claim=Claim(
+                surface="forall x. P(x)",
+                domain=ClaimDomain.FOL,
+                evidence=("counterexample: P(0) = false",),
+            ),
+            confidence=0.9,
+        )
+        trace = Trace().append(contradictory)
+        baf = build_qbaf(trace)
+        assert baf.attacks == ()
