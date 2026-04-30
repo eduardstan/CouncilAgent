@@ -12,7 +12,11 @@ W2/PR2 ships the deterministic builder:
 W2/PR3 ships DF-QuAD (the default gradual semantics):
   - DFQuADSemantics — Rago-Toni-Aurisicchio-Baroni KR 2016 (`semantics.df_quad`)
 
-PR4-PR5 add Quadratic Energy, Euler-based, and Strategic-Coupled semantics.
+W2/PR4 adds Quadratic Energy and Euler-based / Ebs:
+  - QESemantics — Potyka 2018 (`semantics.quad`)
+  - EulerBasedSemantics — Amgoud-Ben-Naim 2018 Def 19 (`semantics.euler`)
+
+PR5 will add the Strategic-Coupled semantics.
 The Calibrator ABC consumed by `build_qbaf` lives at `council.calibrate.base`
 (ADR-0008).
 """
@@ -26,6 +30,8 @@ from council.symbolic.argue.baf import QBAF, Argument, Attack, Support
 from council.symbolic.argue.builders import build_qbaf
 from council.symbolic.argue.semantics.base import GradualSemantics
 from council.symbolic.argue.semantics.df_quad import DFQuADSemantics
+from council.symbolic.argue.semantics.euler import EulerBasedSemantics
+from council.symbolic.argue.semantics.quad import QESemantics
 
 __all__ = [
     "QBAF",
@@ -35,7 +41,9 @@ __all__ = [
     "Argument",
     "Attack",
     "DFQuADSemantics",
+    "EulerBasedSemantics",
     "GradualSemantics",
+    "QESemantics",
     "Support",
     "build_qbaf",
 ]

@@ -16,7 +16,9 @@ def test_public_api_re_exports() -> None:
         Argument,
         Attack,
         DFQuADSemantics,
+        EulerBasedSemantics,
         GradualSemantics,
+        QESemantics,
         Support,
         build_qbaf,
     )
@@ -37,6 +39,10 @@ def test_public_api_re_exports() -> None:
     from council.symbolic.argue.semantics.df_quad import (
         DFQuADSemantics as _DFQ,
     )
+    from council.symbolic.argue.semantics.euler import (
+        EulerBasedSemantics as _EBS,
+    )
+    from council.symbolic.argue.semantics.quad import QESemantics as _QE
 
     assert AggregationResult is _AR
     assert Aggregator is _Agg
@@ -46,6 +52,8 @@ def test_public_api_re_exports() -> None:
     assert Support is _S
     assert GradualSemantics is _GS
     assert DFQuADSemantics is _DFQ
+    assert QESemantics is _QE
+    assert EulerBasedSemantics is _EBS
     assert build_qbaf is _bqb
     # AggregatorConfidence is a Union alias — just verify importability
     assert AggregatorConfidence is not None
@@ -71,7 +79,9 @@ def test_explicit_all() -> None:
         "Argument",
         "Attack",
         "DFQuADSemantics",
+        "EulerBasedSemantics",
         "GradualSemantics",
+        "QESemantics",
         "Support",
         "build_qbaf",
     }
