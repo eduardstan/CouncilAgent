@@ -79,3 +79,50 @@ class TestGradualSemanticsContract:
         baf = QBAF(arguments=(), attacks=(), supports=())
         ext = sem.preferred_extension(baf)
         assert isinstance(ext, frozenset)
+
+
+class TestPrepareHook:
+    """ADR-0013: GradualSemantics ABC has a default no-op prepare(trace)
+    hook that trace-aware semantics can override."""
+
+    def test_default_prepare_returns_self(self) -> None:
+        from council.dialect.trace import Trace
+
+        sem = _ConstantSemantics()
+        prepared = sem.prepare(Trace())
+        assert prepared is sem
+
+    def test_default_prepare_is_idempotent(self) -> None:
+        """For stateless semantics, prepare(trace1) and prepare(trace2)
+        return the same object (self)."""
+        from council.dialect.moves import Claim, Propose
+        from council.dialect.trace import Trace
+
+        sem = _ConstantSemantics()
+        t1 = Trace()
+        t2 = Trace().append(
+            Propose(
+                move_id="p1",
+                agent_id="A",
+                round_index=0,
+                claim=Claim(surface="x"),
+                confidence=0.5,
+            )
+        )
+        assert sem.prepare(t1) is sem
+        assert sem.prepare(t2) is sem
+
+    def test_prepare_signature_takes_trace_returns_semantics(self) -> None:
+        import inspect
+
+        from council.dialect.trace import Trace
+
+        sig = inspect.signature(GradualSemantics.prepare)
+        params = sig.parameters
+        assert "trace" in params
+        # Return type annotation: GradualSemantics
+        # (we don't introspect the annotation string, just that prepare is sync)
+        assert not inspect.iscoroutinefunction(GradualSemantics.prepare)
+        # Default impl returns the semantics instance
+        sem = _ConstantSemantics()
+        assert isinstance(sem.prepare(Trace()), GradualSemantics)

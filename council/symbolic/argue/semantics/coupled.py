@@ -25,7 +25,9 @@ directly.
 
 from __future__ import annotations
 
+from council.dialect.trace import Trace
 from council.symbolic.argue.baf import QBAF
+from council.symbolic.argue.coupled_atl import evidence_backed_arg_ids
 from council.symbolic.argue.semantics.base import GradualSemantics
 from council.symbolic.argue.semantics.df_quad import DFQuADSemantics
 
@@ -84,4 +86,18 @@ class StrategicCoupledSemantics(GradualSemantics):
             a.arg_id
             for a in baf.arguments
             if not a.withdrawn and strengths[a.arg_id] >= _EXTENSION_THRESHOLD
+        )
+
+    def prepare(self, trace: Trace) -> GradualSemantics:
+        """Trace-aware refresh hook (ADR-0013).
+
+        Returns a new StrategicCoupledSemantics with evidence_backed
+        recomputed from the given Trace via the inline ATL fragment.
+        Base, alpha, and consensus_threshold are preserved.
+        """
+        return StrategicCoupledSemantics(
+            base=self._base,
+            evidence_backed=evidence_backed_arg_ids(trace),
+            alpha=self._alpha,
+            consensus_threshold=self._threshold,
         )

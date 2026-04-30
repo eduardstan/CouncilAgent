@@ -279,3 +279,90 @@ class TestInvariants:
         )
         # Ebs returns 1.0 for w=1; SC demotes by alpha=0.5 -> 0.5
         assert sc.evaluate(baf)["a"] == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# prepare(trace) hook (ADR-0013)
+# ---------------------------------------------------------------------------
+
+
+class TestPrepareHook:
+    """StrategicCoupledSemantics.prepare(trace) returns a new instance with
+    evidence_backed = evidence_backed_arg_ids(trace). Other settings are
+    preserved (base, alpha, threshold)."""
+
+    def test_prepare_with_no_evidence_trace_returns_empty_backing(self) -> None:
+        from council.dialect.moves import Claim, ClaimDomain, Propose
+        from council.dialect.trace import Trace
+
+        sc = StrategicCoupledSemantics(
+            base=DFQuADSemantics(),
+            evidence_backed=frozenset({"old"}),  # initial state to overwrite
+            alpha=0.4,
+            consensus_threshold=0.6,
+        )
+        trace = Trace().append(
+            Propose(
+                move_id="p1",
+                agent_id="A",
+                round_index=0,
+                claim=Claim(surface="x", domain=ClaimDomain.FREE, evidence=()),
+                confidence=0.5,
+            )
+        )
+        prepared = sc.prepare(trace)
+        # Returns a new instance, not self
+        assert prepared is not sc
+        assert isinstance(prepared, StrategicCoupledSemantics)
+        # New instance's evidence_backed is recomputed from the trace
+        assert prepared._evidence_backed == frozenset()  # type: ignore[attr-defined]
+        # Other settings preserved
+        assert prepared._alpha == 0.4  # type: ignore[attr-defined]
+        assert prepared._threshold == 0.6  # type: ignore[attr-defined]
+
+    def test_prepare_with_evidenced_trace_returns_backed_set(self) -> None:
+        from council.dialect.moves import Claim, ClaimDomain, Propose
+        from council.dialect.trace import Trace
+
+        sc = StrategicCoupledSemantics(
+            base=DFQuADSemantics(),
+            evidence_backed=frozenset(),
+        )
+        trace = Trace().append(
+            Propose(
+                move_id="p1",
+                agent_id="A",
+                round_index=0,
+                claim=Claim(
+                    surface="x",
+                    domain=ClaimDomain.FREE,
+                    evidence=("source-1",),
+                ),
+                confidence=0.5,
+            )
+        )
+        prepared = sc.prepare(trace)
+        assert prepared._evidence_backed == frozenset({"p1"})  # type: ignore[attr-defined]
+
+    def test_prepare_does_not_mutate_self(self) -> None:
+        """ADR-0013: prepare must return a fresh instance, not mutate self."""
+        from council.dialect.moves import Claim, Propose
+        from council.dialect.trace import Trace
+
+        sc = StrategicCoupledSemantics(
+            base=DFQuADSemantics(),
+            evidence_backed=frozenset({"keep_me"}),
+        )
+        original_backed = sc._evidence_backed  # type: ignore[attr-defined]
+        trace = Trace().append(
+            Propose(
+                move_id="p1",
+                agent_id="A",
+                round_index=0,
+                claim=Claim(surface="x", evidence=("e1",)),
+                confidence=0.5,
+            )
+        )
+        sc.prepare(trace)  # discard return value
+        # Original instance must be unchanged
+        assert sc._evidence_backed == original_backed  # type: ignore[attr-defined]

@@ -7,14 +7,20 @@ plurality fraction is type-impossible.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-from council.dialect.moves import Move, Vote
+from council.dialect.moves import Move, Propose, Vote
 from council.dialect.trace import Trace
 from council.models import ModelClient
 from council.termination import MonitorVerdict, TerminationStrategy
 from council.tools import ToolClient
 from council.topology import Topology
+
+if TYPE_CHECKING:
+    # Patch D — TYPE_CHECKING-guarded import preserves §8 zero-framework rule
+    # while letting mypy enforce the type. Same pattern as core.py uses for
+    # symbolic.verify.monitor.Property.
+    from council.symbolic.argue.baf import QBAF
 
 #: Synthetic moderator agent ID used for all moves injected by W1 Interventions.
 #: Lives in core (context.py) because is_complete() needs it for the §11
@@ -62,7 +68,7 @@ Confidence = JSDConfidence | BAFMarginConfidence | MonitorVerdictConfidence | Co
 @dataclass(frozen=True, slots=True)
 class ProvenanceReceipt:
     trace: Trace
-    qbaf: object | None = None
+    qbaf: QBAF | None = None  # Patch D — typed via TYPE_CHECKING
     monitor_verdicts: tuple[MonitorVerdict, ...] = ()
     asp_groundings: tuple[str, ...] = ()
     cost_ledger: tuple[tuple[str, float], ...] = ()
@@ -79,10 +85,13 @@ class ProvenanceReceipt:
               (Votes are committed decisions and must justify themselves);
           (c) every BOTTOM monitor verdict is followed by an intervention
               move (a move from INTERVENTION_AGENT_ID at >= the verdict's
-              round_index) — every ⊥ verdict triggered an intervention.
-
-        The QBAF-argument-count clause from §11 is W2 territory and is
-        evaluated separately when self.qbaf is not None (deferred).
+              round_index) — every ⊥ verdict triggered an intervention;
+          (d) Patch E — when qbaf is not None, every Propose move_id in
+              the trace appears as an arg_id in qbaf.arguments. Per
+              ADR-0009, the §11 "argument count equals Propose count"
+              wording is reformulated operationally as a Propose-bijection
+              check (Challenge / Concede also produce nodes; total count
+              equality would forbid the structural information they carry).
         """
         if not self.trace.moves:
             return True
@@ -107,6 +116,15 @@ class ProvenanceReceipt:
                 )
                 if not covered:
                     return False
+
+        # (d) QBAF Propose-bijection clause (Patch E; ADR-0009)
+        if self.qbaf is not None:
+            propose_ids = {
+                m.move_id for m in self.trace.moves if isinstance(m, Propose)
+            }
+            arg_ids = {a.arg_id for a in self.qbaf.arguments}
+            if not propose_ids.issubset(arg_ids):
+                return False
 
         return True
 

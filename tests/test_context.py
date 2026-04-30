@@ -381,3 +381,157 @@ def test_visibility_context_carries_anonymize_flag() -> None:
     )
     assert vc.anonymize is True
     assert vc.agent_id == "a1"
+
+
+# ---------------------------------------------------------------------------
+# Patch D — ProvenanceReceipt.qbaf is typed as QBAF | None
+# ---------------------------------------------------------------------------
+
+
+def test_provenance_receipt_qbaf_field_default_none() -> None:
+    """Patch D: qbaf field defaults to None for non-L2 callers (W0/W1)."""
+    from council.context import ProvenanceReceipt
+    receipt = ProvenanceReceipt(trace=Trace())
+    assert receipt.qbaf is None
+
+
+def test_provenance_receipt_accepts_qbaf_instance() -> None:
+    """Patch D: qbaf field accepts a real QBAF instance."""
+    from council.context import ProvenanceReceipt
+    from council.symbolic.argue.baf import QBAF, Argument
+
+    arg = Argument(arg_id="p1", claim_surface="X", base_score=0.5)
+    qbaf = QBAF(arguments=(arg,), attacks=(), supports=())
+    receipt = ProvenanceReceipt(trace=Trace(), qbaf=qbaf)
+    assert receipt.qbaf is qbaf
+
+
+# ---------------------------------------------------------------------------
+# Patch E — is_complete() QBAF clause (Constitution §11)
+# ---------------------------------------------------------------------------
+
+
+def test_is_complete_qbaf_none_passes() -> None:
+    """Patch E: when qbaf is None, the QBAF clause is vacuously satisfied."""
+    from council.context import ProvenanceReceipt
+
+    p1 = Propose(
+        move_id="p1",
+        agent_id="A",
+        round_index=0,
+        claim=Claim(surface="X"),
+        confidence=0.5,
+    )
+    trace = Trace().append(p1)
+    receipt = ProvenanceReceipt(
+        trace=trace,
+        qbaf=None,
+        cost_ledger=(("p1", 0.0),),
+    )
+    assert receipt.is_complete() is True
+
+
+def test_is_complete_qbaf_matches_propose_count_passes() -> None:
+    """Patch E: when qbaf has an Argument per Propose move_id, the
+    Constitution §11 QBAF clause is satisfied."""
+    from council.context import ProvenanceReceipt
+    from council.symbolic.argue.baf import QBAF, Argument
+
+    p1 = Propose(
+        move_id="p1",
+        agent_id="A",
+        round_index=0,
+        claim=Claim(surface="X"),
+        confidence=0.5,
+    )
+    p2 = Propose(
+        move_id="p2",
+        agent_id="B",
+        round_index=0,
+        claim=Claim(surface="Y"),
+        confidence=0.4,
+    )
+    trace = Trace().append(p1).append(p2)
+    qbaf = QBAF(
+        arguments=(
+            Argument(arg_id="p1", claim_surface="X", base_score=0.5),
+            Argument(arg_id="p2", claim_surface="Y", base_score=0.4),
+        ),
+        attacks=(),
+        supports=(),
+    )
+    receipt = ProvenanceReceipt(
+        trace=trace,
+        qbaf=qbaf,
+        cost_ledger=(("p1", 0.0), ("p2", 0.0)),
+    )
+    assert receipt.is_complete() is True
+
+
+def test_is_complete_qbaf_missing_propose_argument_fails() -> None:
+    """Patch E: a Propose without a corresponding Argument fails the clause."""
+    from council.context import ProvenanceReceipt
+    from council.symbolic.argue.baf import QBAF, Argument
+
+    p1 = Propose(
+        move_id="p1",
+        agent_id="A",
+        round_index=0,
+        claim=Claim(surface="X"),
+        confidence=0.5,
+    )
+    p2 = Propose(
+        move_id="p2",
+        agent_id="B",
+        round_index=0,
+        claim=Claim(surface="Y"),
+        confidence=0.4,
+    )
+    trace = Trace().append(p1).append(p2)
+    # qbaf is missing arg for p2
+    qbaf = QBAF(
+        arguments=(
+            Argument(arg_id="p1", claim_surface="X", base_score=0.5),
+        ),
+        attacks=(),
+        supports=(),
+    )
+    receipt = ProvenanceReceipt(
+        trace=trace,
+        qbaf=qbaf,
+        cost_ledger=(("p1", 0.0), ("p2", 0.0)),
+    )
+    assert receipt.is_complete() is False
+
+
+def test_is_complete_qbaf_with_extra_arguments_passes() -> None:
+    """Patch E: extra Arguments (Challenge/Concede-derived) are allowed —
+    the bijection is one-way (every Propose has an Argument), not strict
+    equality. ADR-0009 documents the operational reformulation of §11."""
+    from council.context import ProvenanceReceipt
+    from council.symbolic.argue.baf import QBAF, Argument
+
+    p1 = Propose(
+        move_id="p1",
+        agent_id="A",
+        round_index=0,
+        claim=Claim(surface="X"),
+        confidence=0.5,
+    )
+    trace = Trace().append(p1)
+    # qbaf has an extra "c1" argument (Challenge-derived)
+    qbaf = QBAF(
+        arguments=(
+            Argument(arg_id="p1", claim_surface="X", base_score=0.5),
+            Argument(arg_id="c1", claim_surface="bad reasoning", base_score=0.7),
+        ),
+        attacks=(),
+        supports=(),
+    )
+    receipt = ProvenanceReceipt(
+        trace=trace,
+        qbaf=qbaf,
+        cost_ledger=(("p1", 0.0),),
+    )
+    # Every Propose has a matching Argument → clause passes
+    assert receipt.is_complete() is True
