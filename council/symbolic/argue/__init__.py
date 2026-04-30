@@ -16,7 +16,12 @@ W2/PR4 adds Quadratic Energy and Euler-based / Ebs:
   - QESemantics — Potyka 2018 (`semantics.quad`)
   - EulerBasedSemantics — Amgoud-Ben-Naim 2018 Def 19 (`semantics.euler`)
 
-PR5 will add the Strategic-Coupled semantics.
+W2/PR5 adds the Strategic-Coupled semantics (the P2 novelty):
+  - StrategicCoupledSemantics — DF-QuAD ⊕ ATL coalition reasoning
+    (`semantics.coupled`)
+  - evidence_backed_arg_ids — inline ATL fragment over Trace
+    (`coupled_atl`)
+
 The Calibrator ABC consumed by `build_qbaf` lives at `council.calibrate.base`
 (ADR-0008).
 """
@@ -28,7 +33,9 @@ from council.symbolic.argue.aggregation_result import (
 from council.symbolic.argue.aggregator_base import Aggregator
 from council.symbolic.argue.baf import QBAF, Argument, Attack, Support
 from council.symbolic.argue.builders import build_qbaf
+from council.symbolic.argue.coupled_atl import evidence_backed_arg_ids
 from council.symbolic.argue.semantics.base import GradualSemantics
+from council.symbolic.argue.semantics.coupled import StrategicCoupledSemantics
 from council.symbolic.argue.semantics.df_quad import DFQuADSemantics
 from council.symbolic.argue.semantics.euler import EulerBasedSemantics
 from council.symbolic.argue.semantics.quad import QESemantics
@@ -44,6 +51,8 @@ __all__ = [
     "EulerBasedSemantics",
     "GradualSemantics",
     "QESemantics",
+    "StrategicCoupledSemantics",
     "Support",
     "build_qbaf",
+    "evidence_backed_arg_ids",
 ]

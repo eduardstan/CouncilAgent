@@ -19,8 +19,10 @@ def test_public_api_re_exports() -> None:
         EulerBasedSemantics,
         GradualSemantics,
         QESemantics,
+        StrategicCoupledSemantics,
         Support,
         build_qbaf,
+        evidence_backed_arg_ids,
     )
 
     # Sanity: confirm the re-exports are the canonical objects.
@@ -33,8 +35,14 @@ def test_public_api_re_exports() -> None:
     from council.symbolic.argue.baf import Attack as _Att
     from council.symbolic.argue.baf import Support as _S
     from council.symbolic.argue.builders import build_qbaf as _bqb
+    from council.symbolic.argue.coupled_atl import (
+        evidence_backed_arg_ids as _eba,
+    )
     from council.symbolic.argue.semantics.base import (
         GradualSemantics as _GS,
+    )
+    from council.symbolic.argue.semantics.coupled import (
+        StrategicCoupledSemantics as _SCS,
     )
     from council.symbolic.argue.semantics.df_quad import (
         DFQuADSemantics as _DFQ,
@@ -54,7 +62,9 @@ def test_public_api_re_exports() -> None:
     assert DFQuADSemantics is _DFQ
     assert QESemantics is _QE
     assert EulerBasedSemantics is _EBS
+    assert StrategicCoupledSemantics is _SCS
     assert build_qbaf is _bqb
+    assert evidence_backed_arg_ids is _eba
     # AggregatorConfidence is a Union alias — just verify importability
     assert AggregatorConfidence is not None
 
@@ -82,7 +92,9 @@ def test_explicit_all() -> None:
         "EulerBasedSemantics",
         "GradualSemantics",
         "QESemantics",
+        "StrategicCoupledSemantics",
         "Support",
         "build_qbaf",
+        "evidence_backed_arg_ids",
     }
     assert set(argue_pkg.__all__) == expected
