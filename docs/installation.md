@@ -2,7 +2,7 @@
 
 > **Status (2026-04-30):** SPOT 2.15.1 verified working from source on
 > Ubuntu 24.04. MCMAS 1.3.0 verified working from `~/.local/bin/mcmas`
-> install — see [ADR 0004](../specs/adrs/0004-mcmas-resolved.md). NuSMV
+> install — see [ADR-0005](adr/0005-mcmas-resolved.md). NuSMV
 > is available at <https://nusmv.fbk.eu> as a CTL-only fallback when MCMAS
 > is unavailable.
 
@@ -114,7 +114,7 @@ uv run pytest tests/symbolic/verify/test_spot_backend.py -v
 Tests previously skipped (`@skipif(not is_spot_available())`) should now run
 and pass.
 
-## MCMAS — verified install (see ADR 0004)
+## MCMAS — verified install (see ADR-0005)
 
 MCMAS 1.3.0 (Linux x86_64, 2018-07-10) is hosted at
 <https://sail.doc.ic.ac.uk/software/mcmas/>. The download is gated by an
@@ -123,8 +123,8 @@ HTTP `Referer` check; below are two install paths.
 > **Status (2026-04-30):** Verified installed and working today on Ubuntu
 > 24.04. Both the W1 acceptance test and the T3 counterexample test
 > (gated by `RUN_INTEGRATION=1`) pass. See
-> [ADR 0004](../specs/adrs/0004-mcmas-resolved.md) for the full decision
-> record (this supersedes the earlier ADR 0003 "deferred" framing).
+> [ADR-0005](adr/0005-mcmas-resolved.md) for the full decision
+> record (this supersedes the earlier ADR-0004 "deferred" framing).
 
 ### Path A: form-tracked download (recommended for academic citation)
 
@@ -196,6 +196,36 @@ The page also offers `org.mcmas.ui_1.2.2.jar` for the MCMAS Eclipse GUI.
 We do not use it — the headless `mcmas` CLI is sufficient for batch
 verification and integrates with our pytest suite.
 
+### MCMAS website down — fallback {#mcmas-website-down-fallback}
+
+If <https://sail.doc.ic.ac.uk/software/mcmas/> is unreachable (the page
+went down for some hours during the W1 work; see [ADR-0004](adr/0004-mcmas-access-deferred.md)
+for the historical record), the manual at
+<https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf> §1 documents an
+alternate access route: email `mcmas@imperial.ac.uk` from your
+institutional address, requesting a pre-compiled binary for your
+platform. Suggested email body:
+
+```
+Subject: Access request: MCMAS pre-compiled binary
+
+Dear MCMAS maintainers,
+
+I am <name>, <role> at <institution>. I would like to request a
+pre-compiled MCMAS binary for <platform>, as instructed in §1 of the
+MCMAS user manual at https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf.
+
+I am using MCMAS for the verification of multi-agent dialogue protocols
+in the open-source CouncilAgent-NS project. I will cite the
+Lomuscio-Qu-Raimondi 2017 STTT paper in any publication that uses MCMAS.
+
+Thank you,
+<name>
+```
+
+While you wait for a reply, see the **NuSMV — interim CTL path** section
+below for a CTL-only substitute that covers the W1 acceptance properties.
+
 ### Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -248,7 +278,7 @@ regression coverage. MCMAS / NuSMV integration tests are gated by
 | `import spot` succeeds but `spot.version()` looks like `Dotcloud / Mongodb` | You did `pip install spot` and got the wrong PyPI package | `uv pip uninstall spot`; then follow Path A or Path B above |
 | `import buddy` fails | SPOT installed but BuDDy bindings missing | The source build installs both; `apt install python3-spot` should pull `python3-buddy` as a dependency |
 | `make: *** No rule to make target` during source build | C++20 compiler missing or too old | `sudo apt install build-essential` then `g++ --version` ≥ 10 |
-| `RUN_INTEGRATION=1` test skips silently | `mcmas` not on PATH | Either install MCMAS (see ADR 0004) or run the NuSMV-substitute path manually |
+| `RUN_INTEGRATION=1` test skips silently | `mcmas` not on PATH | Either install MCMAS (see ADR-0005) or run the NuSMV-substitute path manually |
 
 ## Why apt-repo (Path A) is generally preferred over source build (Path B)
 

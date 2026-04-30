@@ -1,7 +1,10 @@
-# ADR-002: Freeze the Trace.to_events() atomic-proposition schema after W0/PR3
+# ADR-0002: Freeze the Trace.to_events() atomic-proposition schema after W0/PR3
 
 ## Status
-Accepted — schema FROZEN as of commit 3317072 (feat(w0/pr3))
+
+Accepted (W0) — schema FROZEN as of commit 3317072 (feat(w0/pr3)).
+Subsequently extended in W1 by [ADR-0003](0003-to-events-w1-extension.md);
+this ADR is preserved as the historical record of the W0 freeze.
 
 ## Date
 2026-04-29

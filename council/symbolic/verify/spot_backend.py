@@ -10,7 +10,7 @@ When SPOT is not installed, the import is guarded and `make_monitor()` falls
 back to the pure-Python `ProgressionMonitor` (`ltl2mon_backend.py`) which
 covers the full LTL_f fragment.
 
-Installation: see `docs/install_spot.md`. SPOT is NOT a pip dependency; it is
+Installation: see `docs/installation.md`. SPOT is NOT a pip dependency; it is
 installed as a Debian apt package (lre.epita.fr repo) or built from source.
 The PyPI package named "spot" is unrelated.
 
@@ -68,7 +68,7 @@ class SPOTMonitor(LTL3Monitor):
         if not _SPOT_AVAILABLE:
             raise ImportError(
                 "SPOT Python bindings are not installed. "
-                "See docs/install_spot.md, or use make_monitor(prefer_spot=False) "
+                "See docs/installation.md, or use make_monitor(prefer_spot=False) "
                 "to fall back to ProgressionMonitor.",
             )
         spot_formula_str = to_spot_str(formula)

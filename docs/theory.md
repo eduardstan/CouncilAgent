@@ -95,7 +95,7 @@ the vote count.
   unanimous-vote-without-evidence trace to MCMAS and asserts the model
   checker reports `AG(is_vote -> has_evidence) = FALSE` in the model.
   This **mechanically confirms** the W1 monitor's BOTTOM verdict at the
-  external-tool level. See [`specs/adrs/0004-mcmas-resolved.md`](../specs/adrs/0004-mcmas-resolved.md).
+  external-tool level. See [`docs/adr/0005-mcmas-resolved.md`](adr/0005-mcmas-resolved.md).
 
 The full ablation row against `MajorityVote`, `BordaCount`, and
 `CondorcetAggregation` requires the L2 aggregator (W2) and remains W2/P1

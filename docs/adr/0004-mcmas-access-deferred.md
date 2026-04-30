@@ -1,20 +1,20 @@
-# ADR-0003: MCMAS Binary Access — Deferred to Future Development
+# ADR-0004: MCMAS Binary Access — Deferred to Future Development
 
 ## Status
 
-**Superseded by [ADR 0004](0004-mcmas-resolved.md) (2026-04-30).**
+**Superseded by [ADR-0005](0005-mcmas-resolved.md) (2026-04-30).**
 
 The access situation that motivated this ADR was resolved a day later: the
 maintainers' page at <https://sail.doc.ic.ac.uk/software/mcmas/> came back
 online and exposes a working download for MCMAS 1.3.0 (Linux x86_64).
-ADR 0004 records the verified install procedure, the two ISPL-emitter bugs
+ADR-0005 records the verified install procedure, the two ISPL-emitter bugs
 that real MCMAS surfaced (and their fixes), and the W1 / T3 verification
 results.
 
 The body of this ADR is preserved as the historical record of the deferral
 decision and the diagnostic dead-ends we tried (URL probing, email-request
 template, NuSMV substitute). None of that work was wasted —
-`docs/mcmas_request_email.md` is retained as a backup procedure for users
+`docs/installation.md#mcmas-website-down-fallback` is retained as a backup procedure for users
 who cannot reach the URL or who need a non-Linux-x86_64 binary.
 
 *Original status (2026-04-29): Accepted (interim) — to be revisited when
@@ -127,7 +127,7 @@ use requires a separate agreement.
 
 Caveat: NuSMV is not in the Ubuntu 24.04 default apt archive, so the interim
 path also requires a manual download from <https://nusmv.fbk.eu>. This is
-documented in [`docs/install_spot.md`](../../docs/install_spot.md) under
+documented in [`docs/installation.md`](../installation.md) under
 "Optional: NuSMV interim CTL path".
 
 The NuSMV interim path is suitable for **all of W1's acceptance work** because
@@ -163,11 +163,11 @@ oracle would undermine the soundness claims that depend on the verifier.
 
 ### Future Development (when MCMAS is obtained)
 
-1. Send the email request at [`docs/mcmas_request_email.md`](../../docs/mcmas_request_email.md)
+1. Send the email request at [`docs/installation.md#mcmas-website-down-fallback`](../installation.md#mcmas-website-down-fallback)
    to <mcmas@imperial.ac.uk> from an institutional address.
 2. Once a binary arrives:
    - Place `mcmas` on PATH; verify with `mcmas -version`.
-   - Add a verified install section to [`docs/install_spot.md`](../../docs/install_spot.md)
+   - Add a verified install section to [`docs/installation.md`](../installation.md)
      replacing the "MCMAS — DEFERRED" block.
 3. Re-run `RUN_INTEGRATION=1 uv run pytest tests/integration/test_mcmas_offline.py`
    (already gated; should pass automatically once `mcmas` is on PATH).
