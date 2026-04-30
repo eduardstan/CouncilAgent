@@ -43,6 +43,7 @@ from council.symbolic.argue.semantics.coupled import StrategicCoupledSemantics
 from council.symbolic.argue.semantics.df_quad import DFQuADSemantics
 from council.symbolic.argue.semantics.euler import EulerBasedSemantics
 from council.symbolic.argue.semantics.quad import QESemantics
+from council.symbolic.argue.visualisers import to_dot, to_mermaid
 
 __all__ = [
     "QBAF",
@@ -61,4 +62,6 @@ __all__ = [
     "Support",
     "build_qbaf",
     "evidence_backed_arg_ids",
+    "to_dot",
+    "to_mermaid",
 ]

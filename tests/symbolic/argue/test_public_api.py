@@ -25,7 +25,16 @@ def test_public_api_re_exports() -> None:
         Support,
         build_qbaf,
         evidence_backed_arg_ids,
+        to_dot,
+        to_mermaid,
     )
+
+    # Sanity: confirm visualiser exports are the canonical objects.
+    from council.symbolic.argue.visualisers import to_dot as _td
+    from council.symbolic.argue.visualisers import to_mermaid as _tm
+
+    assert to_dot is _td
+    assert to_mermaid is _tm
 
     # Sanity: confirm the new aggregator exports are also the canonical objects.
     from council.symbolic.argue.aggregator import (
@@ -111,5 +120,7 @@ def test_explicit_all() -> None:
         "Support",
         "build_qbaf",
         "evidence_backed_arg_ids",
+        "to_dot",
+        "to_mermaid",
     }
     assert set(argue_pkg.__all__) == expected
