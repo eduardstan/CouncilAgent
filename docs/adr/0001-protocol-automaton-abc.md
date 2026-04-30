@@ -1,4 +1,4 @@
-# ADR-001: Use abc.ABC (not typing.Protocol) for ProtocolAutomaton
+# ADR-0001: Use abc.ABC (not typing.Protocol) for ProtocolAutomaton
 
 ## Status
 Accepted

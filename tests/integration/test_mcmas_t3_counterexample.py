@@ -11,7 +11,7 @@ weakening `G(is_vote -> has_evidence)` (= the W1 property
 and asserts the model checker reports `FALSE` on the formula — mechanically
 confirming what the W1 monitor reports as `Verdict.BOTTOM`.
 
-This is the ADR-0004 partial T3 mechanisation: the COUNTEREXAMPLE is now
+This is the ADR-0005 partial T3 mechanisation: the COUNTEREXAMPLE is now
 MCMAS-verified. The full ablation row vs. `MajorityVote`/`BordaCount`/
 `CondorcetAggregation` is W2/P1 work because those aggregators are not yet
 implemented.
@@ -42,7 +42,7 @@ def _mcmas_available() -> bool:
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_INTEGRATION") != "1" or not _mcmas_available(),
-    reason="RUN_INTEGRATION=1 required and mcmas must be on PATH (see ADR 0004)",
+    reason="RUN_INTEGRATION=1 required and mcmas must be on PATH (see ADR-0005)",
 )
 
 

@@ -1,7 +1,7 @@
 """Tests for council/symbolic/verify/spot_backend.py — SPOT-backed LTL3 monitor.
 
 SPOT is an optional dependency installed via apt/brew/source (see
-docs/install_spot.md). When SPOT is unavailable, SPOTMonitor tests are skipped
+docs/installation.md). When SPOT is unavailable, SPOTMonitor tests are skipped
 and only the make_monitor() fallback path is exercised.
 """
 
@@ -31,7 +31,7 @@ def test_is_spot_available_returns_bool() -> None:
 
 skip_if_no_spot = pytest.mark.skipif(
     not is_spot_available(),
-    reason="SPOT Python bindings not installed — see docs/install_spot.md",
+    reason="SPOT Python bindings not installed — see docs/installation.md",
 )
 
 

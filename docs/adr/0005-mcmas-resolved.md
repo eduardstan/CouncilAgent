@@ -1,8 +1,8 @@
-# ADR-0004: MCMAS Access Resolved — W1 Acceptance Verified, T3 Counterexample Mechanised
+# ADR-0005: MCMAS Access Resolved — W1 Acceptance Verified, T3 Counterexample Mechanised
 
 ## Status
 
-Accepted — supersedes [ADR 0003](0003-mcmas-access-deferred.md) (2026-04-29).
+Accepted — supersedes [ADR-0004](0004-mcmas-access-deferred.md) (2026-04-29).
 
 ## Date
 
@@ -10,7 +10,7 @@ Accepted — supersedes [ADR 0003](0003-mcmas-access-deferred.md) (2026-04-29).
 
 ## Context
 
-[ADR 0003](0003-mcmas-access-deferred.md) recorded that MCMAS access was
+[ADR-0004](0004-mcmas-access-deferred.md) recorded that MCMAS access was
 blocked: the URLs we tried at the time (`mcmas.org.uk`, `vas.doc.ic.ac.uk`,
 several `doc.ic.ac.uk/~alessio/...` paths) did not resolve, and the manual
 at `https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf` instructs users to
@@ -22,6 +22,17 @@ Today (2026-04-30) the maintainers' page is back online at
 <https://sail.doc.ic.ac.uk/software/mcmas/> and exposes two working
 download paths for **MCMAS 1.3.0** (Linux x86_64, 827 KB, single ELF
 binary, `Last-Modified: 2018-07-10`):
+
+> **Note on version numbers.** The download is **MCMAS binary 1.3.0**
+> (released 2018; the `mcmas` banner prints "MCMAS v1.3.0"). The
+> companion **user manual is v1.2.2** (the title page reads "MCMAS v1.2.2:
+> User Manual"). Imperial refreshes the manual less frequently than the
+> binary, so the two version strings disagree but document the same tool
+> for our purposes — the manual's ISPL grammar (§3.2) and reserved
+> keywords (§3.2.3) are unchanged across the 1.2.2 → 1.3.0 increment.
+> The ISPL emitter targets the manual's documented grammar and is
+> verified against the 1.3.0 binary's behaviour.
+
 
 | Path | URL | Notes |
 |---|---|---|
@@ -67,7 +78,7 @@ The T3 counterexample is also mechanised (commit `7703df7`). On a
 confirming, at the external-verifier level, what the W1
 `ProvenanceCompleteness` monitor reports as `Verdict.BOTTOM`. See
 `tests/integration/test_mcmas_t3_counterexample.py` and
-[`docs/theory.md`](../../docs/theory.md) §T3.
+[`docs/theory.md`](../theory.md) §T3.
 
 ## Decision
 
@@ -84,14 +95,14 @@ Concrete implications:
    the manual; future emitter changes should cite the relevant manual
    section (§3.2 ISPL syntax, §3.2.3 reserved keywords, §3.2.4 grammar)
    in their commit message.
-3. Documentation updated: [`docs/install_spot.md`](../../docs/install_spot.md)
+3. Documentation updated: [`docs/installation.md`](../installation.md)
    replaces the "MCMAS — email-gated access" section with verified install
    instructions for both download paths. The email template at
-   [`docs/mcmas_request_email.md`](../../docs/mcmas_request_email.md) is
+   [`docs/installation.md#mcmas-website-down-fallback`](../installation.md#mcmas-website-down-fallback) is
    kept as a backup procedure for users who cannot reach the URL or who
    want a different platform binary.
-4. ADR 0003 is **superseded** by this ADR; its status line is updated
-   accordingly. The body of ADR 0003 is preserved as the historical
+4. ADR-0004 is **superseded** by this ADR; its status line is updated
+   accordingly. The body of ADR-0004 is preserved as the historical
    record of the deferral.
 
 ## Alternatives Considered
@@ -101,12 +112,12 @@ Concrete implications:
 **Rejected.** The MCMAS source code is still not openly distributed — the
 download page exposes binaries only and the user manual §1.2 directs
 non-Linux x86_64 users to email the maintainers. This is unchanged from
-ADR 0003. We do not need source-build support today because the linux64
+ADR-0004. We do not need source-build support today because the linux64
 binary is sufficient for the project's primary development platform.
 
 ### Use a third-party Docker image
 
-**Rejected.** Provenance still unclear; same argument as ADR 0003 §B.
+**Rejected.** Provenance still unclear; same argument as ADR-0004 §B.
 
 ### Continue with the NuSMV substitute
 
@@ -114,7 +125,7 @@ binary is sufficient for the project's primary development platform.
 path. The L2 strategic / epistemic operators (CTLK, ATL) are not
 expressible in NuSMV, so MCMAS remains required for the full T3 ablation
 and for W6's MCMAS-verified-learned-protocols subtask. NuSMV stays in
-[`docs/install_spot.md`](../../docs/install_spot.md) for users who cannot
+[`docs/installation.md`](../installation.md) for users who cannot
 obtain the MCMAS binary.
 
 ## Consequences
@@ -129,7 +140,7 @@ obtain the MCMAS binary.
   `ProvenanceCompleteness` monitor's `Verdict.BOTTOM` on a 3-agent
   unanimous-vote-without-evidence trace is independently confirmed by
   MCMAS reporting `AG(is_vote → has_evidence) = FALSE`.
-  See [`docs/theory.md`](../../docs/theory.md) §T3.
+  See [`docs/theory.md`](../theory.md) §T3.
 - Constitution §11 receipt-completeness gains an external verifier
   citation: the receipt's `monitor_verdicts` can now be cross-checked
   against MCMAS's CTL semantics on the same Trace.
@@ -143,7 +154,7 @@ obtain the MCMAS binary.
 
 - MCMAS 1.3.0 is from July 2018: stable but not actively developed.
   We should pin this version in the install docs (already done in
-  [`docs/install_spot.md`](../../docs/install_spot.md)) and note any
+  [`docs/installation.md`](../installation.md)) and note any
   future MCMAS update in a follow-up ADR.
 - The ISPL emitter is now coupled to MCMAS 1.3.0's exact dialect (no
   `!=`, single-letter identifiers reserved, in-range value checks).
@@ -159,7 +170,7 @@ obtain the MCMAS binary.
   cleared.
 - MCMAS source distribution: still gated by emailing
   `mcmas@imperial.ac.uk`. The email template at
-  [`docs/mcmas_request_email.md`](../../docs/mcmas_request_email.md) is
+  [`docs/installation.md#mcmas-website-down-fallback`](../installation.md#mcmas-website-down-fallback) is
   retained as a backup access procedure.
 - CI integration: `RUN_INTEGRATION=1` is opt-in. We have not added a CI
   matrix job that downloads MCMAS automatically; that's a follow-up
@@ -167,13 +178,13 @@ obtain the MCMAS binary.
 
 ## References
 
-- [ADR 0003 (superseded)](0003-mcmas-access-deferred.md) — the deferral
+- [ADR-0004 (superseded)](0004-mcmas-access-deferred.md) — the deferral
   decision being superseded
-- [`docs/install_spot.md`](../../docs/install_spot.md) §"MCMAS — verified install"
+- [`docs/installation.md`](../installation.md) §"MCMAS — verified install"
   — verified install instructions
-- [`docs/mcmas_request_email.md`](../../docs/mcmas_request_email.md) —
+- [`docs/installation.md#mcmas-website-down-fallback`](../installation.md#mcmas-website-down-fallback) —
   retained as a backup access procedure
-- [`docs/theory.md`](../../docs/theory.md) §T3 — counterexample now
+- [`docs/theory.md`](../theory.md) §T3 — counterexample now
   mechanised on MCMAS
 - [`tests/integration/test_mcmas_offline.py`](../../tests/integration/test_mcmas_offline.py)
   — W1 acceptance test

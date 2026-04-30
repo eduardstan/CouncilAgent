@@ -22,7 +22,7 @@ Two W1 micro-patches extend W0 files before the main work begins:
 - `pytest` + `pytest-asyncio` (mode = `auto`)
 - SPOT Python bindings — optional `[verify]` extra; import-guarded; **not conda** — see installation docs below
 - No other new dependencies in the core path (no `lark`, no `antlr`, no `networkx`)
-- MCMAS and NuSMV: subprocess only, in `tests/integration/`; not pip-installable; documented in `docs/install_spot.md`
+- MCMAS and NuSMV: subprocess only, in `tests/integration/`; not pip-installable; documented in `docs/installation.md`
 
 ---
 
@@ -44,10 +44,10 @@ uv run mypy council/
 # Lint
 uv run ruff check council/ tests/
 
-# Install SPOT (system-level, not conda — documented in docs/install_spot.md)
+# Install SPOT (system-level, not conda — documented in docs/installation.md)
 # Ubuntu/Debian:  sudo apt install spot python3-spot
 # pip (unofficial wheel):  pip install spot   # if available for your platform
-# From source:  see docs/install_spot.md
+# From source:  see docs/installation.md
 ```
 
 ---
@@ -74,7 +74,7 @@ council/termination.py        MODIFIED — add LTLfMonitorTermination
 council/core.py               MODIFIED — honour pending intervention before next round
 
 docs/                         NEW directory (first W1 file creates it)
-├── install_spot.md           NEW — SPOT + MCMAS + NuSMV installation guide
+├── installation.md           NEW — SPOT + MCMAS + NuSMV installation guide
 └── theory.md                 NEW — T1, T2, T3 theorem statements + proof sketches
 
 tests/symbolic/
@@ -94,8 +94,8 @@ tests/symbolic/
 tests/integration/
 └── test_mcmas_offline.py     NEW — gated RUN_INTEGRATION=1 + MCMAS available
 
-specs/adrs/
-└── 0002-w1-to-events-extension.md   NEW — ADR for Patch A decision
+docs/adr/
+└── 0003-to-events-w1-extension.md   NEW — ADR for Patch A decision (extends ADR-0002 freeze)
 ```
 
 ---
@@ -195,7 +195,7 @@ Coverage targets (from `.claude/rules/testing.md`):
 
 ---
 
-## Patch A — `to_events()` extension (ADR 0002)
+## Patch A — `to_events()` extension (ADR-0003)
 
 The three derived boolean APs are computed inside `to_events()` with a single pass over `self.moves` up to each move's index:
 
@@ -251,7 +251,7 @@ All existing `CouncilContext(...)` call sites omit `tool_client` → default `No
 
 ## SPOT and MCMAS installation documentation
 
-`docs/install_spot.md` (created in PR4) will cover:
+`docs/installation.md` (created in PR4) will cover:
 
 - **SPOT** (required for `[verify]` extra):
   - Ubuntu 22.04+: `sudo apt install spot python3-spot`
@@ -278,14 +278,14 @@ All existing `CouncilContext(...)` call sites omit `tool_client` → default `No
 - [ ] End-to-end `run_council()` test with `LTLfMonitorTermination([EventuallyDecide()])` and a trace that lacks a Vote move returns `(True, "EventuallyDecide")` from `should_stop`, fires `ForceChallenge`, and the resulting `ProvenanceReceipt.monitor_verdicts` is non-empty
 - [ ] `ProvenanceReceipt.is_complete()` returns `False` when `monitor_verdicts` is empty and a monitor was active (extended check)
 - [ ] `docs/theory.md` exists with sections `## T1 — Soundness`, `## T2 — Compositionality`, `## T3 — No-go for consensus-only` each with a theorem statement, proof sketch, and citation
-- [ ] `docs/install_spot.md` exists with pip/apt/brew/source instructions
-- [ ] `specs/adrs/0002-w1-to-events-extension.md` exists documenting the Patch A decision
+- [ ] `docs/installation.md` exists with pip/apt/brew/source instructions
+- [ ] `docs/adr/0003-to-events-w1-extension.md` exists documenting the Patch A decision
 
 ## Open Questions
 
 None — all four decisions from the workstream-planner review have been resolved:
 
-1. **`to_events()` extension** → Option A (extend with derived booleans); captured in ADR 0002.
+1. **`to_events()` extension** → Option A (extend with derived booleans); captured in ADR-0003.
 2. **`tool_client` on `CouncilContext`** → add `tool_client: ToolClient | None = None`.
 3. **PR3 vs PR4 order** → ltl2mon-backend first (PR3), then spot-backend (PR4).
 4. **Deadline pressure** → none; follow the full plan.

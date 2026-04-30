@@ -1,8 +1,10 @@
-# ADR-0002: Extend `Trace.to_events()` with Derived Boolean APs for LTL_f
+# ADR-0003: Extend `Trace.to_events()` with Derived Boolean APs for LTL_f
 
 ## Status
 
-Accepted
+Accepted — extends [ADR-0002](0002-to-events-schema-freeze.md) (the W0
+freeze of the same schema). The W0 freeze applied during W0 development;
+W1 needs additional derived APs for faithful LTL_f property encoding.
 
 ## Date
 

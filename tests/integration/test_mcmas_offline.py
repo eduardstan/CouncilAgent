@@ -4,8 +4,8 @@
 Gated by RUN_INTEGRATION=1 AND `mcmas` available on PATH.
 
 STATUS (2026-04-30): PASSING against MCMAS 1.3.0 — see
-specs/adrs/0004-mcmas-resolved.md. Install instructions in
-docs/install_spot.md §"MCMAS — verified install". The ISPL emitter that
+docs/adr/0005-mcmas-resolved.md. Install instructions in
+docs/installation.md §"MCMAS — verified install". The ISPL emitter that
 drives this test is verified at the structural level by 30 tests in
 tests/symbolic/verify/test_ispl.py and end-to-end by this test against
 the real MCMAS binary.
