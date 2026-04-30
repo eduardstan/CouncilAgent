@@ -1,11 +1,18 @@
-# Email template — requesting MCMAS access
+# Email template — requesting MCMAS access (BACKUP procedure)
 
-> Save as `docs/mcmas_request_email.md`. Send to `mcmas@imperial.ac.uk` from
-> your institutional email address (`@unimib.it` for the user). The MCMAS
-> manual at <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf> §1
-> instructs prospective users to email the maintainers for a pre-compiled
-> binary appropriate to their platform; the source code is not openly
-> distributed.
+> **Status (2026-04-30):** A working download URL was found at
+> <https://sail.doc.ic.ac.uk/software/mcmas/> — see
+> [`docs/install_spot.md`](install_spot.md) §"MCMAS — verified install" for the
+> verified install steps. **You probably do NOT need to send this email.**
+>
+> Keep this template only as a backup for: (a) requesting a binary for a
+> non-Linux-x86_64 platform; (b) academic-courtesy citation if the
+> maintainers' usage-tracking form is preferred over the direct download.
+>
+> Send to `mcmas@imperial.ac.uk` from your institutional email address
+> (`@unimib.it` for the user). The MCMAS manual at
+> <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf> §1 documents the
+> email-request procedure for non-default platforms.
 
 ## Suggested subject
 
@@ -66,8 +73,9 @@
    ```bash
    RUN_INTEGRATION=1 uv run pytest tests/integration/test_mcmas_offline.py -v
    ```
-4. Update [`specs/adrs/0003-mcmas-access-deferred.md`](../specs/adrs/0003-mcmas-access-deferred.md):
-   - Change Status to `Superseded by future ADR / resolved`
-   - Note the version of the binary received and the date.
-5. Update [`docs/install_spot.md`](install_spot.md): replace the "MCMAS — DEFERRED"
-   section with verified install instructions.
+4. If you obtained a NEW MCMAS binary (e.g. for a different platform than the
+   linux64 build covered in ADR 0004), record the version + date in a follow-up
+   ADR that supplements ADR 0004. Do NOT rewrite ADR 0004 in place.
+5. If [`docs/install_spot.md`](install_spot.md) needs updating (e.g. macOS or
+   Windows install steps), add a new subsection rather than replacing the
+   existing linux64 instructions.

@@ -14,8 +14,10 @@ verification spine for P1 (AAMAS 2027):
 - **T3 — No-go for consensus-only aggregation** (original): a CTLK invariant
   exists which no purely consensus-counting aggregator satisfies; we exhibit a
   counterexample trace and demonstrate that the W0 last-propose heuristic
-  violates it. Full ablation against MajorityVote/BordaCount/CondorcetAggregation
-  via MCMAS is deferred to W2/P1.
+  violates it. The COUNTEREXAMPLE half is now MCMAS-mechanised
+  (`tests/integration/test_mcmas_t3_counterexample.py`, see ADR 0004); the
+  full ablation row vs. MajorityVote/BordaCount/CondorcetAggregation requires
+  the L2 aggregator and remains W2/P1 work.
 
 ## Tasks
 

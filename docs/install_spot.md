@@ -1,9 +1,10 @@
 # Installing SPOT, MCMAS, and NuSMV for the W1 verification spine
 
-> **Status (2026-04-29):** SPOT 2.15.1 is verified working from source on
-> Ubuntu 24.04 (this document was written and tested on that system). MCMAS
-> access is currently blocked — see [ADR 0003](../specs/adrs/0003-mcmas-access-deferred.md).
-> NuSMV is available but not via apt; download from <https://nusmv.fbk.eu>.
+> **Status (2026-04-30):** SPOT 2.15.1 verified working from source on
+> Ubuntu 24.04. MCMAS 1.3.0 verified working from `~/.local/bin/mcmas`
+> install — see [ADR 0004](../specs/adrs/0004-mcmas-resolved.md). NuSMV
+> is available at <https://nusmv.fbk.eu> as a CTL-only fallback when MCMAS
+> is unavailable.
 
 The `[verify]` extra of `councilagent` enables hardware-accelerated LTL_f
 monitoring via the **SPOT** library. SPOT is a C++17 toolkit with Python
@@ -247,7 +248,7 @@ regression coverage. MCMAS / NuSMV integration tests are gated by
 | `import spot` succeeds but `spot.version()` looks like `Dotcloud / Mongodb` | You did `pip install spot` and got the wrong PyPI package | `uv pip uninstall spot`; then follow Path A or Path B above |
 | `import buddy` fails | SPOT installed but BuDDy bindings missing | The source build installs both; `apt install python3-spot` should pull `python3-buddy` as a dependency |
 | `make: *** No rule to make target` during source build | C++20 compiler missing or too old | `sudo apt install build-essential` then `g++ --version` ≥ 10 |
-| `RUN_INTEGRATION=1` test skips silently | `mcmas` not on PATH | Either install MCMAS (see ADR 0003) or run the NuSMV-substitute path manually |
+| `RUN_INTEGRATION=1` test skips silently | `mcmas` not on PATH | Either install MCMAS (see ADR 0004) or run the NuSMV-substitute path manually |
 
 ## Why apt-repo (Path A) is generally preferred over source build (Path B)
 
