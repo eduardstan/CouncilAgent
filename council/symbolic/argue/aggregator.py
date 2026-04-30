@@ -33,6 +33,7 @@ from council.symbolic.argue.aggregator_base import Aggregator
 from council.symbolic.argue.builders import build_qbaf
 from council.symbolic.argue.semantics.base import GradualSemantics
 from council.symbolic.argue.semantics.df_quad import DFQuADSemantics
+from council.symbolic.argue.visualisers import to_dot, to_mermaid
 
 
 class LastProposeFallbackAggregator(Aggregator):
@@ -121,14 +122,20 @@ class ArgumentationAggregator(Aggregator):
         # Clamp defensively against floating-point drift.
         margin_clamped = max(0.0, min(1.0, margin))
 
+        # Pre-compute the demo-gold visualiser strings (PR7). The strengths
+        # overlay makes the Mermaid / DOT diagrams ready for live rendering
+        # in the Streamlit demo and the P2 paper figures.
+        strengths_dict = dict(strengths)
         return AggregationResult(
             answer=winner.claim_surface,
             confidence=BAFMarginConfidence(value=margin_clamped),
             method="ArgumentationAggregator",
             metadata={
                 "qbaf": baf,
-                "strengths": dict(strengths),
+                "strengths": strengths_dict,
                 "extension": extension,
+                "baf_mermaid": to_mermaid(baf, strengths=strengths_dict),
+                "baf_dot": to_dot(baf, strengths=strengths_dict),
                 "original_question": original_question,
             },
         )

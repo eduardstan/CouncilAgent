@@ -182,6 +182,65 @@ class TestArgumentationAggregatorHappyPath:
         # extension is a frozenset
         assert isinstance(result.metadata["extension"], frozenset)
 
+    def test_metadata_contains_baf_mermaid_string(self) -> None:
+        """PR7/Slice C: the headline aggregator populates metadata['baf_mermaid']
+        with a Mermaid flowchart string (the demo gold) computed from the
+        same QBAF + strengths used for ranking."""
+        agg = ArgumentationAggregator(semantics=DFQuADSemantics())
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="A", confidence=0.4))
+            .append(_propose("p2", surface="B", confidence=0.7))
+        )
+        result = asyncio.run(agg.aggregate(trace, original_question="Q?"))
+        assert "baf_mermaid" in result.metadata
+        mermaid = result.metadata["baf_mermaid"]
+        assert isinstance(mermaid, str)
+        assert "flowchart TD" in mermaid
+        # Both Propose-derived nodes should appear in the diagram
+        assert "p1" in mermaid
+        assert "p2" in mermaid
+
+    def test_metadata_baf_mermaid_includes_strengths(self) -> None:
+        """The aggregator's mermaid embeds strength values so the demo
+        renders winner/runner-up directly."""
+        agg = ArgumentationAggregator(semantics=DFQuADSemantics())
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="A", confidence=0.4))
+            .append(_propose("p2", surface="B", confidence=0.7))
+        )
+        result = asyncio.run(agg.aggregate(trace, original_question="Q?"))
+        # Strengths should appear in the Mermaid label (str=...)
+        assert "str=" in result.metadata["baf_mermaid"]
+
+    def test_metadata_contains_baf_dot_string(self) -> None:
+        agg = ArgumentationAggregator(semantics=DFQuADSemantics())
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="A", confidence=0.4))
+            .append(_propose("p2", surface="B", confidence=0.7))
+        )
+        result = asyncio.run(agg.aggregate(trace, original_question="Q?"))
+        assert "baf_dot" in result.metadata
+        dot = result.metadata["baf_dot"]
+        assert isinstance(dot, str)
+        assert "digraph QBAF" in dot
+        assert "p1" in dot
+        assert "p2" in dot
+
+    def test_fallback_path_omits_visualiser_strings(self) -> None:
+        """The fallback path (LastProposeFallbackAggregator on degenerate
+        BAF) does not produce a meaningful QBAF, so it omits baf_mermaid
+        and baf_dot from metadata."""
+        agg = ArgumentationAggregator(semantics=DFQuADSemantics())
+        result = asyncio.run(agg.aggregate(Trace(), original_question="Q?"))
+        # Fallback path
+        assert result.method == "LastProposeFallbackAggregator"
+        # No visualiser strings
+        assert "baf_mermaid" not in result.metadata
+        assert "baf_dot" not in result.metadata
+
     def test_method_name_is_argumentation_aggregator(self) -> None:
         agg = ArgumentationAggregator(semantics=DFQuADSemantics())
         trace = Trace().append(_propose("p1", surface="A", confidence=0.5))
