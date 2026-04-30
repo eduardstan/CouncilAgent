@@ -14,16 +14,29 @@ def test_public_api_re_exports() -> None:
         Aggregator,
         AggregatorConfidence,
         Argument,
+        ArgumentationAggregator,
         Attack,
         DFQuADSemantics,
         EulerBasedSemantics,
         GradualSemantics,
+        LastProposeFallbackAggregator,
         QESemantics,
         StrategicCoupledSemantics,
         Support,
         build_qbaf,
         evidence_backed_arg_ids,
     )
+
+    # Sanity: confirm the new aggregator exports are also the canonical objects.
+    from council.symbolic.argue.aggregator import (
+        ArgumentationAggregator as _AA,
+    )
+    from council.symbolic.argue.aggregator import (
+        LastProposeFallbackAggregator as _LP,
+    )
+
+    assert ArgumentationAggregator is _AA
+    assert LastProposeFallbackAggregator is _LP
 
     # Sanity: confirm the re-exports are the canonical objects.
     from council.symbolic.argue.aggregation_result import (
@@ -87,10 +100,12 @@ def test_explicit_all() -> None:
         "Aggregator",
         "AggregatorConfidence",
         "Argument",
+        "ArgumentationAggregator",
         "Attack",
         "DFQuADSemantics",
         "EulerBasedSemantics",
         "GradualSemantics",
+        "LastProposeFallbackAggregator",
         "QESemantics",
         "StrategicCoupledSemantics",
         "Support",

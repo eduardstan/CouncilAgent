@@ -30,6 +30,10 @@ from council.symbolic.argue.aggregation_result import (
     AggregationResult,
     AggregatorConfidence,
 )
+from council.symbolic.argue.aggregator import (
+    ArgumentationAggregator,
+    LastProposeFallbackAggregator,
+)
 from council.symbolic.argue.aggregator_base import Aggregator
 from council.symbolic.argue.baf import QBAF, Argument, Attack, Support
 from council.symbolic.argue.builders import build_qbaf
@@ -46,10 +50,12 @@ __all__ = [
     "Aggregator",
     "AggregatorConfidence",
     "Argument",
+    "ArgumentationAggregator",
     "Attack",
     "DFQuADSemantics",
     "EulerBasedSemantics",
     "GradualSemantics",
+    "LastProposeFallbackAggregator",
     "QESemantics",
     "StrategicCoupledSemantics",
     "Support",
