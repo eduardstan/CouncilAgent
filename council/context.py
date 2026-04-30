@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     # Patch D — TYPE_CHECKING-guarded import preserves §8 zero-framework rule
     # while letting mypy enforce the type. Same pattern as core.py uses for
     # symbolic.verify.monitor.Property.
+    from council.symbolic.argue.aggregator_base import Aggregator
     from council.symbolic.argue.baf import QBAF
 
 #: Synthetic moderator agent ID used for all moves injected by W1 Interventions.
@@ -157,6 +158,11 @@ class CouncilContext:
     anonymize: bool = True
     original_question: str = ""
     tool_client: ToolClient | None = None  # wired by TriggerVerifier intervention (W1)
+    #: L2 Aggregator used by run_council for answer + confidence assembly
+    #: (W2/PR6). None defaults to LastProposeFallbackAggregator at run time;
+    #: the type is TYPE_CHECKING-guarded to avoid the import cycle
+    #: argue/aggregator → context → argue/aggregator.
+    aggregator: Aggregator | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -11,13 +11,12 @@ import uuid
 from typing import TYPE_CHECKING
 
 from council.context import (
-    CopelandConfidence,
     CouncilContext,
     CouncilResponse,
     ProvenanceReceipt,
     VisibilityContext,
 )
-from council.dialect.moves import Abstain, Force, Move, Propose
+from council.dialect.moves import Abstain, Move
 from council.dialect.parsers import parse_move
 from council.dialect.surface import render_move
 from council.dialect.trace import Trace
@@ -29,6 +28,8 @@ from council.termination import (
 )
 
 if TYPE_CHECKING:
+    from council.symbolic.argue.aggregator_base import Aggregator
+    from council.symbolic.argue.baf import QBAF
     from council.symbolic.verify.monitor import Property
 
 
@@ -108,24 +109,23 @@ async def _generate_for_agent(
     return (move, result.input_tokens, result.output_tokens, result.cost_usd)
 
 
-def _aggregate_answer(trace: Trace) -> str:
-    """Simple last-propose aggregation; upgraded by L2 ArgumentationAggregator in W2."""
-    votes = trace.by_force(Force.VOTE)
-    if votes:
-        last = votes[-1]
-        if isinstance(last, Propose):  # type guard — Vote shares surface field
-            return last.claim.surface
-        from council.dialect.moves import Vote
-        if isinstance(last, Vote):
-            return last.option.surface
+def _resolve_aggregator(context: CouncilContext) -> Aggregator:
+    """Return context.aggregator, or instantiate LastProposeFallbackAggregator.
 
-    proposes = trace.by_force(Force.PROPOSE)
-    if proposes:
-        last_p = proposes[-1]
-        if isinstance(last_p, Propose):
-            return last_p.claim.surface
+    Lazy import keeps core.py free of unconditional L2 deps at import time
+    (matches the W0 pattern where core.py touches L2 only via composition).
+    """
+    if context.aggregator is not None:
+        return context.aggregator
+    from council.symbolic.argue.aggregator import LastProposeFallbackAggregator
+    return LastProposeFallbackAggregator()
 
-    return ""
+
+def _extract_qbaf(metadata: dict[str, object]) -> QBAF | None:
+    """Pull a QBAF instance from AggregationResult.metadata if present."""
+    from council.symbolic.argue.baf import QBAF as _QBAF
+    qbaf = metadata.get("qbaf")
+    return qbaf if isinstance(qbaf, _QBAF) else None
 
 
 async def run_council(
@@ -191,17 +191,26 @@ async def run_council(
 
         round_index += 1
 
-    answer = _aggregate_answer(trace)
+    aggregator = _resolve_aggregator(context)
+    agg_result = await aggregator.aggregate(
+        trace, original_question=context.original_question
+    )
+    qbaf = _extract_qbaf(agg_result.metadata)
+
     receipt = ProvenanceReceipt(
         trace=trace,
+        qbaf=qbaf,
         cost_ledger=tuple(cost_ledger),
         monitor_verdicts=tuple(monitor_verdicts),
         total_input_tokens=total_input,
         total_output_tokens=total_output,
     )
-    confidence = CopelandConfidence(value=0.5)
 
-    return CouncilResponse(answer=answer, confidence=confidence, receipt=receipt)
+    return CouncilResponse(
+        answer=agg_result.answer,
+        confidence=agg_result.confidence,
+        receipt=receipt,
+    )
 
 
 def _find_violated_property(
