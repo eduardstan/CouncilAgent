@@ -86,7 +86,17 @@ the vote count.
 - For the broader "must beat MoA on at least one Pareto axis" requirement,
   see Constitution §6 in [`.claude/CLAUDE.md`](../.claude/CLAUDE.md).
 
-**Mechanisation.** `tests/symbolic/verify/test_theorems.py::test_t3_no_go_*`
+**Mechanisation.**
+- `tests/symbolic/verify/test_theorems.py::test_t3_no_go_*` — pytest-level
+  counterexample on the W1 `ProvenanceCompleteness` monitor
+  (`Verdict.BOTTOM`).
+- `tests/integration/test_mcmas_t3_counterexample.py` — gated by
+  `RUN_INTEGRATION=1` + `mcmas` on PATH; sends the same 3-agent
+  unanimous-vote-without-evidence trace to MCMAS and asserts the model
+  checker reports `AG(is_vote -> has_evidence) = FALSE` in the model.
+  This **mechanically confirms** the W1 monitor's BOTTOM verdict at the
+  external-tool level. See [`specs/adrs/0004-mcmas-resolved.md`](../specs/adrs/0004-mcmas-resolved.md).
 
-The full ablation against `MajorityVote`, `BordaCount`, and
-`CondorcetAggregation` via small-instance MCMAS is deferred to W2/P1.
+The full ablation row against `MajorityVote`, `BordaCount`, and
+`CondorcetAggregation` requires the L2 aggregator (W2) and remains W2/P1
+work; the counterexample half of T3 is now mechanised.

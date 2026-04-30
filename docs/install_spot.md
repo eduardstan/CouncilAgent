@@ -1,9 +1,10 @@
 # Installing SPOT, MCMAS, and NuSMV for the W1 verification spine
 
-> **Status (2026-04-29):** SPOT 2.15.1 is verified working from source on
-> Ubuntu 24.04 (this document was written and tested on that system). MCMAS
-> access is currently blocked — see [ADR 0003](../specs/adrs/0003-mcmas-access-deferred.md).
-> NuSMV is available but not via apt; download from <https://nusmv.fbk.eu>.
+> **Status (2026-04-30):** SPOT 2.15.1 verified working from source on
+> Ubuntu 24.04. MCMAS 1.3.0 verified working from `~/.local/bin/mcmas`
+> install — see [ADR 0004](../specs/adrs/0004-mcmas-resolved.md). NuSMV
+> is available at <https://nusmv.fbk.eu> as a CTL-only fallback when MCMAS
+> is unavailable.
 
 The `[verify]` extra of `councilagent` enables hardware-accelerated LTL_f
 monitoring via the **SPOT** library. SPOT is a C++17 toolkit with Python
@@ -113,44 +114,96 @@ uv run pytest tests/symbolic/verify/test_spot_backend.py -v
 Tests previously skipped (`@skipif(not is_spot_available())`) should now run
 and pass.
 
-## MCMAS — email-gated access (see ADR 0003)
+## MCMAS — verified install (see ADR 0004)
 
-MCMAS is **not openly distributed**. Per the user manual at
-<https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf> §1, prospective users
-must email the maintainers at <mcmas@imperial.ac.uk> to request a
-pre-compiled binary appropriate for their platform.
+MCMAS 1.3.0 (Linux x86_64, 2018-07-10) is hosted at
+<https://sail.doc.ic.ac.uk/software/mcmas/>. The download is gated by an
+HTTP `Referer` check; below are two install paths.
 
-A ready-to-send email template is at
-[`docs/mcmas_request_email.md`](mcmas_request_email.md). Send it from your
-institutional email address.
+> **Status (2026-04-30):** Verified installed and working today on Ubuntu
+> 24.04. Both the W1 acceptance test and the T3 counterexample test
+> (gated by `RUN_INTEGRATION=1`) pass. See
+> [ADR 0004](../specs/adrs/0004-mcmas-resolved.md) for the full decision
+> record (this supersedes the earlier ADR 0003 "deferred" framing).
 
-See [`specs/adrs/0003-mcmas-access-deferred.md`](../specs/adrs/0003-mcmas-access-deferred.md)
-for the full decision record explaining why this access pattern blocks the
-W1 end-to-end acceptance check, why we ship anyway, and what changes when
-the binary arrives.
+### Path A: form-tracked download (recommended for academic citation)
 
-**Effect on the project until MCMAS arrives:**
-- `tests/integration/test_mcmas_offline.py` is gated by `RUN_INTEGRATION=1`
-  AND `mcmas` on PATH. Without MCMAS, it skips. The test code is correct.
-- The W1 acceptance criterion in §7 of [`COUNCILAGENT_NS_MASTER_PLAN.md`](../COUNCILAGENT_NS_MASTER_PLAN.md)
-  is **partially satisfied**: ISPL generation is unit-tested, but end-to-end
-  MCMAS verification is pending.
-- T3 in [`docs/theory.md`](theory.md) is currently a counterexample
-  demonstration; full mechanised CTLK verification waits for MCMAS access.
-- For the CTL fragment, **NuSMV is a usable interim substitute** (see next section).
+The maintainers' download form at
+<https://www.doc.ic.ac.uk/download/?package=mcmas-linux64> records your
+institution + email so the project can cite usage in their research output.
+Recommended for your first install, because it credits the maintainers.
 
-When the MCMAS binary arrives:
+1. Open the URL in a browser.
+2. Fill in name, institution, email; submit.
+3. Save the resulting `mcmas-linux64-download.tgz`.
+4. Continue with the extract / install steps in Path B.
+
+### Path B: direct URL (suitable for automated CI / scripted install)
+
+The form's `downloadurl` hidden field exposes the same tarball at a stable
+direct URL. The Apache server requires a `Referer` header pointing at the
+project page; without it the server returns "No web referer given".
 
 ```bash
-# 1. Place on PATH and verify
-mcmas -version
+# 1. Download the linux64 tarball (827 KB; Last-Modified 2018-07-10)
+mkdir -p /tmp/mcmas-install && cd /tmp/mcmas-install
+curl -L -H "Referer: https://sail.doc.ic.ac.uk/software/mcmas/" \
+  -o mcmas-linux64.tgz \
+  "https://sail.doc.ic.ac.uk/software/mcmas/mcmas-linux64-download.tgz"
 
-# 2. Re-run the W1 acceptance test
-RUN_INTEGRATION=1 uv run pytest tests/integration/test_mcmas_offline.py
+# 2. Extract — the tarball contains a single ELF executable named
+# `mcmas-linux64-1.3.0` (no surrounding directory)
+tar xzf mcmas-linux64.tgz
+
+# 3. Install to ~/.local/bin/mcmas (no sudo required)
+mkdir -p ~/.local/bin
+cp mcmas-linux64-1.3.0 ~/.local/bin/mcmas
+chmod +x ~/.local/bin/mcmas
+
+# 4. Ensure ~/.local/bin is on PATH (most distros do this for login shells;
+# add to ~/.bashrc / ~/.zshrc if needed)
+export PATH="$HOME/.local/bin:$PATH"
+
+# 5. Verify
+mcmas    # prints the v1.3.0 banner and usage
+which mcmas   # → /home/<you>/.local/bin/mcmas
 ```
 
-Then update ADR 0003 (Status: Superseded) and replace this section with the
-verified install instructions you used.
+### Run the W1 acceptance + T3 counterexample tests
+
+```bash
+RUN_INTEGRATION=1 uv run pytest tests/integration/test_mcmas_offline.py \
+                                tests/integration/test_mcmas_t3_counterexample.py -v
+```
+
+Expected output: 3 passed (`EventuallyDecide` and `RefutationReachable`
+verified TRUE on the W1 4-agent / 4-round trace; `ProvenanceCompleteness`
+verified FALSE on the T3 counterexample trace; sanity-check verified TRUE
+on a non-empty-evidence variant).
+
+### Manual (highly recommended)
+
+The MCMAS v1.2.2 user manual at
+<https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf> documents the ISPL
+syntax (§3.2), the reserved keywords (§3.2.3), and the BNF grammar (§3.2.4).
+Our ISPL emitter (`council/symbolic/verify/ispl.py`) is grounded in this
+manual; future emitter changes should cite the relevant manual section in
+their commit message.
+
+### Eclipse plug-in (optional, not used by this project)
+
+The page also offers `org.mcmas.ui_1.2.2.jar` for the MCMAS Eclipse GUI.
+We do not use it — the headless `mcmas` CLI is sufficient for batch
+verification and integrates with our pytest suite.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `mcmas: command not found` | `~/.local/bin` not on PATH | `export PATH="$HOME/.local/bin:$PATH"` and add to your shell rc |
+| `mcmas: error while loading shared libraries: ...` | Missing 32-bit / arch-mismatch on a non-x86_64 host | Use a different MCMAS variant (linux32 or build from source via `mcmas@imperial.ac.uk`) |
+| Download returns the form HTML instead of a tarball | No `Referer` header | Use the curl command above with the `-H Referer:` flag |
+| `RUN_INTEGRATION=1` test still skips | `which mcmas` returns nothing | Check the install steps; the test gate is `mcmas` on PATH AND `RUN_INTEGRATION=1` |
 
 ## NuSMV — interim CTL path (optional)
 
@@ -195,7 +248,7 @@ regression coverage. MCMAS / NuSMV integration tests are gated by
 | `import spot` succeeds but `spot.version()` looks like `Dotcloud / Mongodb` | You did `pip install spot` and got the wrong PyPI package | `uv pip uninstall spot`; then follow Path A or Path B above |
 | `import buddy` fails | SPOT installed but BuDDy bindings missing | The source build installs both; `apt install python3-spot` should pull `python3-buddy` as a dependency |
 | `make: *** No rule to make target` during source build | C++20 compiler missing or too old | `sudo apt install build-essential` then `g++ --version` ≥ 10 |
-| `RUN_INTEGRATION=1` test skips silently | `mcmas` not on PATH | Either install MCMAS (see ADR 0003) or run the NuSMV-substitute path manually |
+| `RUN_INTEGRATION=1` test skips silently | `mcmas` not on PATH | Either install MCMAS (see ADR 0004) or run the NuSMV-substitute path manually |
 
 ## Why apt-repo (Path A) is generally preferred over source build (Path B)
 

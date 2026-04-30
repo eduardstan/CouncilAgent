@@ -135,8 +135,16 @@ def _encode_evaluations(events: tuple[dict[str, object], ...]) -> str:
         for ap in sorted(ap_keys):
             true_positions = [i for i, e in enumerate(events) if bool(e.get(ap, False))]
             if not true_positions:
-                # AP never true → predicate is always false; emit a clause that never matches.
-                lines.append(f"  {ap} if Environment.position=-1;")
+                # AP never true in this trace → emit a syntactic contradiction
+                # that MCMAS accepts as well-typed. We avoid both
+                #   `position=-1` (rejected: `out of bound`)
+                # and
+                #   `position=0 and position!=0` (rejected: `unexpected NOT`,
+                #   MCMAS does not accept `!=` in evaluations).
+                # `position=0 and position=1` is a pure-`=` contradiction
+                # (two distinct in-range constants), provably false at every
+                # reachable state and parseable in every MCMAS dialect we know.
+                lines.append(f"  {ap} if Environment.position=0 and Environment.position=1;")
                 continue
             condition = " or ".join(f"Environment.position={i}" for i in true_positions)
             lines.append(f"  {ap} if {condition};")
@@ -175,8 +183,15 @@ def _encode_formulae(formulae: Iterable[LTLf]) -> str:
 
 
 def _sanitise(name: str) -> str:
-    """Make `name` a safe ISPL identifier (alphanumeric + underscore)."""
-    return "".join(c if c.isalnum() or c == "_" else "_" for c in name) or "agent"
+    """Make `name` a safe ISPL identifier and prefix with `agent_`.
+
+    The prefix prevents collisions with MCMAS's CTL keywords (notably the
+    single-letter path quantifiers `A` and `E` and the temporal operators
+    `F`, `G`, `X`, `U`). The MCMAS parser otherwise rejects an agent
+    declaration like `Agent A` with `unexpected A, expecting identifier`.
+    """
+    cleaned = "".join(c if c.isalnum() or c == "_" else "_" for c in name)
+    return f"agent_{cleaned}" if cleaned else "agent"
 
 
 def _encode_council_agent(agent_id: str) -> str:

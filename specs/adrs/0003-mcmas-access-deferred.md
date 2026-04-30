@@ -2,7 +2,23 @@
 
 ## Status
 
-Accepted (interim) — to be revisited when MCMAS access is obtained.
+**Superseded by [ADR 0004](0004-mcmas-resolved.md) (2026-04-30).**
+
+The access situation that motivated this ADR was resolved a day later: the
+maintainers' page at <https://sail.doc.ic.ac.uk/software/mcmas/> came back
+online and exposes a working download for MCMAS 1.3.0 (Linux x86_64).
+ADR 0004 records the verified install procedure, the two ISPL-emitter bugs
+that real MCMAS surfaced (and their fixes), and the W1 / T3 verification
+results.
+
+The body of this ADR is preserved as the historical record of the deferral
+decision and the diagnostic dead-ends we tried (URL probing, email-request
+template, NuSMV substitute). None of that work was wasted —
+`docs/mcmas_request_email.md` is retained as a backup procedure for users
+who cannot reach the URL or who need a non-Linux-x86_64 binary.
+
+*Original status (2026-04-29): Accepted (interim) — to be revisited when
+MCMAS access is obtained.*
 
 ## Date
 
