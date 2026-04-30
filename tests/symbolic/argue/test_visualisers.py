@@ -8,8 +8,10 @@ exactly.
 
 from __future__ import annotations
 
+import pytest
+
 from council.symbolic.argue.baf import QBAF, Argument, Attack, Support
-from council.symbolic.argue.visualisers import to_mermaid
+from council.symbolic.argue.visualisers import to_dot, to_mermaid
 
 
 def _walton_krabbe_qbaf() -> QBAF:
@@ -248,3 +250,200 @@ class TestMermaidWaltonKrabbeGolden:
         ]
         for line in expected_lines:
             assert line in out, f"Expected Mermaid line missing: {line}"
+
+
+# ---------------------------------------------------------------------------
+# to_dot — empty / minimal
+# ---------------------------------------------------------------------------
+
+
+class TestDotMinimal:
+    def test_empty_qbaf_returns_minimal_digraph(self) -> None:
+        baf = QBAF(arguments=(), attacks=(), supports=())
+        out = to_dot(baf)
+        assert "digraph QBAF" in out
+        assert out.endswith("}")
+
+    def test_returns_string(self) -> None:
+        out = to_dot(_walton_krabbe_qbaf())
+        assert isinstance(out, str)
+
+
+# ---------------------------------------------------------------------------
+# to_dot — syntax + edge styling
+# ---------------------------------------------------------------------------
+
+
+class TestDotSyntax:
+    def test_digraph_header_and_rankdir(self) -> None:
+        out = to_dot(_walton_krabbe_qbaf())
+        assert "digraph QBAF {" in out
+        # rankdir TD = top-down (matches Mermaid's flowchart TD)
+        assert 'rankdir="TD"' in out
+
+    def test_each_argument_emitted(self) -> None:
+        out = to_dot(_walton_krabbe_qbaf())
+        for arg_id in ("p1", "p2", "c1", "co1"):
+            # Node line format: arg_id [label="..."];
+            assert f"{arg_id} [" in out
+
+    def test_node_label_includes_claim_surface(self) -> None:
+        out = to_dot(_walton_krabbe_qbaf())
+        assert "X is true" in out
+        assert "X is false" in out
+
+    def test_attack_edge_red_solid(self) -> None:
+        out = to_dot(_walton_krabbe_qbaf())
+        # Attack edge: c1 -> p1 [label="attack 0.70", color="red"];
+        assert "c1 -> p1" in out
+        assert 'color="red"' in out
+
+    def test_support_edge_green_dashed(self) -> None:
+        out = to_dot(_walton_krabbe_qbaf())
+        # Support edge: co1 -> p2 [label="support 1.00", color="darkgreen", style="dashed"];
+        assert "co1 -> p2" in out
+        assert 'color="darkgreen"' in out
+        assert 'style="dashed"' in out
+
+    def test_attack_weight_in_label(self) -> None:
+        baf = QBAF(
+            arguments=(
+                Argument(arg_id="a", claim_surface="A", base_score=0.5),
+                Argument(arg_id="b", claim_surface="B", base_score=0.5),
+            ),
+            attacks=(Attack(source="a", target="b", weight=0.42),),
+            supports=(),
+        )
+        out = to_dot(baf)
+        assert "0.42" in out
+        assert "attack" in out
+
+
+# ---------------------------------------------------------------------------
+# to_dot — withdrawn styling
+# ---------------------------------------------------------------------------
+
+
+class TestDotWithdrawn:
+    def test_withdrawn_argument_styled_dashed_grey(self) -> None:
+        a = Argument(
+            arg_id="a1",
+            claim_surface="r",
+            base_score=0.5,
+            withdrawn=True,
+        )
+        baf = QBAF(arguments=(a,), attacks=(), supports=())
+        out = to_dot(baf)
+        assert 'style="dashed"' in out
+        assert 'color="grey"' in out
+
+
+# ---------------------------------------------------------------------------
+# to_dot — strengths overlay
+# ---------------------------------------------------------------------------
+
+
+class TestDotStrengthsOverlay:
+    def test_strengths_appear_in_node_labels(self) -> None:
+        baf = _walton_krabbe_qbaf()
+        strengths = {"p1": 0.51, "p2": 1.0, "c1": 0.7, "co1": 1.0}
+        out = to_dot(baf, strengths=strengths)
+        assert "0.51" in out
+
+    def test_strengths_none_omits_str_prefix(self) -> None:
+        out = to_dot(_walton_krabbe_qbaf(), strengths=None)
+        assert "str=" not in out
+
+
+# ---------------------------------------------------------------------------
+# to_dot — escaping
+# ---------------------------------------------------------------------------
+
+
+class TestDotEscaping:
+    def test_quotes_in_claim_surface_escaped(self) -> None:
+        a = Argument(
+            arg_id="a",
+            claim_surface='He said "hi"',
+            base_score=0.5,
+        )
+        baf = QBAF(arguments=(a,), attacks=(), supports=())
+        out = to_dot(baf)
+        # DOT escapes " as \" inside quoted strings
+        assert '\\"' in out
+
+    def test_backslash_in_claim_surface_escaped(self) -> None:
+        a = Argument(
+            arg_id="a",
+            claim_surface="path\\to\\file",
+            base_score=0.5,
+        )
+        baf = QBAF(arguments=(a,), attacks=(), supports=())
+        out = to_dot(baf)
+        # Backslashes doubled
+        assert "\\\\" in out
+
+
+# ---------------------------------------------------------------------------
+# to_dot — determinism
+# ---------------------------------------------------------------------------
+
+
+class TestDotDeterminism:
+    def test_byte_equal_over_50_invocations(self) -> None:
+        baf = _walton_krabbe_qbaf()
+        first = to_dot(baf)
+        for _ in range(50):
+            assert to_dot(baf) == first
+
+
+# ---------------------------------------------------------------------------
+# to_dot — pydot round-trip (gated on pydot availability)
+# ---------------------------------------------------------------------------
+
+
+class TestDotPydotRoundTrip:
+    """Optional: if pydot is installed, the emitted DOT string parses back
+    to a graph with the same node/edge structure. This proves the output
+    is well-formed DOT, not just a string that happens to contain the
+    expected substrings."""
+
+    def test_pydot_parses_walton_krabbe(self) -> None:
+        pydot = pytest.importorskip("pydot")
+        baf = _walton_krabbe_qbaf()
+        out = to_dot(baf)
+        graphs = pydot.graph_from_dot_data(out)
+        assert graphs is not None
+        assert len(graphs) >= 1
+        graph = graphs[0]
+        # 4 arguments → 4 nodes
+        node_names = {n.get_name() for n in graph.get_nodes() if n.get_name() != "node"}
+        # node_names may include trailing "" sentinel; just check expected ids subset
+        for arg_id in ("p1", "p2", "c1", "co1"):
+            assert arg_id in node_names
+        # 1 attack + 1 support → 2 edges
+        assert len(graph.get_edges()) == 2
+
+
+# ---------------------------------------------------------------------------
+# to_dot — Walton-Krabbe golden
+# ---------------------------------------------------------------------------
+
+
+class TestDotWaltonKrabbeGolden:
+    def test_walton_krabbe_canonical_dot(self) -> None:
+        baf = _walton_krabbe_qbaf()
+        out = to_dot(baf)
+        # Pinned structural lines
+        expected_substrings = [
+            "digraph QBAF {",
+            'rankdir="TD"',
+            'p1 [label="X is true\\nbase=1.00"]',
+            'p2 [label="X is false\\nbase=0.60"]',
+            'c1 [label="counterexample C\\nbase=0.70"]',
+            'co1 [label="(concession to p2)\\nbase=1.00"]',
+            'c1 -> p1 [label="attack 0.70"',
+            'co1 -> p2 [label="support 1.00"',
+        ]
+        for s in expected_substrings:
+            assert s in out, f"Expected DOT substring missing: {s!r}"
