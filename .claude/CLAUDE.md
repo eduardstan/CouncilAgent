@@ -76,13 +76,14 @@ Evaluation                (evaluation/)     metrics, baselines (MoA, Self-MoA, C
 
 ## Publication Track
 
-Five papers + a flagship — see [`COUNCILAGENT_NS_MASTER_PLAN.md`](../COUNCILAGENT_NS_MASTER_PLAN.md) §9.
-- **P1** Verified Deliberation — AAMAS 2027 main.
-- **P2** Strategic Gradual Argumentation — AAAI 2027.
-- **P3** Quality-Diversity over Deliberation Behaviour — **NeurIPS 2026 main** (load-bearing).
-- **P4** Co-evolutionary Red/Blue Teaming — AAMAS 2027 companion.
-- **P5** Inductive Discovery of Multi-Agent Dialogue Protocols — KR 2026.
-- **F** A Neuro-Symbolic Multi-Agent LLM Council Framework — JAIR / AIJ flagship (Apr 2027 → v1.0.0).
+Five papers + a flagship — see [`COUNCILAGENT_NS_MASTER_PLAN.md`](../COUNCILAGENT_NS_MASTER_PLAN.md) §1.2 and §9.
+**Realigned 2026-04-30** to CORE A\* / A conferences and Q1 AI journals only:
+- **P1** Verified Deliberation — **AAMAS 2027** main (CORE A; ~Oct 2026); backup **AAAI 2027** (A\*; ~Aug 2026).
+- **P2** Strategic Gradual Argumentation — **AAAI 2027** (A\*; ~Aug 2026); backup **IJCAI 2027** (A\*; ~Jan 2027).
+- **P3** Quality-Diversity over Deliberation Behaviour — **ICLR 2027** (A\*; ~Sep 2026, **load-bearing deadline**); backup **NeurIPS 2027** main (A\*; ~May 2027).
+- **P4** Co-evolutionary Red/Blue Teaming — **IJCAI 2027** (A\*; ~Jan 2027); backup **AAMAS 2027** companion (A; ~Oct 2026).
+- **P5** Inductive Discovery of Multi-Agent Dialogue Protocols — **KR 2027** (A; deadline TBD ~Feb–Apr 2027); backup **IJCAI 2027** (A\*; ~Jan 2027).
+- **F** A Neuro-Symbolic Multi-Agent LLM Council Framework — **JAIR** (Q1; SJR Q1 AI; rolling, target Apr 2027 → v1.0.0); backup **AIJ** (Q1).
 
 ## Git Workflow
 

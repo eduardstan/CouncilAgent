@@ -87,16 +87,29 @@ This sentence is the **canonical headline**. Use it verbatim in the README, the 
 
 ### 1.2 The five papers + flagship (the publication contract)
 
-| ID | Title | Layers | Venue (target) | Backup | Deadline |
-|----|-------|--------|----------------|--------|----------|
-| **P1** | Verified Deliberation: Model-Checking Multi-LLM Councils with Epistemic-Strategic Logic | L0+L1 | **AAMAS 2027** main | NeSy 2026, KR 2026 | abstract Oct 2026 |
-| **P2** | Strategic Gradual Argumentation for Multi-LLM Aggregation | L0+L2(+L3) | **AAAI 2027** | NeurIPS 2026 D&B, IJCAI 2027 | Aug 2026 |
-| **P3** | Quality-Diversity over Deliberation Behaviour | L5 over L0+L1+L2+L3 | **NeurIPS 2026** main | ICLR 2027, GECCO 2027 | May 2026 |
-| **P4** | Co-evolutionary Red/Blue Teaming of Deliberating Councils | L5 + red-team archive + L1 | **AAMAS 2027** companion | NeurIPS 2026 main, ICLR 2027 | Oct 2026 |
-| **P5** | Inductive Discovery of Multi-Agent Dialogue Protocols | L6 (+ L0+L1) | **KR 2026** | NeSy 2026, ILP 2026/2027 | May/Jun 2026 |
-| **F**  | CouncilAgent‑NS: A Neuro-Symbolic Multi-Agent LLM Council Framework | All layers | **JAIR / AIJ** flagship | NeSy 2027 keynote/tutorial | rolling, target Apr 2027 |
+> **Realigned 2026-04-30.** The original plan (frozen in `COUNCIL_NS_PLAN.md`
+> §1.4) targeted some venues whose 2026 deadlines have already passed
+> (NeurIPS 2026 main: May 2/6 2026 abstract+paper; KR 2026: Feb 13 2026 paper;
+> IJCAI 2026: Jan 19 2026 paper; AAMAS 2026: Oct 8 2025 paper; AAAI 2026:
+> Aug 2025 paper). The publication track now targets exclusively **CORE A\* / A**
+> conferences with future deadlines and **Q1 AI** journals for the flagship.
+> Workshop backups (NeSy 2026, ILP 2026/2027) and B-tier conferences
+> (GECCO 2027) are dropped from the formal contract.
 
-The plan's **load-bearing publication risk**: P3 must hit NeurIPS 2026 main (May 2026) — that requires L0+L1+L2+L3 functional and L5 evaluated end-to-end by April 2026. §10 maps that risk to weekly milestones.
+| ID | Title | Layers | Primary venue | Tier | Deadline | Backup venue | Tier | Backup deadline |
+|----|-------|--------|---------------|------|----------|--------------|------|-----------------|
+| **P1** | Verified Deliberation: Model-Checking Multi-LLM Councils with Epistemic-Strategic Logic | L0+L1 | **AAMAS 2027** main | A | ~Oct 2026 (extrapolated from AAMAS 2026: Oct 8 2025) | **AAAI 2027** | **A\*** | ~Aug 1, 2026 (TBD; AAAI itself says TBD, getpaperpilot tracker says Aug 1 2026) |
+| **P2** | Strategic Gradual Argumentation for Multi-LLM Aggregation | L0+L2(+L3) | **AAAI 2027** | **A\*** | ~Aug 1, 2026 (TBD) | **IJCAI 2027** | **A\*** | ~Jan 2027 (extrapolated from IJCAI 2026: Jan 19 2026) |
+| **P3** | Quality-Diversity over Deliberation Behaviour | L5 over L0+L1+L2+L3 | **ICLR 2027** | **A\*** | ~Sep 2026 (extrapolated from ICLR 2026: Sep 24 2025) | **NeurIPS 2027** main | **A\*** | ~May 2027 |
+| **P4** | Co-evolutionary Red/Blue Teaming of Deliberating Councils | L5 + red-team archive + L1 | **IJCAI 2027** | **A\*** | ~Jan 2027 | **AAMAS 2027** companion | A | ~Oct 2026 |
+| **P5** | Inductive Discovery of Multi-Agent Dialogue Protocols | L6 (+ L0+L1) | **KR 2027** | A | TBD ~Feb–Apr 2027 (host selection by 2026-06-15) | **IJCAI 2027** | **A\*** | ~Jan 2027 |
+| **F**  | CouncilAgent‑NS: A Neuro-Symbolic Multi-Agent LLM Council Framework | All layers | **JAIR** | **Q1** (IF ~5.94, SJR Q1 AI; open access) | rolling, target Apr 2027 | **AIJ** (Elsevier) | **Q1** (IF ~6.09, SJR Q1 AI) | rolling |
+
+The plan's **load-bearing publication risks** (post-realignment):
+
+1. **P3 must hit ICLR 2027 (~Sep 2026)** — requires L0+L1+L2+L3 functional and L5 evaluated end-to-end by **end of M3 (Sep 2026)**. ICLR 2027 is now the earliest external gate. §10 maps that risk to weekly milestones.
+2. **P1+P2 share an AAAI 2027 deadline (~Aug 1, 2026)** one week after **M2 (end Jul 2026)**. Either both papers hit AAAI with one week of buffer, or P1 slips to its AAMAS 2027 backup (~Oct 2026) and P2 stays on AAAI alone.
+3. **P5's KR 2027 deadline is unknown** (the host hasn't been selected; the KR Steering Committee picks 2026-06-15). If KR 2027 dates slip past **M5 (end Feb 2027)**, P5 redirects to **IJCAI 2027** (~Jan 2027) — but that's a 4-week-earlier deadline than M5, so it would require M5 to advance.
 
 ### 1.3 The "wow" outcome
 
@@ -894,8 +907,8 @@ For each paper: layers, theorems, headline empirics, deadline, backup venue, and
 - **Theorems:** T1 (LTL3 soundness, cited), **T2 (compositionality, original)**, **T3 (no-go for consensus-only, original)**.
 - **Headline empirics.** Tier-A: Putnam-AXIOM Variation (drop ≤ 5pp vs Original; baseline 15–25pp), ZebraLogic-hard (LLM + clingo hybrid). Per-property pass rate as the headline metric. Compose with the L0 substrate paper.
 - **Sections.** Introduction (model-checking deliberation); Background (LTL₍f₎, MCMAS, multi-agent debate); Substrate (typed Move algebra, ProtocolAutomaton); Verification spine (LTL3 monitors, ISPL emitter, interventions); Theorems (T1–T3); Empirics (property pass rates, intervention triggering rates); Related work (ArgLLMs, MArgE, AgentSpec, Cemri-MAST); Limitations (MCMAS ≤ 6 agents, monitor scaling).
-- **Target.** AAMAS 2027 main (Oct 2026 abstract). **Backup:** NeSy 2026 main (Jun 2026), KR 2026 (May/Jun 2026).
-- **Gating milestone:** **M2 (end of Jul 2026).** L0+L1 done; 4-agent / 4-round MCMAS verification working.
+- **Target.** **AAMAS 2027** main (CORE A; ~Oct 2026 paper deadline, extrapolated from AAMAS 2026's Oct 8 2025 main-track deadline). **Backup:** **AAAI 2027** (CORE A\*; ~Aug 1 2026 deadline per getpaperpilot tracker — AAAI itself says TBD). Workshop venues from the original plan (NeSy 2026, KR 2026) are dropped: NeSy is not A\*/A, and KR 2026's deadline (Feb 13 2026 paper) is past.
+- **Gating milestone:** **M2 (end of Jul 2026).** L0+L1 done; 4-agent / 4-round MCMAS verification working. Note: M2 ends ~1 week before the AAAI 2027 backup deadline.
 - **PDF citations.** All papers in `papers/4 --- verification and model-checking/` (Pnueli, Clarke-Emerson, Alur-ATL, Bauer LTL3, De Giacomo LTL_f, MCMAS, MCMAS-SLK, MCMAS-BR, SPOT, Kambhampati LLM-Modulo, AgentSpec); Cemri MAST from `papers/1`; argumentation primer from `papers/3`.
 
 ### P2 — Strategic Gradual Argumentation for Multi-LLM Aggregation
@@ -904,8 +917,8 @@ For each paper: layers, theorems, headline empirics, deadline, backup venue, and
 - **Theorems:** **T4 (Borda recovery)**, **T5 (manipulability bound)**, **T6 (rationality postulates)**, **T7 (strategic gradual semantics)**.
 - **Headline empirics.** HLE + LiveCodeBench. Head-to-head against ArgLLMs, MArgE. Headline metrics: ECE (calibration), flip-cost (T5), winner-strength margin.
 - **Sections.** Argumentation aggregation as a vote replacement; BAF/QBAF construction from typed traces (no LLM extraction); Strategic gradual semantics (DF-QuAD ⊕ ATL); Theorems T4–T7; Empirics; Related work.
-- **Target.** AAAI 2027 (Aug 2026). **Backup:** NeurIPS 2026 D&B (Jun 2026), IJCAI 2027 (Jan 2027).
-- **Gating milestone:** **M2.** L0+L2(+L3 partial) done; one Tier-B benchmark with bootstrap CI.
+- **Target.** **AAAI 2027** (CORE A\*; ~Aug 1 2026 deadline per getpaperpilot tracker, AAAI itself says TBD). **Backup:** **IJCAI 2027** (CORE A\*; ~Jan 2027 deadline, extrapolated from IJCAI 2026's Jan 19 2026 deadline). NeurIPS 2026 D&B is dropped — its 2026 deadline is past.
+- **Gating milestone:** **M2.** L0+L2(+L3 partial) done; one Tier-B benchmark with bootstrap CI. Note: M2 ends ~1 week before AAAI 2027 deadline; IJCAI 2027 backup gives ~5 months of slack if AAAI rejects or M2 slips.
 - **PDF citations.** All papers in `papers/3 --- argumentation/` (Dung, Cayrol-Lagasquie-Schiex, Baroni-Rago-Toni, DF-QuAD, Potyka, Amgoud-Ben-Naim, ArgLLMs, MArgE, Sanayei "Can LLMs Judge Debates?", Gorur argument-mining); calibration primer from `papers/2`; debate primer from `papers/1`.
 
 ### P3 — Quality-Diversity over Deliberation Behaviour
@@ -914,8 +927,8 @@ For each paper: layers, theorems, headline empirics, deadline, backup venue, and
 - **Theorems:** **T8 (QD coverage)**, **T9 (Pareto domination)**, **T10 (robustness)**.
 - **Headline empirics.** **ARC-AGI-2 verified submission** (target: match 54% at < $10/task **or** push 54% → 60% at < $40/task), FrontierMath Tier 4 (≥ 1 newly-solved problem), LiveCodeBench (head-to-head TRINITY 86.2%), SWE-bench Pro.
 - **Sections.** QD over typed councils; verifier-derived behavioural descriptors (the novelty); CMA-MAE on pyribs + LLM-mutation emitters (GEPA + AlphaEvolve); Theorems T8–T10; Empirics (ARC Prize verified-leaderboard stamp); Pareto-Pareto comparisons; Related work.
-- **Target.** **NeurIPS 2026 main** (May 2026 abstract / paper). **Backup:** ICLR 2027 (Sep/Oct 2026), GECCO 2027 (Jan/Feb 2027).
-- **Gating milestone:** **M3 (end of Sep 2026).** L5 end-to-end on ARC-AGI-2 small-N; QD archive non-trivial.
+- **Target.** **ICLR 2027** (CORE A\*; ~Sep 2026 paper deadline, extrapolated from ICLR 2026's Sep 24 2025 deadline). **Backup:** **NeurIPS 2027** main (CORE A\*; ~May 2027 deadline). NeurIPS 2026 main is dropped — its 2026 abstract+paper window (May 2/6 2026) is past. GECCO 2027 dropped (CORE B, below the A\*/A threshold).
+- **Gating milestone:** **M3 (end of Sep 2026).** L5 end-to-end on ARC-AGI-2 small-N; QD archive non-trivial. **Tightest deadline of the plan**: ICLR 2027 closes essentially at M3; the abstract / first results need to be ready *before* M3 ends. Slippage forces P3 to NeurIPS 2027 — pushing publication 6 months.
 - **PDF citations.** All papers in `papers/5 --- evolutionary and quality-diversity/` (MAP-Elites, CMA-ME, CMA-MAE, pyribs, FunSearch, AlphaEvolve, GEPA, QDAIF, Rainbow Teaming, MADRID, ADAS, AFlow, AgentSquare, MaAS, SwarmAgentic, QD-helpful-Qian); TRINITY/Conductor/MoA/Self-MoA from `papers/1`.
 
 ### P4 — Co-evolutionary Red/Blue Teaming of Deliberating Councils
@@ -924,8 +937,8 @@ For each paper: layers, theorems, headline empirics, deadline, backup venue, and
 - **Theorems:** **T11 (co-evolutionary convergence)**, refined T10.
 - **Headline empirics.** Putnam-AXIOM Variation, GAIA, custom MAST-derived adversarial-injection benchmark.
 - **Sections.** Co-evolution as red/blue teaming; Symmetric Pareto archives for hosts and parasites; Verification-aware host fitness; Empirics; Related work (Rainbow Teaming, MADRID).
-- **Target.** AAMAS 2027 companion. **Backup:** ICLR 2027, NeurIPS 2026 main as a robustness paper.
-- **Gating milestone:** **M4 (end of Dec 2026).** Co-evolutionary loop working at scale.
+- **Target.** **IJCAI 2027** (CORE A\*; ~Jan 2027 deadline). **Backup:** **AAMAS 2027** companion (CORE A; ~Oct 2026 paper deadline). The original primary-AAMAS / backup-ICLR mapping is reversed: AAMAS's Oct 2026 deadline lands *before* M4 (end Dec 2026) finishes, making IJCAI 2027's Jan 2027 deadline the natural primary post-M4. NeurIPS 2026 main backup is dropped — its 2026 deadline is past.
+- **Gating milestone:** **M4 (end of Dec 2026).** Co-evolutionary loop working at scale. IJCAI 2027 deadline lands ~3 weeks after M4. AAMAS 2027 companion backup requires M4 to advance ~2 months earlier.
 - **PDF citations.** Rainbow Teaming, MADRID, MAST taxonomy (Cemri).
 
 ### P5 — Inductive Discovery of Multi-Agent Dialogue Protocols
@@ -934,8 +947,8 @@ For each paper: layers, theorems, headline empirics, deadline, backup venue, and
 - **Theorems:** **T12 (soundness of ILP-induced protocols)**, **T13 (generalisation characterisation)**.
 - **Headline empirics.** Show that protocol rules learned on one benchmark transfer (within domain) to another, with verified guarantees. Compare against PSALM (Zhu 2024) and LASP (Chen 2024) — single-agent ILP-from-traces precedents.
 - **Sections.** ILP from labelled traces; ASP integrity constraints (CLMASP-replication); Re-verification by MCMAS; Theorems; Empirics.
-- **Target.** **KR 2026** (May/Jun 2026). **Backup:** NeSy 2026 main (Jun 2026), ILP 2026/2027.
-- **Gating milestone:** **M5 (end of Feb 2027).** L6 working end-to-end with at least one transferable learned protocol.
+- **Target.** **KR 2027** (CORE A; deadline TBD ~Feb–Apr 2027 — KR Steering Committee selects host by 2026-06-15, then deadline announced). **Backup:** **IJCAI 2027** (CORE A\*; ~Jan 2027 deadline). KR 2026 (Feb 13 2026 deadline) is past; NeSy and ILP workshops dropped per the A\*/A-only contract.
+- **Gating milestone:** **M5 (end of Feb 2027).** L6 working end-to-end with at least one transferable learned protocol. KR 2027 deadline is a moving target until the host is chosen — track <https://kr.org> after 2026-06-15 for the announcement.
 - **PDF citations.** All papers in `papers/6 --- nesy and ilp/` (Manhaeve DeepProbLog, Cropper Popper, Law ILASP, Lin CLMASP, Olausson LINC, Pan Logic-LM, Yang LLM-LP, Ye SatLM); plus Bauer 2011 (re-verification).
 
 ### F — CouncilAgent‑NS: A Neuro-Symbolic Multi-Agent LLM Council Framework
@@ -944,7 +957,7 @@ For each paper: layers, theorems, headline empirics, deadline, backup venue, and
 - **Theorems.** T1–T13 in a unified framework.
 - **Headline empirics.** Full Tier-A + Tier-B sweep with bootstrap CIs; ARC Prize verified-leaderboard stamp; Pareto-Pareto frontier vs TRINITY/Conductor/MoA.
 - **Sections.** Long-form (~25 pages); software-artefact paper character.
-- **Target.** **JAIR / AIJ** flagship (rolling submission, target Apr 2027). **Companion:** NeSy 2027 keynote/tutorial.
+- **Target.** **JAIR** (Q1 in AI; SJR Q1; IF ~5.94; open access). **Backup:** **AIJ** (Elsevier *Artificial Intelligence*; Q1 in AI; SJR Q1; IF ~6.09). Both rolling-submission, target Apr 2027 = M6 = v1.0.0 release. NeSy 2027 keynote/tutorial dropped from the formal contract — workshop venue, not Q1.
 - **Gating milestone:** **M6 (end of Apr 2027).** Everything done; demo video; ARC Prize stamp; 1.0 release tagged.
 
 ---
@@ -956,21 +969,21 @@ Dates assume an **April 28, 2026 start**. Workstreams W0–W7 schedule onto week
 ### Month 1 (May 2026): W0 substrate
 
 - **W1 (Apr 28 – May 4):** Bootstrap is **already done** (the migration commit on `council-ns` performed it). Verify: `legacy/v0.1.0` tag exists, `council-ns` branch is current, `legacy_council/` holds the v0.1.0 seed, `pyproject.toml` declares `name = "councilagent"` at version `0.2.0.dev0`, `.claude/CLAUDE.md` is the 12-principle Constitution, the seven NS agents and twelve NS skills are present. Reserve `councilagent` on PyPI (defensive).
-- **W2:** L0 — `dialect/moves.py` + `dialect/trace.py` + `DeliberationAutomaton`; JSON-schema parser; surface-rendering. Acceptance: 3-agent peer-review trace round-trips through `Move` ADT and back to NL prompts losslessly. **First arXiv preprint:** "Typed Speech-Act Substrate for LLM Councils" (~5 pages, NeSy 2026 short-paper material).
+- **W2:** L0 — `dialect/moves.py` + `dialect/trace.py` + `DeliberationAutomaton`; JSON-schema parser; surface-rendering. Acceptance: 3-agent peer-review trace round-trips through `Move` ADT and back to NL prompts losslessly. **First arXiv preprint:** "Typed Speech-Act Substrate for LLM Councils" (~5 pages) — substrate-paper material that strengthens P1's positioning at AAMAS 2027.
 - **W3:** Port `models.py` and `topology.py`; new `tools.py` skeleton (MCP + Z3 stubs).
 - **W4:** Port `core.py` to `run_council(trace)` operating on Moves; port normalizer, ranker, termination. Acceptance: GSM8K end-to-end on Move-typed traces with parity to legacy ± 1pp.
 
-**M1 (end May 2026):** typed substrate complete; GSM8K parity demonstrated; NeSy 2026 short-paper submitted.
+**M1 (end May 2026):** typed substrate complete; GSM8K parity demonstrated; v0.2.0 tagged. *(Note: the original plan called for a NeSy 2026 short-paper submission at M1; per the 2026-04-30 publication-track realignment NeSy is no longer a target venue. The W2 arXiv preprint replaces this checkpoint as a citable substrate snapshot for P1.)*
 
 ### Months 2–3 (Jun–Jul 2026): W1 + W2
 
-- **W5–6:** L1 LTL₍f₎ AST + parser; SPOT bindings; LTL3 monitor. Initial property library (8 named properties). Each property has positive + negative test traces. **NeSy 2026 main paper P1 submitted (Jun deadline).**
+- **W5–6:** L1 LTL₍f₎ AST + parser; SPOT bindings; LTL3 monitor. Initial property library (8 named properties). Each property has positive + negative test traces. *(KR 2027 hosting bid window closes 2026-06-15 — track <https://kr.org> for the P5 deadline announcement.)*
 - **W7:** L1 ISPL encoder for MCMAS; offline check on 4-agent / 4-round example; T1, T2, T3 proofs drafted in `docs/theory.md`.
 - **W8:** L2 `BAF/QBAF` data structures + DF-QuAD; `build_qbaf(trace)`. Acceptance: deterministic output for the canonical Walton-Krabbe example.
-- **W9–10:** L2 `ArgumentationAggregator`; T4–T7 drafted. Mermaid + GraphViz visualisers. **KR 2026 P5 submission (May/Jun)** — risk: L6 not started yet; if not feasible, defer to NeSy 2026 second window or ILP 2026.
+- **W9–10:** L2 `ArgumentationAggregator`; T4–T7 drafted. Mermaid + GraphViz visualisers. *(KR 2026's deadline (Feb 13 2026) is past; P5 now targets KR 2027, deadline TBD ~Feb–Apr 2027.)*
 - **W11–12:** Empirical run #1: P1 demo on Putnam-AXIOM Variation + ZebraLogic-hard (matches gating for AAMAS 2027); P2 demo on HLE.
 
-**M2 (end Jul 2026):** P1 + P2 ready to submit; NeurIPS 2026 D&B P2 deadline (Jun) — possibly delayed to AAAI 2027.
+**M2 (end Jul 2026):** P1 + P2 ready to submit. **AAAI 2027 deadline ~Aug 1 2026 (~1 week after M2).** P1 → AAAI 2027 backup OR AAMAS 2027 main (Oct 2026); P2 → AAAI 2027 primary.
 
 ### Months 4–5 (Aug–Sep 2026): W3 + W4 + W5 (start)
 
@@ -978,9 +991,9 @@ Dates assume an **April 28, 2026 start**. Workstreams W0–W7 schedule onto week
 - **W14:** L4 — In-context distillation cascade; multi-tier router; budget tracker. **AAAI 2027 P2 submission (Aug)**.
 - **W15–17:** L5 — Genome dataclass; pyribs CMA-MAE wrapper; LLM-mutation emitters (GEPA + AlphaEvolve). Initial QD run on GSM8K.
 - **W18:** L5 — Behavioural descriptors derived from L1+L2 outputs. Empirical run #2: ARC-AGI-2 small-N.
-- **W19–20:** L5 — full evaluate-loop wired; first verified ARC Prize 2026 submission. **ICLR 2027 P3 submission (Sep/Oct).** **AAMAS 2027 abstracts P1+P4 (Oct).**
+- **W19–20:** L5 — full evaluate-loop wired; first verified ARC Prize 2026 submission. **ICLR 2027 P3 submission (~Sep 2026 — load-bearing deadline).** **AAMAS 2027 P1 paper (~Oct 2026).**
 
-**M3 (end Sep 2026):** L5 working end-to-end; first verified ARC-AGI-2 submission; P3 draft ready.
+**M3 (end Sep 2026):** L5 working end-to-end; first verified ARC-AGI-2 submission; P3 draft ready. M3 ends essentially at the ICLR 2027 deadline — tightest external gate of the plan.
 
 ### Months 6–8 (Oct–Dec 2026): co-evolution + scaling
 
@@ -989,30 +1002,33 @@ Dates assume an **April 28, 2026 start**. Workstreams W0–W7 schedule onto week
 - **W25–26:** P4 draft on co-evolution.
 - **W27–28:** P3 / P4 camera-ready; benchmark ledger frozen for the next round.
 
-**M4 (end Dec 2026):** P3 + P4 in submission.
+**M4 (end Dec 2026):** P3 + P4 in submission. **P4 → IJCAI 2027 (~Jan 2027 deadline, ~3 weeks after M4)** is the natural primary; the AAMAS 2027 companion backup (~Oct 2026) requires M4 to advance two months.
 
 ### Months 9–10 (Jan–Feb 2027): W6 + flagship integration
 
-- **W29–30:** L6 — ASP integrity-constraint enforcement; clingo wrapper. CLMASP-replication demonstrated.
+- **W29–30:** L6 — ASP integrity-constraint enforcement; clingo wrapper. CLMASP-replication demonstrated. **IJCAI 2027 P4 paper (~Jan 2027)** and **IJCAI 2027 P2 backup submission (~Jan 2027) if AAAI 2027 rejected**.
 - **W31–32:** L6 — Popper integration; ILP from labelled traces; rule-to-automaton; MCMAS verification of induced rules.
-- **W33–36:** P5 draft. Flagship F draft begins. **IJCAI 2027 P2 backup submission (Jan).**
+- **W33–36:** P5 draft. Flagship F draft begins. **KR 2027 P5 submission** (deadline TBD; expected Feb–Apr 2027).
 
 **M5 (end Feb 2027):** P5 ready; F first draft.
 
 ### Months 11–12 (Mar–Apr 2027): flagship + viral demos
 
 - **W37–40:** F flagship paper; complete benchmark ledger; all 13 theorems written up; reproductions in `experiments/reproduce/` for every paper.
-- **W41–44:** Streamlit demo; live LTL₍f₎ monitor; Mermaid BAF visualiser; one-click ARC-AGI-2 runner; demo video. **GECCO 2027 P3 retry (Feb)** if needed.
+- **W41–44:** Streamlit demo; live LTL₍f₎ monitor; Mermaid BAF visualiser; one-click ARC-AGI-2 runner; demo video. If P3 was rejected at ICLR 2027, **NeurIPS 2027 main (~May 2027)** is the next A\* slot.
 
-**M6 (end Apr 2027):** F submitted to JAIR. Streamlit demo live. Repo at v1.0.0.
+**M6 (end Apr 2027):** F submitted to JAIR (with AIJ as Q1 backup). Streamlit demo live. Repo at v1.0.0.
 
-### Workshop checkpoints (insurance policy)
+### Workshop checkpoints (informal arXiv preprints, not formal targets)
 
-- **NeSy 2026 workshop (Jun 2026)** — substrate paper.
-- **AAAI 2027 agent workshops (Aug 2026)**.
-- **ICLR 2027 NeSy workshop (Sep 2026)**.
-- **GECCO 2027 LLM track (Feb 2027)**.
-- **ICML 2027 NeSy workshop (Apr 2027)**.
+The publication contract (§1.2) is A\*/A conferences and Q1 journals only. The
+following workshops are *not* formal submission targets but remain useful as
+arXiv-preprint windows for early visibility — submit if a chunk is publishable
+and the deadline aligns, but do not hold a milestone for them:
+
+- **AAAI 2027 agent workshops** (~Aug 2026).
+- **ICLR 2027 workshops** (~Sep 2026).
+- **ICML 2027 workshops** (~Apr 2027).
 
 Every layer should appear in a workshop *before* its main-venue submission. Workshops give reviewer feedback and citable preprints without rejection sting.
 
@@ -1249,19 +1265,19 @@ For every risk: trigger, mitigation, fallback paper plan if the risk materialise
 |---|---|---|---|
 | **MAD-doesn't-beat-CoT-SC reviewer pushback** (Smit 2024, "Stop overvaluing MAD" 2025, "Single-Agent vs MAS" 2025) | Reviewer reads our table, finds matched-token CoT-SC matches NS | Constitution §6.1 makes matched-token-budget tables mandatory in every paper. Headline claim is *not* "more agents"; it is "verified + argumentative + evolved councils with calibrated confidence". | Pivot P3 to *cost-Pareto* framing only; P1 (verification) and P2 (argumentation) carry the headline. |
 | **MCMAS scales to ~6 agents only** | We try 10-agent verification, fail | Bounded-recall MCMAS-BR (`papers/4 .../Balardinelli et al. 2020`); rely on LTL₍f₎ runtime monitors (LTL3, SPOT) for online enforcement at arbitrary scale; frame model-checking as *offline protocol validation*. | P1 frames the contribution explicitly as "online runtime monitoring + offline small-instance verification". |
-| **ArgLLMs / MArgE / DCI scoop the argumentation aggregator** | New paper appears with QBAF over multiple LLMs | Differentiator stays: ours operates over a *typed-protocol-enforced* graph (no LLM extraction step); fuses with the verification layer (T7 strategic gradual semantics). Move fast on P2 — submit AAAI 2027 even if NeurIPS 2026 D&B slips. | P2 pivots to "strategic gradual semantics" as the headline (T7 alone), with the full BAF-over-traces framing as a system contribution. |
+| **ArgLLMs / MArgE / DCI scoop the argumentation aggregator** | New paper appears with QBAF over multiple LLMs | Differentiator stays: ours operates over a *typed-protocol-enforced* graph (no LLM extraction step); fuses with the verification layer (T7 strategic gradual semantics). Move fast on P2 — submit AAAI 2027 (~Aug 1 2026) even if M2 is tight; IJCAI 2027 (~Jan 2027) is the A\* backup. | P2 pivots to "strategic gradual semantics" as the headline (T7 alone), with the full BAF-over-traces framing as a system contribution. |
 | **TRINITY / Conductor / MaAS / AFlow / AgentSquare / SwarmAgentic / EvoFlow scoop QD** | New paper appears with verifier-derived descriptors | Our descriptors come from L1+L2 — *verifier-derived*, not LLM-tagged. EvoFlow is single-objective workflow-search; SwarmAgentic is PSO; MaAS is continuous-distribution without an archive; AgentSquare is greedy modular search. None evolves *typed protocols* with verification descriptors. | P3 pivots to "co-evolutionary red/blue with verifier descriptors" (P3+P4 merge); flagship F absorbs the QD framing. |
 | **Benchmark contamination crisis** (Berkeley RDI 2026; OpenAI Dec 2025) | New audit shows our Tier-A includes contamination | Prioritise SWE-bench Pro, FrontierMath Tier 4, ARC-AGI-2 semi-private, MathArena live competitions, Putnam-AXIOM Variation. Publish our eval harness; pre-empt the dominant 2026 critique. | F flagship sells the eval harness as a contribution (a "trust-by-design" benchmark suite). |
-| **Typed-protocol refactor takes longer than expected** | M1 slips; W0 substrate not done by end-May | Publish L0 (typed-protocol substrate) as a NeSy 2026 short paper or a SoftwareX tooling paper, decoupling engineering risk from publication path. The DOCX's H1–H10 hypothesis tests still run on the legacy substrate (student track). | M1+1 month: ship NeSy 2026 short paper; defer P1 to KR 2026 second window. |
+| **Typed-protocol refactor takes longer than expected** | M1 slips; W0 substrate not done by end-May | Publish L0 (typed-protocol substrate) as an arXiv preprint and a SoftwareX (Q2) tooling paper, decoupling engineering risk from publication path. The DOCX's H1–H10 hypothesis tests still run on the legacy substrate (student track). | M1+1 month: post arXiv preprint immediately; defer P1's AAAI 2027 backup (Aug 2026), keep AAMAS 2027 main (Oct 2026) as primary. |
 | **QD genome space too large; CMA-MAE doesn't converge** | M3 hypervolume stalls before generation 100 | Stage the search: (i) first illuminate over `(monitors × aggregator)` only with a fixed pool of 3 agents; (ii) expand to topology and protocol; (iii) expand to members. Each stage delivers a citable result. | P3 pivots to "staged QD" — each stage is a contribution. |
 | **An LTL₍f₎ property turns out non-monotonic / unsatisfiable for all practical councils** | M2 testing finds property X never ⊤'s | Bauer 2011 shows 44% of LTL formulae are non-monotonic; not every property is monitorable. Document negative results; they are themselves publishable (modality-sabotage framing). | P1 includes a "limits of LTL₍f₎ monitoring for council deliberation" section; the negative-result table is itself a contribution. |
-| **Paper-deadline overload** | Multiple deadlines in the same month and W4–W5 not done | Workshop checkpoints (§10) ensure every layer has a citable preprint before the main-venue submission. | Demote affected papers to workshops; preserve the main-venue submission for the next cycle. |
+| **Paper-deadline overload** | Multiple deadlines in the same month and W4–W5 not done | arXiv-preprint checkpoints (§10 workshops box) ensure every layer has a citable artefact before the main-venue submission. The A\*/A-only contract (§1.2) means a "missed" deadline always has a next-cycle A\*/A backup (e.g. P1 AAMAS 2027 → P1 AAMAS 2028; P3 ICLR 2027 → P3 NeurIPS 2027). | Slip the paper to its A\*/A backup venue; preserve the main contribution intact. |
 
 ### 14.2 Engineering risks
 
 | Risk | Trigger | Mitigation |
 |---|---|---|
-| **Branch-and-rebuild costs ~3 months before any new empirics** | Stakeholders impatient | The ablation matrix shows that even L0 alone (typed Trace, no symbolic) is publishable as a substrate paper. Plan for incremental wins — NeSy 2026 short paper at end of M1 is the first deliverable. |
+| **Branch-and-rebuild costs ~3 months before any new empirics** | Stakeholders impatient | The ablation matrix shows that even L0 alone (typed Trace, no symbolic) is publishable as a substrate paper. Plan for incremental wins — the arXiv preprint at end of M1 is the first deliverable; the v0.2.0 release tag is the second. |
 | **SPOT / MCMAS / clingo / Popper are C/C++ binaries** | Install friction stops adoption | Ship them as optional extras (`[verify]`, `[ilp]`); test the no-extras path always works. Fall back to pure-Python `ltl2mon` for LTL3 monitors when SPOT unavailable. |
 | **LiteLLM provider quirks** (some models don't honour `response_format`) | Run on a new provider, JSON breaks | Layered structured-output enforcer: JSON-schema-in-prompt → `response_format` → grammar-constrained-decoding (Outlines) → argument-mining fallback. Tier marked in ProvenanceReceipt. |
 | **Cost: full QD on ARC-AGI-2 + FrontierMath + LiveCodeBench could exceed $20K** | Budget exhausted mid-M3 | Use cascade (L4) aggressively; open-source-tier proposers + frontier-tier verifier keeps ~80% on the cheap tier. Apply for ARC Prize compute credits / Anthropic / OpenAI research grants in W2. |
@@ -1271,7 +1287,7 @@ For every risk: trigger, mitigation, fallback paper plan if the risk materialise
 
 | Risk | Trigger | Mitigation |
 |---|---|---|
-| **NeSy is a niche audience** | Stars don't materialise | "Model-check your LLM debate" is broadly intelligible. ARC Prize 2026 verified-leaderboard stamp is a credibility multiplier across communities. The Streamlit demo is the viral lever. Submit a Hacker News post on M6 day. |
+| **A\*/A audience attention** | Stars don't materialise even at AAAI/IJCAI/ICLR | "Model-check your LLM debate" is broadly intelligible. ARC Prize 2026 verified-leaderboard stamp is a credibility multiplier across communities. The Streamlit demo is the viral lever. Submit a Hacker News post on M6 day. |
 | **Engineers don't want to write LTL₍f₎** | New users don't extend | Default property library (10 named properties) covers 95% of use-cases. Power-users have a clean DSL when they need it. |
 | **QD layer is research-grade, users want production stability** | Users adopt for prod, hit instability | Two entry points: `CouncilAgent.from_yaml("configs/verified-fast.yaml")` is *production-ready* (single hand-tuned genome from the QD archive); QD evolution is opt-in via `experiments/evolve.py`. |
 
@@ -1572,10 +1588,10 @@ print(resp.receipt.baf_mermaid)  # → live rendered argument graph
 
 - P1 — Verified Deliberation (AAMAS 2027) — [PDF, BibTeX]
 - P2 — Strategic Gradual Argumentation (AAAI 2027) — …
-- P3 — Quality-Diversity over Deliberation Behaviour (NeurIPS 2026) — …
-- P4 — Co-evolutionary Red/Blue Teaming (AAMAS 2027) — …
-- P5 — Inductive Discovery of Multi-Agent Dialogue Protocols (KR 2026) — …
-- F — A Neuro-Symbolic Multi-Agent LLM Council Framework (JAIR/AIJ) — …
+- P3 — Quality-Diversity over Deliberation Behaviour (ICLR 2027) — …
+- P4 — Co-evolutionary Red/Blue Teaming (IJCAI 2027) — …
+- P5 — Inductive Discovery of Multi-Agent Dialogue Protocols (KR 2027) — …
+- F — A Neuro-Symbolic Multi-Agent LLM Council Framework (JAIR / AIJ) — …
 
 ## Citation
 
@@ -1847,8 +1863,8 @@ For each of P1–P5, F:
 
 | Milestone | Tag | Workstreams done | Headline artefact |
 |---|---|---|---|
-| **M1** (end May 2026) | `v0.2.0` | W0 | typed substrate, GSM8K parity, NeSy 2026 short paper |
-| **M2** (end Jul 2026) | `v0.3.0` | W0, W1, W2 | LTL₍f₎ monitors live; argumentation aggregator working; P1 + P2 ready to submit |
+| **M1** (end May 2026) | `v0.2.0` | W0 | typed substrate, GSM8K parity, arXiv substrate-paper preprint |
+| **M2** (end Jul 2026) | `v0.3.0` | W0, W1, W2 | LTL₍f₎ monitors live; argumentation aggregator working; P1 + P2 ready to submit (AAAI 2027 deadline ~Aug 1 2026) |
 | **M3** (end Sep 2026) | `v0.4.0` | + W3, W4, W5 (start) | first verified ARC-AGI-2 submission; legacy_council/ deleted; P3 draft ready |
 | **M4** (end Dec 2026) | `v0.5.0` | + W5 (full) | co-evolutionary loop scaling; P3 + P4 in submission |
 | **M5** (end Feb 2027) | `v0.6.0` | + W6 | learned protocols re-verified by MCMAS; P5 in submission |
