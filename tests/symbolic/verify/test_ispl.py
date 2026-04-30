@@ -68,9 +68,11 @@ def test_ispl_contains_required_keywords(trace4: Trace) -> None:
 
 
 def test_ispl_has_one_council_agent_per_id(trace4: Trace) -> None:
+    """Each agent_id appears in an `Agent agent_<id>` declaration (prefixed
+    to avoid CTL-keyword collisions; see _sanitise)."""
     out = trace_to_ispl(trace4, [parse("F(is_vote)")], agent_ids=("A", "B", "C", "D"))
     for aid in ("A", "B", "C", "D"):
-        assert f"Agent {aid}" in out
+        assert f"Agent agent_{aid}" in out
 
 
 def test_ispl_environment_position_range_matches_trace_length(trace4: Trace) -> None:
@@ -134,11 +136,12 @@ def test_ispl_empty_trace_produces_valid_skeleton() -> None:
 
 
 def test_ispl_sanitises_agent_ids() -> None:
-    """Agent IDs with special characters are rewritten to valid ISPL identifiers."""
+    """Agent IDs with special characters are rewritten to valid ISPL identifiers
+    and prefixed with `agent_` to avoid CTL-keyword collisions."""
     t = Trace()
     out = trace_to_ispl(t, [], agent_ids=("openrouter/google/gemma:free",))
-    # Slashes and colons replaced with underscores
-    assert "Agent openrouter_google_gemma_free" in out
+    # Slashes and colons replaced with underscores; prefix added
+    assert "Agent agent_openrouter_google_gemma_free" in out
 
 
 def test_ispl_named_property_eventually_decide(trace4: Trace) -> None:
@@ -160,3 +163,55 @@ def test_ispl_named_property_refutation_reachable(trace4: Trace) -> None:
 def test_ispl_returns_string_with_trailing_newline(trace4: Trace) -> None:
     out = trace_to_ispl(trace4, [parse("F(is_vote)")], agent_ids=())
     assert out.endswith("\n")
+
+
+# ---------------------------------------------------------------------------
+# Reserved-word avoidance — MCMAS rejects single-letter agent names that
+# collide with CTL path quantifiers (A, E) and other reserved tokens.
+# ---------------------------------------------------------------------------
+
+def test_ispl_agent_names_are_prefixed_to_avoid_ctl_keywords() -> None:
+    """Single-letter agent IDs like 'A' collide with the CTL universal path
+    quantifier in MCMAS's grammar. Every council agent declaration must use
+    a non-trivial prefix to avoid the parse error
+    'unexpected A, expecting identifier'.
+    """
+    out = trace_to_ispl(Trace(), [], agent_ids=("A", "B", "C", "D"))
+    # No bare `Agent A` (or B/C/D) declaration should appear
+    for letter in ("A", "B", "C", "D"):
+        assert f"Agent {letter}\n" not in out, (
+            f"agent declaration 'Agent {letter}' is ambiguous with CTL keyword"
+        )
+    # Prefixed forms ARE present
+    for letter in ("A", "B", "C", "D"):
+        assert f"agent_{letter}" in out
+
+
+def test_ispl_groups_block_uses_prefixed_agent_names() -> None:
+    """Groups section must reference the prefixed names so MCMAS doesn't
+    misparse the comma-separated list as path quantifiers."""
+    out = trace_to_ispl(Trace(), [], agent_ids=("A", "B"))
+    # The Groups block must NOT contain a bare 'A' or 'B' between commas/braces
+    assert "council = { agent_A, agent_B };" in out
+
+
+def test_ispl_never_true_aps_use_in_range_contradiction(trace4: Trace) -> None:
+    """Never-true APs need a syntactically-valid always-false ISPL expression.
+
+    Constraints grounded in the MCMAS v1.2.2 user manual (§3.2 ISPL syntax):
+      - Out-of-range values are rejected: `position=-1` triggers
+        "-1 is out of bound in Environment.position=-1".
+      - The grammar has `=` for equality but NO `!=` operator: `position!=0`
+        triggers "unexpected NOT" (MCMAS lexes `!=` as `!` then `=`).
+      - Boolean negation `!` is for whole sub-expressions (manual page 10
+        shows `!K(...)` and `!c1paid`); `and` / `or` / `()` join Boolean
+        expressions over `=` checks.
+
+    Cleanest manual-grounded contradiction: TWO positive `=` checks against
+    distinct in-range constants, joined by `and`. They cannot simultaneously
+    hold (`position` has a single value at each state).
+    """
+    out = trace_to_ispl(trace4, [parse("F(is_vote)")], agent_ids=("A", "B", "C", "D"))
+    assert "Environment.position=-1" not in out
+    assert "!=" not in out
+    assert "is_abstain if Environment.position=0 and Environment.position=1;" in out
