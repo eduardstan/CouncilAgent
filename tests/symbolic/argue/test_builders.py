@@ -20,7 +20,15 @@ from __future__ import annotations
 import pytest
 
 from council.calibrate import Calibrator, IdentityCalibrator
-from council.dialect.moves import Claim, ClaimDomain, Propose, Vote
+from council.dialect.moves import (
+    Challenge,
+    Claim,
+    ClaimDomain,
+    Concede,
+    Propose,
+    Retract,
+    Vote,
+)
 from council.dialect.trace import Trace
 from council.symbolic.argue.baf import QBAF
 from council.symbolic.argue.builders import build_qbaf
@@ -277,3 +285,254 @@ class TestDeterminismCore:
         baf1 = build_qbaf(trace)
         for _ in range(10):
             assert build_qbaf(trace) == baf1
+
+
+# ---------------------------------------------------------------------------
+# Slice C — Challenge → Argument + Attack edge (ADR-0009)
+# ---------------------------------------------------------------------------
+
+
+def _challenge(
+    move_id: str,
+    *,
+    agent_id: str = "B",
+    round_index: int = 1,
+    target: str = "p1",
+    reason_surface: str = "bad reasoning",
+    confidence: float = 0.5,
+) -> Challenge:
+    return Challenge(
+        move_id=move_id,
+        agent_id=agent_id,
+        round_index=round_index,
+        target=target,
+        reason=Claim(surface=reason_surface),
+        confidence=confidence,
+    )
+
+
+def _concede(
+    move_id: str,
+    *,
+    agent_id: str = "C",
+    round_index: int = 1,
+    target: str = "p1",
+) -> Concede:
+    return Concede(
+        move_id=move_id,
+        agent_id=agent_id,
+        round_index=round_index,
+        target=target,
+    )
+
+
+def _retract(
+    move_id: str,
+    *,
+    agent_id: str = "A",
+    round_index: int = 1,
+    own: str = "p1",
+) -> Retract:
+    return Retract(
+        move_id=move_id,
+        agent_id=agent_id,
+        round_index=round_index,
+        own=own,
+    )
+
+
+class TestChallengeToAttack:
+    def test_challenge_with_known_target_produces_argument_and_attack(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X", confidence=0.6))
+            .append(_challenge("c1", target="p1", confidence=0.7))
+        )
+        baf = build_qbaf(trace)
+        # Two arguments: p1 (Propose-derived) + c1 (Challenge-derived)
+        ids = {a.arg_id for a in baf.arguments}
+        assert ids == {"p1", "c1"}
+        # One attack: c1 -> p1
+        assert len(baf.attacks) == 1
+        assert baf.attacks[0].source == "c1"
+        assert baf.attacks[0].target == "p1"
+
+    def test_challenge_attack_weight_equals_challenge_confidence(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_challenge("c1", target="p1", confidence=0.83))
+        )
+        baf = build_qbaf(trace)
+        assert baf.attacks[0].weight == pytest.approx(0.83)
+
+    def test_challenge_argument_carries_reason_surface(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_challenge("c1", target="p1", reason_surface="cited paper retracted"))
+        )
+        baf = build_qbaf(trace)
+        c_arg = next(a for a in baf.arguments if a.arg_id == "c1")
+        assert c_arg.claim_surface == "cited paper retracted"
+
+    def test_challenge_argument_base_score_equals_challenge_confidence(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_challenge("c1", target="p1", confidence=0.62))
+        )
+        baf = build_qbaf(trace)
+        c_arg = next(a for a in baf.arguments if a.arg_id == "c1")
+        assert c_arg.base_score == pytest.approx(0.62)
+
+    def test_challenge_with_unknown_target_dropped(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_challenge("c1", target="ghost", confidence=0.7))
+        )
+        baf = build_qbaf(trace)
+        # Drop entirely — no Argument, no Attack
+        ids = {a.arg_id for a in baf.arguments}
+        assert "c1" not in ids
+        assert baf.attacks == ()
+
+    def test_challenge_of_a_challenge_chains(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X", confidence=0.5))
+            .append(_challenge("c1", target="p1", confidence=0.7))
+            .append(_challenge("c2", target="c1", confidence=0.6))
+        )
+        baf = build_qbaf(trace)
+        ids = {a.arg_id for a in baf.arguments}
+        assert ids == {"p1", "c1", "c2"}
+        # Two attacks: c1 -> p1, c2 -> c1
+        attack_pairs = {(a.source, a.target) for a in baf.attacks}
+        assert attack_pairs == {("c1", "p1"), ("c2", "c1")}
+
+
+# ---------------------------------------------------------------------------
+# Slice C — Concede → Argument + Support edge
+# ---------------------------------------------------------------------------
+
+
+class TestConcedeToSupport:
+    def test_concede_with_known_target_produces_argument_and_support(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X", confidence=0.5))
+            .append(_concede("co1", target="p1"))
+        )
+        baf = build_qbaf(trace)
+        ids = {a.arg_id for a in baf.arguments}
+        assert ids == {"p1", "co1"}
+        assert len(baf.supports) == 1
+        assert baf.supports[0].source == "co1"
+        assert baf.supports[0].target == "p1"
+
+    def test_concede_argument_base_score_is_one(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_concede("co1", target="p1"))
+        )
+        baf = build_qbaf(trace)
+        co_arg = next(a for a in baf.arguments if a.arg_id == "co1")
+        assert co_arg.base_score == 1.0  # unconditional endorsement
+
+    def test_concede_argument_surface_mentions_target(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_concede("co1", target="p1"))
+        )
+        baf = build_qbaf(trace)
+        co_arg = next(a for a in baf.arguments if a.arg_id == "co1")
+        # Synthetic: must reference the target so the visualiser shows context
+        assert "p1" in co_arg.claim_surface
+
+    def test_concede_support_weight_is_one(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_concede("co1", target="p1"))
+        )
+        baf = build_qbaf(trace)
+        assert baf.supports[0].weight == 1.0
+
+    def test_concede_with_unknown_target_dropped(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_concede("co1", target="ghost"))
+        )
+        baf = build_qbaf(trace)
+        ids = {a.arg_id for a in baf.arguments}
+        assert "co1" not in ids
+        assert baf.supports == ()
+
+
+# ---------------------------------------------------------------------------
+# Slice C — Retract → mark withdrawn
+# ---------------------------------------------------------------------------
+
+
+class TestRetractMarksWithdrawn:
+    def test_retract_marks_target_argument_withdrawn(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X", confidence=0.5))
+            .append(_retract("r1", own="p1"))
+        )
+        baf = build_qbaf(trace)
+        p1_arg = next(a for a in baf.arguments if a.arg_id == "p1")
+        assert p1_arg.withdrawn is True
+
+    def test_retract_does_not_add_argument(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_retract("r1", own="p1"))
+        )
+        baf = build_qbaf(trace)
+        ids = {a.arg_id for a in baf.arguments}
+        # Retract does NOT itself become an Argument node
+        assert "r1" not in ids
+
+    def test_retract_with_unknown_own_is_noop(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_retract("r1", own="ghost"))
+        )
+        baf = build_qbaf(trace)
+        # All Propose-derived args remain unwithdrawn
+        assert all(not a.withdrawn for a in baf.arguments if a.arg_id == "p1")
+
+    def test_retract_idempotent_on_already_withdrawn(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_retract("r1", own="p1"))
+            .append(_retract("r2", own="p1"))
+        )
+        baf = build_qbaf(trace)
+        p1_arg = next(a for a in baf.arguments if a.arg_id == "p1")
+        assert p1_arg.withdrawn is True
+
+    def test_retract_can_withdraw_a_challenge(self) -> None:
+        trace = (
+            Trace()
+            .append(_propose("p1", surface="X"))
+            .append(_challenge("c1", target="p1"))
+            .append(_retract("r1", own="c1"))
+        )
+        baf = build_qbaf(trace)
+        c_arg = next(a for a in baf.arguments if a.arg_id == "c1")
+        assert c_arg.withdrawn is True
+        # The Attack edge is still present — withdrawal is on the node only.
+        # (Gradual semantics will weight withdrawn arguments at 0; that is
+        # the semantics' concern, not the builder's.)
+        assert any(att.source == "c1" for att in baf.attacks)
