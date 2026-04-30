@@ -156,3 +156,93 @@ QBAF structure (Challenges, Concedes, calibrated base scores).
   equivalence-class structure (handles ties correctly).
 - `tests/regressions/test_t4_borda.py::TestBordaBAFWellFormed` — sanity
   invariants of the Borda BAF construction.
+
+## T7 — Strategic-Coupled Satisfies the CTLK Invariant
+
+**Statement.** Let `T_3` be the canonical T3 counterexample trace: three
+agents (A, B, C) each emit `Propose("X is the answer", evidence=())`
+followed by `Vote("X is the answer", evidence=())` — three Proposes and
+three Votes for the same answer, with no agent providing evidence atoms.
+Let `Q = build_qbaf(T_3)` and let `s_DF` be `DFQuADSemantics().evaluate(Q)`,
+`s_SC` be `StrategicCoupledSemantics(base=DFQuADSemantics(),
+evidence_backed=evidence_backed_arg_ids(T_3), alpha=α,
+consensus_threshold=0.5).evaluate(Q)` for any `α ∈ [0, 0.5)`.
+
+Then for every Propose-derived argument `a` in `Q`:
+
+```
+a ∈ DFQuADSemantics().preferred_extension(Q)  AND
+a ∉ StrategicCoupledSemantics(...).preferred_extension(Q)
+```
+
+That is: DF-QuAD admits the consensus argument into its preferred
+extension (violating T3's CTLK invariant
+`G(consensus → ∃i. K_i evidenceFor(consensus))`), but Strategic-Coupled
+with strict-enough `α` excludes it (satisfying the invariant).
+
+**Proof.** Each Propose has base score 0.7. Each of the three Votes
+matches all three Proposes' surface ("X is the answer"); the W2
+build_qbaf vote-boost rule adds `vote.confidence` per matching vote and
+clamps to [0, 1]. With three votes of confidence 0.5 each, base scores
+are saturated to `min(1.0, 0.7 + 3·0.5) = 1.0` for every Propose-derived
+argument. There are no attackers (no Challenges in `T_3`) and no other
+supporters; DF-QuAD's combination function gives `c(1.0, 0, 0) = 1.0`,
+so `s_DF[a] = 1.0` for `a ∈ {p1, p2, p3}`. Each `s_DF[a] = 1.0 ≥ 0.5`,
+so `a ∈ DFQuADSemantics().preferred_extension(Q)`. **DF-QuAD violates the
+invariant** because no agent witnesses evidence (every `Claim.evidence`
+is empty in `T_3`).
+
+For Strategic-Coupled: `evidence_backed_arg_ids(T_3) = ∅` because no
+Propose carries non-empty `Claim.evidence` and no Vote carries non-empty
+`Claim.evidence` either (the ATL fragment from ADR-0012 returns the
+empty frozen set). Strategic-Coupled's evaluate computes
+`base_strengths = s_DF` then for each argument with strength
+`≥ consensus_threshold = 0.5` AND `arg_id ∉ evidence_backed = ∅`,
+demotes by `α`. Every Propose-derived argument satisfies both conditions,
+so `s_SC[a] = α · s_DF[a] = α · 1.0 = α` for `a ∈ {p1, p2, p3}`. With
+`α < 0.5`, `s_SC[a] < 0.5`, so `a ∉ StrategicCoupledSemantics(...).preferred_extension(Q)`.
+**Strategic-Coupled satisfies the invariant** by construction: every
+unbacked consensus argument is demoted below the extension threshold. ∎
+
+**Why this is a recovery, not just a re-statement.** A trivial fix to
+DF-QuAD's defect would be a binary "reject all unsupported consensus"
+filter. Strategic-Coupled's value is that it preserves DF-QuAD's
+gradedness: when *some* agents witness evidence and others do not, the
+witnessed arguments retain their full DF-QuAD strength while unwitnessed
+ones are demoted. The semantics composes with the underlying base
+(DF-QuAD, QE, Ebs interchangeably) and with calibrated confidence (W3),
+so future workstreams can extend it without re-deriving the invariant.
+
+**Implications.** This is the central theoretical result of P2 (AAAI
+2027). The full P2 paper extends T7 to:
+
+- **Multi-coalition strategies** (`<<C>> F φ` for richer ATL fragments).
+- **Non-binary evidence quality** (calibrated witness scores from W3
+  feeding into the demotion factor `α(witness_quality)`).
+- **Equilibrium properties under perturbation** (T5 manipulability bound
+  with the demotion factor as a defence multiplier).
+
+The W2/PR5 ship is the existence proof: T7 holds on the small instance
+`T_3`. The mechanisation in `tests/regressions/test_t7_coupled.py`
+demonstrates the extension-membership flip in code.
+
+**References.**
+- Original; full theorem statement and proof in P2 (AAAI 2027) appendix.
+- Alur, Henzinger, Kupferman. *Alternating-time Temporal Logic*. JACM
+  2002. The `<<A>>` coalition operator.
+- This document §T3 — the no-go theorem this T7 defeats.
+
+**Mechanisation.**
+- `tests/regressions/test_t7_coupled.py::TestT3CounterexampleDFQuADFails` —
+  pytest-level proof that DF-QuAD admits `p1, p2, p3` into the preferred
+  extension on `T_3` (DF-QuAD strengths = 1.0 for each).
+- `tests/regressions/test_t7_coupled.py::TestT7StrategicCoupledRescue` —
+  pytest-level proof that the ATL fragment reports empty backing on
+  `T_3`, and that Strategic-Coupled with `α = 0.4` excludes
+  `p1, p2, p3` from the preferred extension.
+- `tests/regressions/test_t7_coupled.py::TestT7BackwardCompatibility` —
+  shows Strategic-Coupled reduces to DF-QuAD when the invariant is
+  satisfied (one agent witnesses evidence).
+- `tests/regressions/test_t7_coupled.py::TestT7ExtensionFlip` — the
+  headline reviewer-visible flip: `df_ext ≠ sc_ext` on the canonical
+  counterexample.
