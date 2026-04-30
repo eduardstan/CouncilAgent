@@ -1,0 +1,15 @@
+{
+  "_description": "Closed-form 3-candidate Borda election fixture for T4 mechanisation. Three voters cast preference ballots; Borda counts are computed directly. The fixture shows the input ballots, the computed Borda counts, the normalised base scores, and the expected DF-QuAD strengths (which equal normalised Borda counts on a no-edge BAF; T4 holds trivially with f = identity / max).",
+  "candidates": ["A", "B", "C"],
+  "ballots": [
+    {"voter": "v1", "ranking": ["A", "B", "C"]},
+    {"voter": "v2", "ranking": ["B", "C", "A"]},
+    {"voter": "v3", "ranking": ["A", "C", "B"]}
+  ],
+  "_borda_table": "Voter v1 gives 2 points to A, 1 to B, 0 to C. Voter v2 gives 2 to B, 1 to C, 0 to A. Voter v3 gives 2 to A, 1 to C, 0 to B. Sums: A=4, B=3, C=2. Max possible Borda count per candidate is K*(N-1) = 3*2 = 6.",
+  "expected_borda": {"A": 4, "B": 3, "C": 2},
+  "max_borda": 6,
+  "expected_normalized_borda": {"A": 0.6666666666666666, "B": 0.5, "C": 0.3333333333333333},
+  "expected_df_quad_strengths": {"A": 0.6666666666666666, "B": 0.5, "C": 0.3333333333333333},
+  "expected_borda_ranking": ["A", "B", "C"]
+}
