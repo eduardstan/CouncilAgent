@@ -178,3 +178,135 @@ class LTLfMonitorTermination(TerminationStrategy):
         self._pending = None
         self._intervention_count = 0
         self._verdicts = []
+
+
+# ---------------------------------------------------------------------------
+# W3 / PR5 — JSD-based termination strategies
+# ---------------------------------------------------------------------------
+
+#: Constant returned when no JSD signal is computable (insufficient data,
+#: empty rounds). Treated as "no information; do not fire."
+_JSD_UNDEFINED: float = -1.0
+
+
+def _round_distribution(trace: Trace, round_index: int) -> dict[str, float]:
+    """Empirical distribution over Propose claim surfaces in round R.
+
+    Each surface's mass is the sum of its Propose ``confidence`` values
+    in round R, normalised to sum to 1. Returns an empty dict when the
+    round has no Propose moves.
+    """
+    from council.dialect.moves import Propose
+
+    weights: dict[str, float] = {}
+    for move in trace.at_round(round_index):
+        if isinstance(move, Propose):
+            weights[move.claim.surface] = (
+                weights.get(move.claim.surface, 0.0) + move.confidence
+            )
+    total = sum(weights.values())
+    if total <= 0.0:
+        return {}
+    return {k: v / total for k, v in weights.items()}
+
+
+def _inter_round_jsd(trace: Trace, round_index: int) -> float:
+    """JSD between round-(R-1) and round-R distributions; ``_JSD_UNDEFINED``
+    when either round has no proposes (cannot compute a signal)."""
+    if round_index <= 0:
+        return _JSD_UNDEFINED
+    prev = _round_distribution(trace, round_index - 1)
+    curr = _round_distribution(trace, round_index)
+    if not prev or not curr:
+        return _JSD_UNDEFINED
+    from council.calibrate.jsd import jsd_divergence
+
+    return jsd_divergence([prev, curr])
+
+
+def _round_mean_confidence(trace: Trace, round_index: int) -> float:
+    """Mean Propose confidence in round R; 0.0 when the round is empty."""
+    from council.dialect.moves import Propose
+
+    confs = [
+        move.confidence
+        for move in trace.at_round(round_index)
+        if isinstance(move, Propose)
+    ]
+    if not confs:
+        return 0.0
+    return sum(confs) / len(confs)
+
+
+@dataclass(frozen=True, slots=True)
+class JSDDivergenceTermination(TerminationStrategy):
+    """Stop when JSD between round-R and round-(R-1) Propose distributions
+    drops strictly below ``threshold`` — a "deliberation has stabilised"
+    signal grounded in the W3 calibrated-disagreement layer.
+
+    Pure function over (Trace, round_index); no mutable state.
+    """
+
+    threshold: float = 0.05
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.threshold <= 1.0:
+            raise ValueError(
+                f"threshold must lie in [0, 1] (got {self.threshold!r})"
+            )
+
+    def should_stop(self, trace: Trace, round_index: int) -> tuple[bool, str]:
+        jsd = _inter_round_jsd(trace, round_index)
+        if jsd == _JSD_UNDEFINED:
+            return (False, "")
+        if jsd < self.threshold:
+            return (True, f"JSDDivergenceTermination(jsd={jsd:.4f}<{self.threshold})")
+        return (False, "")
+
+
+@dataclass(frozen=True, slots=True)
+class ConFreezeTermination(TerminationStrategy):
+    """Stop when the council has shown ``window`` consecutive rounds of
+    low-JSD agreement (each inter-round JSD strictly < ``threshold``)
+    and the latest round's mean Propose confidence ≥ ``confidence_floor``.
+
+    The Anonymous 2026 *ConFreeze* paper (OpenReview ``PrqXuAS4BZ``)
+    gates on **unanimity in round 0**; we adapt the freeze concept to a
+    multi-round JSD-streak setting per the bible (`COUNCIL_NS_PLAN.md`
+    §6.4) with the user-confirmed default ``window=5``
+    (`specs/w3-calibration.md` §"Resolved decisions" Q4). ADR-0019
+    documents the reconciliation.
+    """
+
+    window: int = 5
+    threshold: float = 0.05
+    confidence_floor: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.window < 1:
+            raise ValueError(f"window must be ≥ 1 (got {self.window})")
+        if not 0.0 <= self.threshold <= 1.0:
+            raise ValueError(
+                f"threshold must lie in [0, 1] (got {self.threshold!r})"
+            )
+        if not 0.0 <= self.confidence_floor <= 1.0:
+            raise ValueError(
+                f"confidence_floor must lie in [0, 1] "
+                f"(got {self.confidence_floor!r})"
+            )
+
+    def should_stop(self, trace: Trace, round_index: int) -> tuple[bool, str]:
+        if round_index < self.window:
+            return (False, "")
+        for r in range(round_index - self.window + 1, round_index + 1):
+            jsd = _inter_round_jsd(trace, r)
+            if jsd == _JSD_UNDEFINED or jsd >= self.threshold:
+                return (False, "")
+        mean_conf = _round_mean_confidence(trace, round_index)
+        if mean_conf < self.confidence_floor:
+            return (False, "")
+        return (
+            True,
+            f"ConFreezeTermination(window={self.window},"
+            f"threshold={self.threshold},mean_conf={mean_conf:.3f})",
+        )
