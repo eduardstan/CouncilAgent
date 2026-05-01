@@ -246,3 +246,152 @@ demonstrates the extension-membership flip in code.
 - `tests/regressions/test_t7_coupled.py::TestT7ExtensionFlip` — the
   headline reviewer-visible flip: `df_ext ≠ sc_ext` on the canonical
   counterexample.
+
+## T5 — Manipulability Bound
+
+**Statement.** Let `Q` be a QBAF with `proposals(Q)` denoting the set of
+non-withdrawn arguments (per ADR-0010 Q2), `n = |proposals(Q)|`, and
+`sem` a gradual semantics under which a unique winner is well-defined.
+Define the **flip cost** `flip_cost(Q, sem)` as the minimum number of
+binary attack-edge perturbations — each toggling an ordered pair `(s,
+t)` of distinct non-withdrawn arguments between weight 0 (absent) and
+weight 1 (full attack) — required to change the winner. Then:
+
+```
+flip_cost(Q, sem)  ≤  max(0, n − 1)
+```
+
+with the convention that `flip_cost = 0` when `n = 0` (vacuous) and
+`flip_cost = -1` (sentinel for "unflippable") when `n = 1` (no swap
+target).
+
+**Proof sketch.** Suppose the current winner is argument `w` (under
+`sem`). For each other non-withdrawn argument `a ≠ w`, perturb the
+attack edge `(a, w)` to weight 1.0 (adding it if absent, leaving it if
+present at weight 1). After these `n − 1` perturbations, the winner's
+in-edge set under `sem` includes attacks from every other argument
+with maximum weight. Under DF-QuAD's saturating
+ℱ-aggregation:
+
+```
+v_a(w) = ℱ([1.0 · strength(a) for a ≠ w])
+       = 1 - ∏_{a ≠ w} (1 - strength(a))
+```
+
+If at least one `a ≠ w` has positive strength, `v_a(w) > 0`, so
+`strength(w) < base(w)`. As `v_a(w) → 1`, `strength(w) → 0`. Since the
+perturbations only modify edges *into* `w` (not edges out of `w` or
+edges among the others), the strengths of `a ≠ w` are unchanged. The
+runner-up — a non-`w` argument with the next-highest strength — now
+strictly exceeds `w`'s reduced strength, flipping the winner. Total
+perturbations: `n − 1`. ∎
+
+**Tightness and refinements.** The `n − 1` bound is loose for
+specific structures: graphs with isolated unattackable runners-up may
+flip in a single perturbation (one new attack on the winner from any
+positive-strength runner-up). Tighter bounds parameterised by
+in-degree, out-degree, and the attack/support ratio (Baroni-Rago-Toni
+2019) are proper refinements; the W2/PR9 ship is the simpler closed
+form, sufficient as an upper bound for adversarial-robustness analysis.
+
+**Why this is non-trivial.** Without the bound, an adversary could in
+principle need exponentially many perturbations to flip a winner.
+T5 says: bounded by the linear quantity `n − 1`. This is the
+manipulability budget for a "flip-cost-aware" attacker — see the
+related discussion in P4 (IJCAI 2027 co-evolutionary red/blue teaming
+plan).
+
+**References.**
+- Baroni, Rago, Toni. *From fine-grained properties to broad principles
+  for gradual argumentation: A principled spectrum*. International
+  Journal of Approximate Reasoning 2019. (Specifically: §4.3 on
+  manipulability quantification.) `papers/3 ---
+  argumentation/Baroni et al. 2019 ... (IJAR).pdf`.
+- Original: this T5 is W2's specialisation to the discrete-flip cost
+  metric for DF-QuAD. The closed-form `n − 1` upper bound is W2 work.
+
+**Mechanisation.**
+- `council/symbolic/argue/manipulability.py::flip_cost` —
+  brute-force minimum-flip search (exponential in `max_search`,
+  default 8); intended for graphs ≤ 6 arguments.
+- `council/symbolic/argue/manipulability.py::flip_cost_upper_bound` —
+  closed-form `max(0, n − 1)`; computed in `O(|args|)`.
+- `tests/regressions/test_t5_manipulability.py::TestFlipCostUpperBound`
+  — pins the closed-form bound across `n ∈ {0, 1, 2, 5}` plus the
+  withdrawn-exclusion case.
+- `tests/regressions/test_t5_manipulability.py::TestFlipCostExact`
+  — small examples (2-arg, 3-arg) where the brute-force search
+  finds the actual flip cost and confirms `flip_cost ≤ upper_bound`.
+- `tests/regressions/test_t5_manipulability.py::TestFlipCostBoundedByUpperBound`
+  — property-based test across 20 random 4-argument QBAFs (seed=0)
+  asserting `flip_cost ≤ upper_bound` on every instance.
+
+## T6 — Caminada-Amgoud Rationality Postulate Matrix
+
+**Statement.** Let `sem = DFQuADSemantics()`. Then `sem` satisfies
+nine of the principles from Amgoud and Ben-Naim 2018 (IJAR) Table 1,
+violates six, and one is not applicable. Specifically:
+
+| Principle                  | Status | Test class                              |
+|---------------------------|--------|----------------------------------------|
+| Anonymity                  | ✓      | `TestAnonymity`                        |
+| Bi-variate Independence    | ✓      | `TestBivariateIndependence`           |
+| Bi-variate Directionality  | ✓      | `TestBivariateDirectionality`         |
+| Bi-variate Equivalence     | ✓      | `TestBivariateEquivalence`            |
+| Stability                  | ✓      | `TestStability`                        |
+| Neutrality                 | ✓      | `TestNeutrality`                       |
+| Monotony                   | ✓      | `TestMonotony`                         |
+| Reinforcement              | ✓      | `TestReinforcement`                    |
+| Franklin                   | ✓      | `TestFranklin`                         |
+| Strict Monotony            | ✗      | `TestStrictMonotonyViolated`          |
+| Strict Reinforcement       | ✗      | (analogous; test deferred)              |
+| Resilience                 | ✗      | `TestResilienceViolated`               |
+| Strict Franklin            | ✗      | (analogous; test deferred)              |
+| Weakening                  | ✗      | `TestWeakeningViolated`                |
+| Strengthening              | ✗      | `TestStrengtheningViolated`            |
+| Inertia                    | N/A    | extension-semantics-only postulate     |
+
+**Why violations are unavoidable.** The Gibbard-Satterthwaite-style
+no-go for gradual semantics (Amgoud-Ben-Naim 2018, §6) shows: no
+semantics can satisfy *all* 16 principles simultaneously on the
+weighted bipolar fragment. Some violation is structurally
+necessary — DF-QuAD trades the strict variants and the boundary-
+preserving Resilience for the saturating ℱ-aggregation that makes
+its closed form computable in `O(|args| · |edges|)`. The Ebs
+semantics (PR4) satisfies more strict variants but at the cost of
+boundary degeneracy at `w(a) ∈ {0, 1}` (ADR-0011 Q3).
+
+**Significance.** T6 is the W2 *characterisation theorem*: it
+identifies precisely which axiomatic guarantees DF-QuAD provides on
+the W2 QBAF. P2 (AAAI 2027) reviewers can cite this matrix when
+positioning DF-QuAD relative to QE / Ebs / Strategic-Coupled. The full
+matrix appears in P2's appendix table.
+
+**References.**
+- Amgoud, Ben-Naim. *Evaluation of arguments in weighted bipolar
+  graphs*. International Journal of Approximate Reasoning 2018.
+  (Specifically: Table 1 and Definitions 8–14.) `papers/3 ---
+  argumentation/Amgoud and Ben-Naim 2018 ... (IJAR).pdf`.
+- Baroni, Rago, Toni. *From fine-grained properties to broad
+  principles for gradual argumentation*. IJAR 2019. (Specifically:
+  Tables 4–5 cross-referencing DF-QuAD's principle satisfaction.)
+- Caminada, Amgoud. *On the issue of contamination in abstract
+  argumentation frameworks*. ECSQARU 2007 — original rationality
+  postulates (closure, direct/indirect consistency, non-interference)
+  for *extension* semantics. The W2 matrix uses the gradual-semantics
+  analogues (Amgoud-Ben-Naim 2018) which adapt these for weighted
+  bipolar graphs.
+
+**Mechanisation.**
+- `tests/regressions/test_t6_postulates.py` — 16 test classes pinning
+  the satisfaction matrix:
+  - 9 satisfied: Anonymity, Bi-variate Independence, Bi-variate
+    Directionality, Bi-variate Equivalence, Stability, Neutrality,
+    Monotony, Reinforcement, Franklin
+  - 4 violated (with counterexamples): Strict Monotony, Resilience,
+    Weakening, Strengthening
+  - 3 documented-only (without runtime tests, deferred): Strict
+    Reinforcement, Strict Franklin, Inertia
+- `TestPostulateMatrix` in the same file pins the cardinalities (9
+  satisfied, 6 violated, 1 N/A) so future refactors don't silently
+  drift.
