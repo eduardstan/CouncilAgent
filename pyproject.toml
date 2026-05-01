@@ -31,13 +31,12 @@ dev = [
     "types-requests",
 ]
 # Benchmark statistics: bootstrap, Wilcoxon, AIPW, Bradley-Terry, mixed-effects.
+# Transitively pulls in [calibrate] (numpy + scipy + scikit-learn) per ADR-0015.
 benchmark = [
+    "councilagent[calibrate]",
     "datasets>=2.19",
     "mlflow>=2.14",
-    "scipy>=1.13",
     "statsmodels>=0.14",
-    "scikit-learn>=1.5",
-    "numpy>=1.26",
     "hydra-core>=1.3",
 ]
 # Embedding-based metrics (sentence-transformers, ~2 GB with CUDA).
@@ -59,8 +58,14 @@ argue = [
 argue-asp = [
     "clingo>=5.7",
 ]
-# L3 — calibration (numpy + scipy + scikit-learn already in `benchmark`).
+# L3 — calibration: JSD, MUSE, privileged-knowledge, isotonic regression.
+# numpy + scipy + scikit-learn live here per ADR-0015 — keeps council/calibrate/
+# self-describing under the L3-only [calibrate] extra. [benchmark] includes
+# this transitively.
 calibrate = [
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "scikit-learn>=1.5",
 ]
 # L4 — cascade (no extra deps; uses LiteLLM).
 cascade = [

@@ -583,6 +583,11 @@ benchmark = [
     { name = "scipy" },
     { name = "statsmodels" },
 ]
+calibrate = [
+    { name = "numpy" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+]
 dev = [
     { name = "freezegun" },
     { name = "mypy" },
@@ -637,6 +642,7 @@ requires-dist = [
     { name = "clingo", marker = "extra == 'argue-asp'", specifier = ">=5.7" },
     { name = "clingo", marker = "extra == 'ilp'", specifier = ">=5.7" },
     { name = "cma", marker = "extra == 'evolve'", specifier = ">=4.0" },
+    { name = "councilagent", extras = ["calibrate"], marker = "extra == 'benchmark'" },
     { name = "councilagent", extras = ["dev", "benchmark", "embeddings", "verify", "argue-asp", "evolve", "ilp"], marker = "extra == 'full'" },
     { name = "datasets", marker = "extra == 'benchmark'", specifier = ">=2.19" },
     { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.5" },
@@ -645,7 +651,7 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "mlflow", marker = "extra == 'benchmark'", specifier = ">=2.14" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
-    { name = "numpy", marker = "extra == 'benchmark'", specifier = ">=1.26" },
+    { name = "numpy", marker = "extra == 'calibrate'", specifier = ">=1.26" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
@@ -655,8 +661,8 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ribs", marker = "extra == 'evolve'", specifier = ">=0.7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "scikit-learn", marker = "extra == 'benchmark'", specifier = ">=1.5" },
-    { name = "scipy", marker = "extra == 'benchmark'", specifier = ">=1.13" },
+    { name = "scikit-learn", marker = "extra == 'calibrate'", specifier = ">=1.5" },
+    { name = "scipy", marker = "extra == 'calibrate'", specifier = ">=1.13" },
     { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
     { name = "statsmodels", marker = "extra == 'benchmark'", specifier = ">=0.14" },
     { name = "types-requests", marker = "extra == 'dev'" },
