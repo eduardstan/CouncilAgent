@@ -32,9 +32,13 @@ from council.symbolic.verify.ltlf import (
     And,
     Atom,
     Boolean,
+    CoalitionFinally,
+    CoalitionGlobally,
+    CoalitionUntil,
     Finally,
     Globally,
     Implies,
+    Knows,
     LTLf,
     Neg,
     Next,
@@ -79,6 +83,14 @@ def ltlf_to_ctl(formula: LTLf) -> str:
                 f"(E({ltlf_to_ctl(lf)} U {ltlf_to_ctl(rf)})"
                 f" or AG({ltlf_to_ctl(lf)}))"
             )
+        case CoalitionFinally(group=g, arg=a):
+            return f"<{g}> F {ltlf_to_ctl(a)}"
+        case CoalitionGlobally(group=g, arg=a):
+            return f"<{g}> G {ltlf_to_ctl(a)}"
+        case CoalitionUntil(group=g, left=lf, right=rf):
+            return f"<{g}> ({ltlf_to_ctl(lf)} U {ltlf_to_ctl(rf)})"
+        case Knows(agent=ag, arg=a):
+            return f"K({ag}, {ltlf_to_ctl(a)})"
     raise ValueError(f"ltlf_to_ctl: unsupported formula {formula!r}")
 
 

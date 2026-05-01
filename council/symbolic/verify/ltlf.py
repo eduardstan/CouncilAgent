@@ -123,6 +123,66 @@ class Implies(LTLf):
 
 
 # ---------------------------------------------------------------------------
+# ATL + CTLK extension (MCMAS manual §3.2.4 page 18; AHK 2002; Fagin 1995)
+#
+# These nodes extend the LTL_f AST to cover the strict ATL+CTLK fragment
+# MCMAS evaluates natively. T7 (specs/t7-atlk-revision.md) requires:
+#   <<{i}>> F K_i evidence(a, i)
+# which decomposes as
+#   CoalitionFinally(group="g_i", arg=Knows(agent="agent_i", arg=Atom(...)))
+# and renders to MCMAS as "<g_i> F K(agent_i, evidence_a_i)".
+#
+# The nodes are NOT valid LTL_f; the SPOT renderer (to_spot_str) rejects
+# them via its catch-all branch — strict-LTL backends are unaffected.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionFinally(LTLf):
+    """ATL operator ⟨⟨Γ⟩⟩ F φ — coalition Γ has a strategy to enforce eventually φ."""
+
+    group: str
+    arg: LTLf
+
+    def __str__(self) -> str:
+        return f"<<{self.group}>>F({self.arg})"
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionGlobally(LTLf):
+    """ATL operator ⟨⟨Γ⟩⟩ G φ — coalition Γ has a strategy to enforce φ globally."""
+
+    group: str
+    arg: LTLf
+
+    def __str__(self) -> str:
+        return f"<<{self.group}>>G({self.arg})"
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionUntil(LTLf):
+    """ATL operator ⟨⟨Γ⟩⟩ (φ U ψ) — coalition Γ has a strategy to enforce φ until ψ."""
+
+    group: str
+    left: LTLf
+    right: LTLf
+
+    def __str__(self) -> str:
+        return f"<<{self.group}>>({self.left} U {self.right})"
+
+
+@dataclass(frozen=True, slots=True)
+class Knows(LTLf):
+    """Epistemic operator K_i φ — agent i knows φ (Fagin et al. 1995)."""
+
+    agent: str
+    arg: LTLf
+
+    def __str__(self) -> str:
+        return f"K_{self.agent}({self.arg})"
+
+
+# ---------------------------------------------------------------------------
 # SPOT-compatible renderer
 # ---------------------------------------------------------------------------
 
