@@ -205,6 +205,8 @@ This section captures the user's resolutions to the five open questions surfaced
 4. **Q4 — `ConFreeze` window default: 5.** Matches `COUNCIL_NS_PLAN.md` and Anonymous 2026 *ConFreeze* ([`papers/2 --- calibration and disagreement/Anonymous 2026 "ConFreeze: Selective Multi-Model Debate through Consensus Freezing" (Preprint; OpenReview:PrqXuAS4BZ).pdf`](../papers/)). The window is configurable via `ConFreezeTermination(window=5)`; tests must cover both `window=3` (faster freeze) and `window=5` (default).
 5. **Q5 — PR5 split: NO.** Keep PR5 as a single `feature/ns-w3-terminations` deliverable shipping both `JSDDivergenceTermination` and `ConFreezeTermination`. The user is confident in the AAAI 2027 timeline and does not want deadline pressure to fragment the L3 termination layer.
 
+**Implementation note (PR1, 2026-05-01).** `jsd_divergence(distributions)` for n≥3 returns the *mean of pairwise JSDs* over the union support (not the Lin-1991 n-mixture form). This is the simplest correct generalisation that ships from `scipy.spatial.distance.jensenshannon` directly; the proper subset-ensemble (Kruse et al. 2025) version is the responsibility of `MUSECalibrator` / `muse_greedy` (PR2). Documented in `council/calibrate/jsd.py` module docstring.
+
 **Literature ground truth.** Where the user is silent on a numerical or design parameter, defer to the corresponding paper in `papers/2 --- calibration and disagreement/`:
 - JSD baseline: any standard reference; the closed-form n=2 uniform-vs-Dirac value is `JSD = ln(2)` in nats (equiv. 1.0 normalised).
 - MUSE: Kruse et al. 2025 (EMNLP; arXiv:2507.07236).

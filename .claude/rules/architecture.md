@@ -36,6 +36,7 @@ These rules encode the 12-principle Constitution at file-and-symbol granularity.
 4. **`council/symbolic/verify/interventions.py` → `council/dialect/moves.py`** — to inject `Move`s on `⊥` verdicts (e.g. `ForceChallenge`).
 5. **`evaluation/` → `council/`** but never the reverse. One-way.
 6. **`apps/` → `council/` and `evaluation/`** but never the reverse.
+7. **`council/termination.py` → `council/calibrate/jsd.py`** (W3/PR5; ADR-0019) — `JSDDivergenceTermination` and `ConFreezeTermination` re-use the `jsd_divergence` primitive to compute inter-round JSD on Propose distributions. Function-scope import to keep the L0 termination ABC importable without the `[calibrate]` extra; only the W3 strategies pull the dependency in.
 
 ## Required contracts
 
