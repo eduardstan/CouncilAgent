@@ -16,7 +16,6 @@ from council.symbolic.verify.atl_witness import (
 )
 from council.symbolic.verify.cgs import canonical_t3_cgs
 
-
 # ---------------------------------------------------------------------------
 # parse_mcmas_verdicts — pure function over MCMAS stdout
 # ---------------------------------------------------------------------------
