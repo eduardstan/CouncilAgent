@@ -18,7 +18,9 @@ import numpy as np
 import pytest
 from scipy.spatial.distance import jensenshannon
 
-from council.calibrate.jsd import jsd_divergence
+from council.calibrate import Calibrator
+from council.calibrate.jsd import JSDCalibrator, jsd_divergence
+from council.dialect.moves import ClaimDomain
 
 
 class TestJSDClosedForm:
@@ -113,3 +115,56 @@ class TestJSDMixedSupport:
         assert 0.0 <= result <= 1.0
         # And the mathematically pure value is finite.
         assert math.isfinite(result)
+
+
+class TestJSDCalibrator:
+    """Regression guard for the JSDCalibrator class wrapping jsd_divergence."""
+
+    def test_implements_calibrator_abc(self) -> None:
+        cal = JSDCalibrator([{"a": 1.0}, {"a": 1.0}])
+        assert isinstance(cal, Calibrator)
+
+    def test_full_agreement_returns_raw_unchanged(self) -> None:
+        # Identical distributions → JSD = 0 → calibrate is the identity.
+        cal = JSDCalibrator([{"a": 0.4, "b": 0.6}, {"a": 0.4, "b": 0.6}])
+        assert cal.jsd == pytest.approx(0.0, abs=1e-12)
+        assert cal.calibrate(0.8, "agent_x", ClaimDomain.ARITH) == pytest.approx(0.8)
+
+    def test_full_disagreement_collapses_to_zero(self) -> None:
+        # Disjoint Diracs → JSD = 1 → calibrate(...) = 0 regardless of raw.
+        cal = JSDCalibrator([{"a": 1.0, "b": 0.0}, {"a": 0.0, "b": 1.0}])
+        assert cal.jsd == pytest.approx(1.0, abs=1e-9)
+        assert cal.calibrate(0.95, "agent_x", ClaimDomain.FOL) == pytest.approx(0.0)
+
+    def test_partial_disagreement_scales_linearly(self) -> None:
+        # Closed form: P=(0.5,0.5) vs Q=(1,0) → JSD ≈ 0.31127812.
+        # calibrate(raw, ...) = raw * (1 - 0.3113) ≈ raw * 0.6887.
+        cal = JSDCalibrator([{"a": 0.5, "b": 0.5}, {"a": 1.0, "b": 0.0}])
+        expected_factor = 1.0 - cal.jsd
+        for raw in (0.1, 0.4, 0.8):
+            assert cal.calibrate(raw, "agent_x", ClaimDomain.FREE) == pytest.approx(
+                raw * expected_factor, abs=1e-12
+            )
+
+    def test_calibration_is_domain_agnostic(self) -> None:
+        # JSDCalibrator does not vary by ClaimDomain — that is the
+        # PrivilegedKnowledgeCalibrator's territory (PR3).
+        cal = JSDCalibrator([{"a": 0.5, "b": 0.5}, {"a": 1.0, "b": 0.0}])
+        results = {
+            domain: cal.calibrate(0.5, "agent_x", domain) for domain in ClaimDomain
+        }
+        # All domains yield the same calibrated value.
+        unique = set(results.values())
+        assert len(unique) == 1
+
+    def test_calibration_clamped_to_unit_interval(self) -> None:
+        # raw can exceed 1.0 in malformed callers; calibrator must clamp.
+        cal = JSDCalibrator([{"a": 0.5, "b": 0.5}, {"a": 0.5, "b": 0.5}])
+        assert cal.calibrate(1.5, "agent_x", ClaimDomain.ARITH) == pytest.approx(1.0)
+        assert cal.calibrate(-0.2, "agent_x", ClaimDomain.ARITH) == pytest.approx(0.0)
+
+    def test_deterministic_across_repeated_calls(self) -> None:
+        cal = JSDCalibrator([{"a": 0.5, "b": 0.5}, {"a": 1.0, "b": 0.0}])
+        first = cal.calibrate(0.7, "agent_x", ClaimDomain.ARITH)
+        for _ in range(99):
+            assert cal.calibrate(0.7, "agent_x", ClaimDomain.ARITH) == first
