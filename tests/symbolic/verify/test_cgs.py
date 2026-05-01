@@ -28,10 +28,8 @@ from council.symbolic.verify.cgs import (
     CGSEnvironmentSpec,
     CGSGroup,
     CGSProtocolClause,
-    DeliberationCGS,
     canonical_t3_cgs,
 )
-
 
 # ---------------------------------------------------------------------------
 # Value-object invariants
@@ -275,7 +273,7 @@ class TestStepSimulator:
             "agent_bob": "abstain",
             "agent_carol": "abstain",
         }
-        with pytest.raises(ValueError, match="not enabled|illegal action"):
+        with pytest.raises(ValueError, match=r"not enabled|illegal action"):
             cgs.step(s0, joint)
 
     def test_step_vote_sets_voted_flag(self) -> None:
