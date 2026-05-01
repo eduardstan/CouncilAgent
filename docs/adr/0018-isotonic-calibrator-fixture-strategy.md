@@ -65,14 +65,36 @@ This ADR records the chosen answer.
    `tests/calibrate/fixtures/gsm8k_subset.json`, generated offline by
    `experiments/fixtures/gen_gsm8k_calibration.py`. The generator
    script (a) reads `OPENROUTER_API_KEY` from `.env`, (b) queries the
-   spec-approved OpenRouter SLM slate
-   (`openrouter/google/gemma-3-27b-it:free`,
-   `openrouter/meta-llama/llama-3.1-8b-instruct:free`,
-   `openrouter/qwen/qwen-2.5-7b-instruct:free`) on a small GSM8K
-   subset, (c) records each `(raw_confidence, gold_correct)` pair,
-   and (d) commits the resulting JSON. The integration test is gated
-   by `RUN_INTEGRATION=1` and `@pytest.mark.integration` per
-   `.claude/rules/testing.md`.
+   committed paid OpenRouter slate
+   (`openrouter/openai/gpt-4.1-nano`,
+   `openrouter/qwen/qwen3.5-flash-02-23`,
+   `openrouter/google/gemini-2.5-flash-lite`) on a small GSM8K
+   subset, (c) records each `(raw_confidence, gold_correct,
+   confidence_source)` triple, and (d) commits the resulting JSON.
+   The integration test is gated by `RUN_INTEGRATION=1` and
+   `@pytest.mark.integration` per `.claude/rules/testing.md`.
+
+   **Slate provenance (2026-05-01).** The originally proposed
+   free-tier slate (`gemma-3-27b-it:free`,
+   `llama-3.1-8b-instruct:free`, `qwen-2.5-7b-instruct:free`) was
+   replaced during PR4 implementation because two of the three
+   model IDs returned `404 No endpoints found` from OpenRouter
+   and the third did not expose logprobs while also rate-limiting
+   on a 32-question probe. `specs/w3-calibration.md`
+   §"Resolved decisions" Q3 has been updated to reflect the paid
+   slate; the JSON fixture's `models` field is the per-fixture
+   ground truth.
+
+   **Confidence source — hybrid.** Empirically, the paid OpenAI
+   model returns token logprobs through OpenRouter while the paid
+   Qwen / Gemini routes do not. The generator therefore implements a
+   hybrid signal: prefer `mean(exp(logprob))` when the response
+   exposes logprobs, otherwise fall back to a verbal self-reported
+   confidence percentage parsed from the response body
+   (Tian et al. 2023, "Just Ask for Calibration", arXiv 2305.14975).
+   Each sample records its `confidence_source ∈ {"logprob_mean_exp",
+   "verbal_self_reported"}` so downstream analysis can stratify by
+   signal type.
 
 Both tiers exercise the **same** `IsotonicCalibrator` class and the
 **same** `expected_calibration_error` helper. The acceptance assertion
@@ -200,24 +222,28 @@ class, same helper, same assertion at both tiers.
 
 ## Fixture file format
 
-`tests/calibrate/fixtures/gsm8k_subset.json` (committed JSON):
+`tests/calibrate/fixtures/gsm8k_subset.json` (committed JSON,
+`schema_version = 2` after the 2026-05-01 paid-slate / hybrid-signal
+update):
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generator": "experiments/fixtures/gen_gsm8k_calibration.py",
   "models": [
-    "openrouter/google/gemma-3-27b-it:free",
-    "openrouter/meta-llama/llama-3.1-8b-instruct:free",
-    "openrouter/qwen/qwen-2.5-7b-instruct:free"
+    "openrouter/openai/gpt-4.1-nano",
+    "openrouter/qwen/qwen3.5-flash-02-23",
+    "openrouter/google/gemini-2.5-flash-lite"
   ],
-  "n_questions": 64,
+  "n_questions": 32,
+  "confidence_source": "hybrid: logprob_mean_exp when available, else verbal_self_reported (Tian et al. 2023)",
   "samples": [
     {
       "question_id": "gsm8k:test:42",
-      "model": "openrouter/google/gemma-3-27b-it:free",
+      "model": "openrouter/openai/gpt-4.1-nano",
       "raw_confidence": 0.83,
-      "gold_correct": 1
+      "gold_correct": 1,
+      "confidence_source": "logprob_mean_exp"
     },
     "..."
   ]
@@ -225,8 +251,11 @@ class, same helper, same assertion at both tiers.
 ```
 
 The integration test reads `samples`, builds a 50/50 train/test
-split, fits `IsotonicCalibrator` on the train half, and asserts
-`expected_calibration_error(test_predicted, test_correct) < 0.05`.
+split, fits `IsotonicCalibrator` on the train half, asserts
+`expected_calibration_error(test_predicted, test_correct) < 0.05`,
+and asserts `ece_after <= ece_before` (the calibrator does not make
+the held-out split worse). Both assertions hold on the committed
+2026-05-01 fixture (n=94 samples; ECE 0.0476 → 0.0448).
 
 ## Realised by
 

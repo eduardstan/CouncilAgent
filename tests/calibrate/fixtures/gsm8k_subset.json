@@ -1,0 +1,671 @@
+{
+  "confidence_source": "hybrid: logprob_mean_exp when available, else verbal_self_reported (Tian et al. 2023)",
+  "generator": "experiments/fixtures/gen_gsm8k_calibration.py",
+  "models": [
+    "openrouter/openai/gpt-4.1-nano",
+    "openrouter/qwen/qwen3.5-flash-02-23",
+    "openrouter/google/gemini-2.5-flash-lite"
+  ],
+  "n_questions": 32,
+  "samples": [
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:0",
+      "raw_confidence": 0.9347513218834669
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:0",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:0",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:1",
+      "raw_confidence": 0.930375079710187
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:1",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:1",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:2",
+      "raw_confidence": 0.941828507210112
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:2",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:2",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:3",
+      "raw_confidence": 0.9287341192807482
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:3",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:3",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:4",
+      "raw_confidence": 0.9458322789244301
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:4",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:4",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 0,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:5",
+      "raw_confidence": 0.8552002714698747
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 0,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:5",
+      "raw_confidence": 0.95
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:5",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:6",
+      "raw_confidence": 0.9140173118169944
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:6",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:6",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:7",
+      "raw_confidence": 0.9154261156418935
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:7",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:7",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:8",
+      "raw_confidence": 0.9240592732677668
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:8",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:9",
+      "raw_confidence": 0.9073676341607206
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:9",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:9",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:10",
+      "raw_confidence": 0.8969328762584329
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:10",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:10",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 0,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:11",
+      "raw_confidence": 0.9238681759911614
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:11",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:11",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:12",
+      "raw_confidence": 0.933174009009289
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:12",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:12",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:13",
+      "raw_confidence": 0.8018356677248133
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:13",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:13",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:14",
+      "raw_confidence": 0.9003334224098906
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:14",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:14",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:15",
+      "raw_confidence": 0.9060982402844175
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:15",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:15",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:16",
+      "raw_confidence": 0.9048274724260594
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:16",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:16",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:17",
+      "raw_confidence": 0.9177229684196997
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:17",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:17",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:18",
+      "raw_confidence": 0.9432105759260087
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:18",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:18",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 0,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:19",
+      "raw_confidence": 0.9148357409872113
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 0,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:19",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 0,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:19",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:20",
+      "raw_confidence": 0.9307313649840091
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:20",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:20",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:21",
+      "raw_confidence": 0.9065583493339331
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:21",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:21",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 0,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:22",
+      "raw_confidence": 0.8824971641142071
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:22",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:22",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:23",
+      "raw_confidence": 0.9343167971732472
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:23",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:23",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:24",
+      "raw_confidence": 0.8982039668707343
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:24",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:24",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:25",
+      "raw_confidence": 0.9225672405750858
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:25",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:25",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:26",
+      "raw_confidence": 0.8913780116915161
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:26",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:26",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:27",
+      "raw_confidence": 0.9388769252352613
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:27",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:27",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:28",
+      "raw_confidence": 0.9042504793049594
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:28",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:28",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:29",
+      "raw_confidence": 0.9175956777401676
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:29",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:29",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 0,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:30",
+      "raw_confidence": 0.9137140809587853
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:30",
+      "raw_confidence": 0.9
+    },
+    {
+      "confidence_source": "logprob_mean_exp",
+      "gold_correct": 1,
+      "model": "openrouter/openai/gpt-4.1-nano",
+      "question_id": "gsm8k:test:31",
+      "raw_confidence": 0.9159925003572474
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/qwen/qwen3.5-flash-02-23",
+      "question_id": "gsm8k:test:31",
+      "raw_confidence": 1.0
+    },
+    {
+      "confidence_source": "verbal_self_reported",
+      "gold_correct": 1,
+      "model": "openrouter/google/gemini-2.5-flash-lite",
+      "question_id": "gsm8k:test:31",
+      "raw_confidence": 1.0
+    }
+  ],
+  "schema_version": 2
+}
