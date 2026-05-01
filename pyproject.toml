@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "councilagent"
-version = "0.2.1"
+version = "0.2.2"
 description = "CouncilAgent — the first multi-LLM council you can model-check. A neuro-symbolic deliberation framework with typed Move/Trace, LTL_f runtime monitoring, BAF/QBAF gradual-semantics aggregation, calibrated disagreement, cost-aware cascade, quality-diversity over compositions, and ILP-induced protocols."
 readme = "README.md"
 requires-python = ">=3.11"
