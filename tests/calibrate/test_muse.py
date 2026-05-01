@@ -65,7 +65,7 @@ def _reference_muse_greedy(
     last_u_alea = _binary_entropy_bits(float(aid_to_arr[selected[0]][yes_index]))
 
     for candidate in sorted_aids[1:]:
-        trial = selected + [candidate]
+        trial = [*selected, candidate]
         trial_arrs = [aid_to_arr[a] for a in trial]
         p_bar = np.mean(trial_arrs, axis=0)
         u_epis = float(np.mean([_js_squared(arr, p_bar) for arr in trial_arrs]))
@@ -132,17 +132,19 @@ class TestMUSEGreedyAlgorithm:
         assert len(result.selected_agent_ids) == 3
 
     def test_eps_tol_breaks_subset_extension(self) -> None:
-        # With m_min=2 and very small ε_tol, the third (disagreeing)
-        # candidate is rejected — selected subset stays at the first 2.
+        # Confidences must be unambiguous (no ties on c_i).
+        #   A: c = 0.49 (highest)
+        #   B: c = 0.47 (close to A → low JS jump on inclusion)
+        #   C: c = 0.40 (disagrees with A,B → big JS jump on inclusion)
+        # With m_min=2 and ε_tol=0.05, the third candidate (C) is rejected.
         dists = [
-            {"yes": 0.95, "no": 0.05}, # A high yes
-            {"yes": 0.90, "no": 0.10}, # B near A → low JS
-            {"yes": 0.05, "no": 0.95}, # C disagrees → big JS jump
+            {"yes": 0.99, "no": 0.01},
+            {"yes": 0.97, "no": 0.03},
+            {"yes": 0.10, "no": 0.90},
         ]
         result = muse_greedy(
             dists, ["A", "B", "C"], yes_key="yes", m_min=2, eps_tol=0.05
         )
-        # The break is triggered before C is committed → C not in subset.
         assert "C" not in result.selected_agent_ids
         assert "A" in result.selected_agent_ids
         assert "B" in result.selected_agent_ids
