@@ -195,6 +195,25 @@ Plus the standard project gates:
 
 ---
 
+## Resolved decisions (2026-05-01)
+
+This section captures the user's resolutions to the five open questions surfaced by the workstream-planner. They override any ambiguity above.
+
+1. **Q1 — `[calibrate]` extra split: APPROVED.** Create a new `[calibrate]` extra in `pyproject.toml` for `numpy + scipy + scikit-learn`. Have `[benchmark]` transitively include `[calibrate]`. Rationale: keeps `council/calibrate/` self-describing under `.claude/rules/architecture.md` §"Forbidden imports" (L3 must not depend on `[benchmark]` semantics, which are evaluation-side: Bootstrap/AIPW/Bradley-Terry). ADR-0015 captures this in PR1 (`feature/ns-w3-jsd`) per the workstream-planner output.
+2. **Q2 — MUSE reference numbers: REPRODUCE EXACTLY.** PR2 (`feature/ns-w3-muse`) tests must match the numbers reported in [`papers/2 --- calibration and disagreement/Kruse et al. 2025 "Simple Yet Effective: An Information-Theoretic Approach to Multi-LLM Uncertainty Quantification" (EMNLP; arXiv:2507.07236).pdf`](../papers/) on the toy distributions defined in §3 of that paper. We are scientists; if the paper reports an exact subset-divergence value for a 3-model uniform-vs-skewed configuration, the unit test asserts that value to within a documented numerical tolerance (1e-6 by default). Synthetic-toy approximation is rejected.
+3. **Q3 — Real-LLM fixture sources: OPENROUTER SLMs only.** PR4 (`feature/ns-w3-isotonic`) and `tests/integration/test_calibration_real_models.py` use OpenRouter SLMs only. The user's `OPENROUTER_API_KEY` lives in the private (untracked) `.env` at the repo root. Default candidates: `openrouter/google/gemma-3-27b-it:free`, `openrouter/meta-llama/llama-3.1-8b-instruct:free`, `openrouter/qwen/qwen-2.5-7b-instruct:free`. No paid models in `[calibrate]` fixtures. The exact slate is committed in the PR4 fixture-generator script.
+4. **Q4 — `ConFreeze` window default: 5.** Matches `COUNCIL_NS_PLAN.md` and Anonymous 2026 *ConFreeze* ([`papers/2 --- calibration and disagreement/Anonymous 2026 "ConFreeze: Selective Multi-Model Debate through Consensus Freezing" (Preprint; OpenReview:PrqXuAS4BZ).pdf`](../papers/)). The window is configurable via `ConFreezeTermination(window=5)`; tests must cover both `window=3` (faster freeze) and `window=5` (default).
+5. **Q5 — PR5 split: NO.** Keep PR5 as a single `feature/ns-w3-terminations` deliverable shipping both `JSDDivergenceTermination` and `ConFreezeTermination`. The user is confident in the AAAI 2027 timeline and does not want deadline pressure to fragment the L3 termination layer.
+
+**Literature ground truth.** Where the user is silent on a numerical or design parameter, defer to the corresponding paper in `papers/2 --- calibration and disagreement/`:
+- JSD baseline: any standard reference; the closed-form n=2 uniform-vs-Dirac value is `JSD = ln(2)` in nats (equiv. 1.0 normalised).
+- MUSE: Kruse et al. 2025 (EMNLP; arXiv:2507.07236).
+- Privileged knowledge: Anonymous 2026 *Masked by Consensus* (OpenReview: du3ZBA8Z3Z) — the per-domain weight table.
+- ConFreeze: Anonymous 2026 (OpenReview: PrqXuAS4BZ) — window semantics + freeze rule.
+- Isotonic / ECE: any standard temperature-scaling reference; the target `ECE ≤ 0.05` is fixed by `COUNCILAGENT_NS_MASTER_PLAN.md` §7 W3.
+
+---
+
 ## Cross-chat handoff context (read this first)
 
 The new chat session for W3 should know:
