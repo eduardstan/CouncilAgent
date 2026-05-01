@@ -56,6 +56,16 @@ def test_public_api_re_exports() -> None:
     assert preferred_extensions is _pe
     assert stable_extensions is _se
 
+    # PR9 manipulability (T5)
+    from council.symbolic.argue import flip_cost, flip_cost_upper_bound
+    from council.symbolic.argue.manipulability import flip_cost as _fc
+    from council.symbolic.argue.manipulability import (
+        flip_cost_upper_bound as _fcub,
+    )
+
+    assert flip_cost is _fc
+    assert flip_cost_upper_bound is _fcub
+
     # Sanity: confirm the new aggregator exports are also the canonical objects.
     from council.symbolic.argue.aggregator import (
         ArgumentationAggregator as _AA,
@@ -140,6 +150,8 @@ def test_explicit_all() -> None:
         "Support",
         "build_qbaf",
         "evidence_backed_arg_ids",
+        "flip_cost",
+        "flip_cost_upper_bound",
         "grounded_extension",
         "preferred_extensions",
         "stable_extensions",

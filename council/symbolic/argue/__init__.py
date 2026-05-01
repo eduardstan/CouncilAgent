@@ -43,6 +43,10 @@ from council.symbolic.argue.asp_backends import (
 from council.symbolic.argue.baf import QBAF, Argument, Attack, Support
 from council.symbolic.argue.builders import build_qbaf
 from council.symbolic.argue.coupled_atl import evidence_backed_arg_ids
+from council.symbolic.argue.manipulability import (
+    flip_cost,
+    flip_cost_upper_bound,
+)
 from council.symbolic.argue.semantics.base import GradualSemantics
 from council.symbolic.argue.semantics.coupled import StrategicCoupledSemantics
 from council.symbolic.argue.semantics.df_quad import DFQuADSemantics
@@ -67,6 +71,8 @@ __all__ = [
     "Support",
     "build_qbaf",
     "evidence_backed_arg_ids",
+    "flip_cost",
+    "flip_cost_upper_bound",
     "grounded_extension",
     "preferred_extensions",
     "stable_extensions",
