@@ -10,7 +10,7 @@ Privileged Knowledge in LLM Correctness* (OpenReview du3ZBA8Z3Z), under
   - coding is unmeasured by the paper; ``COUNCILAGENT_NS_MASTER_PLAN.md``
     line 768 says "partial"; we interpolate to 2.5%
 
-The calibrator's mixing model self_weight × raw + peer_weight × peer
+The calibrator's mixing model self_weight * raw + peer_weight * peer
 is documented in ADR-0017 (next slice).
 """
 
