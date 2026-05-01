@@ -18,7 +18,9 @@ import numpy as np
 import pytest
 from scipy.spatial.distance import jensenshannon
 
-from council.calibrate.muse import MUSEResult, muse_greedy
+from council.calibrate import Calibrator
+from council.calibrate.muse import MUSECalibrator, MUSEResult, muse_greedy
+from council.dialect.moves import ClaimDomain
 
 
 def _binary_entropy_bits(p_yes: float) -> float:
@@ -251,3 +253,128 @@ class TestMUSEGreedyValidation:
                 ["A", "B"],
                 yes_key="yes",
             )
+
+
+class TestMUSECalibrator:
+    """Regression guard for the MUSECalibrator class wrapping muse_greedy."""
+
+    def test_implements_calibrator_abc(self) -> None:
+        cal = MUSECalibrator(
+            [{"yes": 1.0, "no": 0.0}, {"yes": 1.0, "no": 0.0}],
+            ["A", "B"],
+            yes_key="yes",
+        )
+        assert isinstance(cal, Calibrator)
+
+    def test_per_agent_jsd_against_consensus(self) -> None:
+        # 3 agents on a binary task; calibrate should equal raw * (1 - JS²)
+        # for every known agent_id.
+        dists = [
+            {"yes": 0.9, "no": 0.1},
+            {"yes": 0.7, "no": 0.3},
+            {"yes": 0.6, "no": 0.4},
+        ]
+        cal = MUSECalibrator(dists, ["A", "B", "C"], yes_key="yes", eps_tol=1.0)
+        # eps_tol=1.0 ensures the full subset is selected → consensus is
+        # the mean of all three.
+        for raw in (0.2, 0.5, 0.9):
+            for aid in ("A", "B", "C"):
+                cal_value = cal.calibrate(raw, aid, ClaimDomain.FREE)
+                assert 0.0 <= cal_value <= 1.0
+                # cal_value <= raw (penalty is non-negative)
+                assert cal_value <= raw + 1e-12
+
+    def test_unknown_agent_id_returns_raw_unchanged(self) -> None:
+        cal = MUSECalibrator(
+            [{"yes": 1.0, "no": 0.0}, {"yes": 0.0, "no": 1.0}],
+            ["A", "B"],
+            yes_key="yes",
+            m_min=2,
+        )
+        # "stranger" was not in the constructor — should pass through.
+        assert cal.calibrate(0.7, "stranger", ClaimDomain.ARITH) == pytest.approx(0.7)
+
+    def test_disagreeing_agent_has_higher_penalty_than_agreeing(self) -> None:
+        # A and B agree (yes ≈ 0.95, 0.92); C strongly disagrees (yes = 0.05).
+        # A's calibrated value must be ≥ C's calibrated value at the same raw.
+        dists = [
+            {"yes": 0.95, "no": 0.05},
+            {"yes": 0.92, "no": 0.08},
+            {"yes": 0.05, "no": 0.95},
+        ]
+        cal = MUSECalibrator(dists, ["A", "B", "C"], yes_key="yes", eps_tol=1.0)
+        cal_a = cal.calibrate(0.9, "A", ClaimDomain.FREE)
+        cal_c = cal.calibrate(0.9, "C", ClaimDomain.FREE)
+        assert cal_a > cal_c
+
+    def test_identical_agents_yield_identity_calibration(self) -> None:
+        # All agents identical → consensus equals each one → JS² = 0 → identity.
+        dists = [{"yes": 0.6, "no": 0.4}] * 3
+        cal = MUSECalibrator(dists, ["A", "B", "C"], yes_key="yes")
+        for raw in (0.1, 0.5, 0.9):
+            assert cal.calibrate(raw, "A", ClaimDomain.FREE) == pytest.approx(raw)
+
+    def test_disjoint_diracs_collapse_to_zero(self) -> None:
+        # Two agents predicting opposite Diracs; consensus is uniform
+        # (0.5, 0.5). Each agent's JS² to the consensus is the closed-form
+        # uniform-vs-Dirac value ≈ 0.31127812, so calibrate is non-zero
+        # but heavily penalised. Exact floor at zero only at JS²=1.
+        cal = MUSECalibrator(
+            [{"yes": 1.0, "no": 0.0}, {"yes": 0.0, "no": 1.0}],
+            ["A", "B"],
+            yes_key="yes",
+            m_min=2,
+            eps_tol=1.0,
+        )
+        cal_a = cal.calibrate(0.95, "A", ClaimDomain.FOL)
+        cal_b = cal.calibrate(0.95, "B", ClaimDomain.FOL)
+        # Symmetry: A and B equidistant from the uniform consensus.
+        assert cal_a == pytest.approx(cal_b, abs=1e-9)
+        # Heavy penalty: must be substantially less than raw.
+        assert cal_a < 0.95 * 0.7
+
+    def test_calibration_is_domain_agnostic(self) -> None:
+        cal = MUSECalibrator(
+            [{"yes": 0.7, "no": 0.3}, {"yes": 0.4, "no": 0.6}],
+            ["A", "B"],
+            yes_key="yes",
+            eps_tol=1.0,
+        )
+        results = {
+            domain: cal.calibrate(0.5, "A", domain) for domain in ClaimDomain
+        }
+        assert len(set(results.values())) == 1
+
+    def test_calibration_clamped_to_unit_interval(self) -> None:
+        cal = MUSECalibrator(
+            [{"yes": 1.0, "no": 0.0}, {"yes": 1.0, "no": 0.0}],
+            ["A", "B"],
+            yes_key="yes",
+        )
+        assert cal.calibrate(1.5, "A", ClaimDomain.FREE) == pytest.approx(1.0)
+        assert cal.calibrate(-0.2, "A", ClaimDomain.FREE) == pytest.approx(0.0)
+
+    def test_deterministic_across_repeated_calls(self) -> None:
+        cal = MUSECalibrator(
+            [{"yes": 0.7, "no": 0.3}, {"yes": 0.4, "no": 0.6}],
+            ["A", "B"],
+            yes_key="yes",
+            eps_tol=1.0,
+        )
+        first = cal.calibrate(0.6, "A", ClaimDomain.ARITH)
+        for _ in range(99):
+            assert cal.calibrate(0.6, "A", ClaimDomain.ARITH) == first
+
+    def test_selected_agent_ids_property_exposed(self) -> None:
+        cal = MUSECalibrator(
+            [
+                {"yes": 0.9, "no": 0.1},
+                {"yes": 0.85, "no": 0.15},
+            ],
+            ["A", "B"],
+            yes_key="yes",
+            eps_tol=1.0,
+        )
+        # eps_tol=1.0 forces full inclusion.
+        assert isinstance(cal.selected_agent_ids, tuple)
+        assert set(cal.selected_agent_ids) == {"A", "B"}
