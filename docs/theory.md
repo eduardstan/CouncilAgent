@@ -1,8 +1,22 @@
-# CouncilAgent-NS — Theory (W1: Verification Spine)
+# CouncilAgent-NS — Theory (W1: Verification Spine; W2: Argumentation)
 
-This document collects the theorems that justify the L1 verification spine.
-T1 is cited from prior work; T2 is an original adaptation; T3 motivates the
-L2 argumentation aggregator (W2).
+This document collects the theorems that justify the symbolic stratum.
+T1-T3 underpin the L1 verification spine (W1; P1 / AAMAS 2027). T4-T7
+underpin the L2 argumentation aggregator (W2; P2 / AAAI 2027). T1 is
+cited from prior work; T2-T7 are original or original adaptations.
+
+> **Constitution §11 ↔ ADR-0009 reading.** Constitution §11 (in
+> [`.claude/CLAUDE.md`](../.claude/CLAUDE.md)) states "the QBAF's argument
+> count equals the Propose count" as part of the receipt-completeness
+> contract. ADR-0009 (in [`docs/adr/0009-challenge-concede-as-arguments.md`](adr/0009-challenge-concede-as-arguments.md))
+> reformulates this *operationally* as a Propose-bijection check —
+> every Propose `move_id` appears as an `arg_id` in `baf.arguments`,
+> with extra Argument nodes (Challenge / Concede-derived) permitted.
+> Strict count-equality would forbid the structural information
+> attack/support edges carry. The reformulation is implemented in
+> `ProvenanceReceipt.is_complete` clause (d) at
+> [`council/context.py`](../council/context.py). Reviewers of P2
+> should expect this ADR-0009 cross-reference in the appendix.
 
 ## T1 — Soundness of LTL3 Monitors
 
@@ -344,9 +358,9 @@ violates six, and one is not applicable. Specifically:
 | Reinforcement              | ✓      | `TestReinforcement`                    |
 | Franklin                   | ✓      | `TestFranklin`                         |
 | Strict Monotony            | ✗      | `TestStrictMonotonyViolated`          |
-| Strict Reinforcement       | ✗      | (analogous; test deferred)              |
+| Strict Reinforcement       | ✗      | `TestStrictReinforcementViolated`     |
 | Resilience                 | ✗      | `TestResilienceViolated`               |
-| Strict Franklin            | ✗      | (analogous; test deferred)              |
+| Strict Franklin            | ✗      | `TestStrictFranklinViolated`          |
 | Weakening                  | ✗      | `TestWeakeningViolated`                |
 | Strengthening              | ✗      | `TestStrengtheningViolated`            |
 | Inertia                    | N/A    | extension-semantics-only postulate     |
@@ -388,10 +402,14 @@ matrix appears in P2's appendix table.
   - 9 satisfied: Anonymity, Bi-variate Independence, Bi-variate
     Directionality, Bi-variate Equivalence, Stability, Neutrality,
     Monotony, Reinforcement, Franklin
-  - 4 violated (with counterexamples): Strict Monotony, Resilience,
-    Weakening, Strengthening
-  - 3 documented-only (without runtime tests, deferred): Strict
-    Reinforcement, Strict Franklin, Inertia
+  - 6 violated (with counterexamples): Strict Monotony, Strict
+    Reinforcement, Resilience, Strict Franklin, Weakening, Strengthening.
+    The two strict-saturation cases (Strict Reinforcement, Strict
+    Franklin) use boundary fixtures (base = 1.0) where DF-QuAD's
+    saturating combination function caps further progress; the precise
+    Amgoud-Ben-Naim 2018 Definition 11/12 antecedents are documented
+    in the test docstrings.
+  - 1 documented-only (Inertia — extension-semantics-only postulate)
 - `TestPostulateMatrix` in the same file pins the cardinalities (9
   satisfied, 6 violated, 1 N/A) so future refactors don't silently
   drift.

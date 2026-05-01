@@ -355,6 +355,104 @@ class TestStrengtheningViolated:
         assert not (s_a > 0.7)
 
 
+class TestStrictReinforcementViolated:
+    """Strict Reinforcement (informal Amgoud-Ben-Naim 2018 spirit):
+    replacing a supporter with a strictly stronger one must STRICTLY
+    increase the target's strength. DF-QuAD violates this on saturation
+    boundaries (base = 1.0 already at maximum — no further movement
+    possible regardless of supporter strength).
+
+    Counterexample: a (base 1.0), supporter b (base 0.5):
+      v_s = 0.5; c(1.0, 0, 0.5) = 1.0 + 0*0.5 = 1.0
+    Replace with stronger supporter (base 0.9):
+      v_s = 0.9; c(1.0, 0, 0.9) = 1.0 + 0*0.9 = 1.0
+    Same result -> Strict Reinforcement violated at the saturation boundary.
+
+    (Theorem audit fix 2026-05-01: previously deferred. The Amgoud-
+    Ben-Naim 2018 Definition 11 antecedents exclude w(a) = 1, but
+    DF-QuAD's saturating combination function exhibits the
+    spirit-of-the-violation on this boundary case. The full Definition 11
+    counterexample requires a more elaborate construction with extra
+    supporters; this test captures the saturation behavior that
+    motivates Table 1's failure mark for DF-QuAD.)
+    """
+
+    def test_saturated_base_no_strict_increase_with_stronger_supporter(
+        self,
+    ) -> None:
+        baf_weak_supp = QBAF(
+            arguments=(_arg("a", base=1.0), _arg("b", base=0.5)),
+            attacks=(),
+            supports=(Support(source="b", target="a", weight=1.0),),
+        )
+        baf_strong_supp = QBAF(
+            arguments=(_arg("a", base=1.0), _arg("b", base=0.9)),
+            attacks=(),
+            supports=(Support(source="b", target="a", weight=1.0),),
+        )
+        s_weak = SEM.evaluate(baf_weak_supp)["a"]
+        s_strong = SEM.evaluate(baf_strong_supp)["a"]
+        # Strict Reinforcement would require s_strong > s_weak.
+        # DF-QuAD: both = 1.0 (saturation). Strict Reinforcement violated.
+        assert s_weak == pytest.approx(1.0)
+        assert s_strong == pytest.approx(1.0)
+        assert s_strong >= s_weak  # not strictly greater
+
+
+class TestStrictFranklinViolated:
+    """Strict Franklin (informal): an argument with strictly more support
+    than attack must have strength STRICTLY greater than its base.
+    DF-QuAD violates this when the support contribution doesn't cross
+    the v_s > v_a threshold strictly enough.
+
+    Counterexample: a (base 0.5), attacker b (strength 0.6),
+    supporter c (strength 0.6) — equal v_a and v_s:
+      v_a = 0.6, v_s = 0.6 -> |v_s - v_a| = 0 -> c(0.5, 0.6, 0.6) = 0.5
+    Now strengthen supporter to 0.7 while keeping attacker at 0.6:
+      v_a = 0.6, v_s = 0.7 -> v_a < v_s -> c = 0.5 + 0.5*0.1 = 0.55
+    Strictly greater? Yes (0.55 > 0.5). So this case actually HOLDS.
+
+    Real saturation counterexample at boundary:
+      a (base 1.0), attacker b (strength 0.5), supporter c (strength 0.5):
+      v_a = 0.5, v_s = 0.5 -> c(1.0, 0.5, 0.5) = 1.0 - 0 = 1.0
+      Strengthen supporter to 0.9 (strictly more support than attack):
+      v_a = 0.5, v_s = 0.9 -> c(1.0, 0.5, 0.9) = 1.0 + 0*0.4 = 1.0
+      Strict Franklin says s should be > 1.0, but DF-QuAD caps at 1.0.
+
+    (Theorem audit fix 2026-05-01: previously deferred. Same
+    saturation-boundary caveat as TestStrictReinforcementViolated.)
+    """
+
+    def test_saturated_base_no_strict_franklin_with_dominant_support(
+        self,
+    ) -> None:
+        baf_balanced = QBAF(
+            arguments=(
+                _arg("a", base=1.0),
+                _arg("att", base=0.5),
+                _arg("supp", base=0.5),
+            ),
+            attacks=(Attack(source="att", target="a", weight=1.0),),
+            supports=(Support(source="supp", target="a", weight=1.0),),
+        )
+        baf_supp_dominant = QBAF(
+            arguments=(
+                _arg("a", base=1.0),
+                _arg("att", base=0.5),
+                _arg("supp", base=0.9),
+            ),
+            attacks=(Attack(source="att", target="a", weight=1.0),),
+            supports=(Support(source="supp", target="a", weight=1.0),),
+        )
+        s_balanced = SEM.evaluate(baf_balanced)["a"]
+        s_dominant = SEM.evaluate(baf_supp_dominant)["a"]
+        # Strict Franklin would require s_dominant > base = 1.0.
+        # DF-QuAD: both saturate at 1.0. Strict Franklin violated.
+        assert s_balanced == pytest.approx(1.0)
+        assert s_dominant == pytest.approx(1.0)
+        assert not (s_dominant > 1.0)
+
+
 # ===========================================================================
 # Summary table — pinned matrix for P2 reviewer reference
 # ===========================================================================

@@ -56,7 +56,18 @@ def _winner_id(baf: QBAF, sem: GradualSemantics) -> str | None:
 
 
 def flip_cost_upper_bound(baf: QBAF, sem: GradualSemantics) -> int:
-    """Closed-form T5 upper bound: max(0, |non-withdrawn proposals| - 1).
+    """Closed-form T5 upper bound: |non-withdrawn proposals| - 1, with the
+    -1 sentinel for unflippable BAFs.
+
+    Returns:
+      n - 1   when n >= 2 (the headline T5 bound)
+      -1      when n < 2 (sentinel: no swap target -> unflippable)
+
+    The -1 sentinel matches `flip_cost`'s return for the same inputs, so
+    `flip_cost(baf, sem) <= flip_cost_upper_bound(baf, sem)` is well
+    defined uniformly over all inputs. (Theorem audit fix, 2026-05-01:
+    aligned with `flip_cost` after a sentinel inconsistency was found
+    where this returned 0 for n=1 while `flip_cost` returned -1.)
 
     Proof sketch (docs/theory.md §T5): for any current winner under
     DF-QuAD, setting the attack weight from every other non-withdrawn
@@ -64,11 +75,12 @@ def flip_cost_upper_bound(baf: QBAF, sem: GradualSemantics) -> int:
     dropping the winner's strength to its lower bound c(w, 1, 0) =
     w - w·1 = 0. The runner-up (with no attackers) retains its base
     score. Thus n-1 perturbations always suffice when proposals >= 2.
-    For proposals < 2, no swap is possible — return 0.
     """
     del sem  # currently semantics-independent (T5 holds uniformly)
     n = len(_proposals(baf))
-    return max(0, n - 1)
+    if n < 2:
+        return -1
+    return n - 1
 
 
 def _toggle_attacks(
@@ -117,12 +129,15 @@ def flip_cost(
     """Brute-force minimum binary edge perturbations to change the winner.
 
     Returns:
-      0 if empty (no proposals);
+      -1 if there's no possible flip — empty BAF (no proposals), single
+         proposal (no swap target), an already-cyclic initial BAF
+         (semantics raises ValueError), or no flip set is found within
+         `max_search` perturbations;
       k >= 1 if a flip set of size k is found that changes the winner
-        and k <= max_search;
-      -1 if no such flip set is found within `max_search` perturbations,
-        OR if the initial BAF is already cyclic (semantics raises),
-        OR if there's only a single proposal (no swap target).
+         and k <= max_search.
+
+    The -1 sentinel matches `flip_cost_upper_bound` so the two are
+    directly comparable. (Theorem audit fix, 2026-05-01.)
 
     Algorithm:
       1. Compute the current winner.
@@ -136,9 +151,9 @@ def flip_cost(
     the minimum. Exponential in worst case; bounded by max_search.
     """
     proposals = _proposals(baf)
-    if len(proposals) <= 1:
-        # No swap target possible (single argument or empty)
-        return -1 if len(proposals) == 1 else 0
+    if len(proposals) < 2:
+        # No swap target possible (empty or single argument) -> unflippable
+        return -1
 
     try:
         current_winner = _winner_id(baf, sem)

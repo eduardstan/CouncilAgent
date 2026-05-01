@@ -66,16 +66,17 @@ def _arg(arg_id: str, *, base: float = 0.5, withdrawn: bool = False) -> Argument
 
 
 class TestFlipCostUpperBound:
-    def test_empty_qbaf_zero(self) -> None:
+    def test_empty_qbaf_unflippable(self) -> None:
+        """Empty BAF: no proposals -> -1 sentinel.
+        (Theorem audit fix 2026-05-01: aligned with flip_cost.)"""
         baf = QBAF(arguments=(), attacks=(), supports=())
-        assert flip_cost_upper_bound(baf, DFQuADSemantics()) == 0
+        assert flip_cost_upper_bound(baf, DFQuADSemantics()) == -1
 
-    def test_single_argument_zero(self) -> None:
+    def test_single_argument_unflippable(self) -> None:
+        """Single Propose: no candidate runner-up. -1 sentinel."""
         a = _arg("a", base=0.7)
         baf = QBAF(arguments=(a,), attacks=(), supports=())
-        # Single Propose-derived arg → no candidate runner-up → bound is 0
-        # (the winner cannot change because there's nothing to swap to)
-        assert flip_cost_upper_bound(baf, DFQuADSemantics()) == 0
+        assert flip_cost_upper_bound(baf, DFQuADSemantics()) == -1
 
     def test_two_arguments_bound_is_one(self) -> None:
         a = _arg("a", base=0.7)
@@ -104,16 +105,15 @@ class TestFlipCostUpperBound:
 
 
 class TestFlipCostExact:
-    def test_empty_qbaf_zero(self) -> None:
+    def test_empty_qbaf_unflippable(self) -> None:
+        """Empty BAF: -1 sentinel. (Theorem audit fix 2026-05-01.)"""
         baf = QBAF(arguments=(), attacks=(), supports=())
-        assert flip_cost(baf, DFQuADSemantics()) == 0
+        assert flip_cost(baf, DFQuADSemantics()) == -1
 
     def test_single_argument_unflippable(self) -> None:
-        """Single Propose: nothing to swap to. flip_cost is conventionally
-        infinity; we return -1 to signal "no flip changes the winner"."""
+        """Single Propose: nothing to swap to. -1 sentinel."""
         a = _arg("a", base=0.7)
         baf = QBAF(arguments=(a,), attacks=(), supports=())
-        # Either -1 or sys.maxsize — pick -1 as the deterministic sentinel
         assert flip_cost(baf, DFQuADSemantics()) == -1
 
     def test_two_args_no_edges_one_flip(self) -> None:
