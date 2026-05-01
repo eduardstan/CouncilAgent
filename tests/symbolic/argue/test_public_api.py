@@ -36,6 +36,26 @@ def test_public_api_re_exports() -> None:
     assert to_dot is _td
     assert to_mermaid is _tm
 
+    # PR8 ASP backends
+    from council.symbolic.argue import (
+        grounded_extension,
+        preferred_extensions,
+        stable_extensions,
+    )
+    from council.symbolic.argue.asp_backends import (
+        grounded_extension as _ge,
+    )
+    from council.symbolic.argue.asp_backends import (
+        preferred_extensions as _pe,
+    )
+    from council.symbolic.argue.asp_backends import (
+        stable_extensions as _se,
+    )
+
+    assert grounded_extension is _ge
+    assert preferred_extensions is _pe
+    assert stable_extensions is _se
+
     # Sanity: confirm the new aggregator exports are also the canonical objects.
     from council.symbolic.argue.aggregator import (
         ArgumentationAggregator as _AA,
@@ -120,6 +140,9 @@ def test_explicit_all() -> None:
         "Support",
         "build_qbaf",
         "evidence_backed_arg_ids",
+        "grounded_extension",
+        "preferred_extensions",
+        "stable_extensions",
         "to_dot",
         "to_mermaid",
     }

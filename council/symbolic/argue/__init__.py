@@ -35,6 +35,11 @@ from council.symbolic.argue.aggregator import (
     LastProposeFallbackAggregator,
 )
 from council.symbolic.argue.aggregator_base import Aggregator
+from council.symbolic.argue.asp_backends import (
+    grounded_extension,
+    preferred_extensions,
+    stable_extensions,
+)
 from council.symbolic.argue.baf import QBAF, Argument, Attack, Support
 from council.symbolic.argue.builders import build_qbaf
 from council.symbolic.argue.coupled_atl import evidence_backed_arg_ids
@@ -62,6 +67,9 @@ __all__ = [
     "Support",
     "build_qbaf",
     "evidence_backed_arg_ids",
+    "grounded_extension",
+    "preferred_extensions",
+    "stable_extensions",
     "to_dot",
     "to_mermaid",
 ]
