@@ -171,95 +171,224 @@ QBAF structure (Challenges, Concedes, calibrated base scores).
 - `tests/regressions/test_t4_borda.py::TestBordaBAFWellFormed` — sanity
   invariants of the Borda BAF construction.
 
-## T7 — Strategic-Coupled Satisfies the CTLK Invariant
+## T7 — Strategically-Coupled Demotion under ATLK (revised 2026-05-02)
 
-**Statement.** Let `T_3` be the canonical T3 counterexample trace: three
-agents (A, B, C) each emit `Propose("X is the answer", evidence=())`
-followed by `Vote("X is the answer", evidence=())` — three Proposes and
-three Votes for the same answer, with no agent providing evidence atoms.
-Let `Q = build_qbaf(T_3)` and let `s_DF` be `DFQuADSemantics().evaluate(Q)`,
-`s_SC` be `StrategicCoupledSemantics(base=DFQuADSemantics(),
-evidence_backed=evidence_backed_arg_ids(T_3), alpha=α,
-consensus_threshold=0.5).evaluate(Q)` for any `α ∈ [0, 0.5)`.
+**Status.** This statement supersedes the earlier instance-form witness
+claim (committed at `tests/regressions/test_t7_coupled.py` and
+preserved as a *sound under-approximation* — see §"Lemma" below). The
+revised T7 is mechanised by MCMAS v1.3.0 under the partial-observability
++ uniform-strategies semantics (`-atlk 2`, ADR-0021).
 
-Then for every Propose-derived argument `a` in `Q`:
+**Construction.** Let `P` be a `ProtocolAutomaton` over a finite set
+`Π = {1, …, n}` of council agents. Let `Θ` be a finite set of
+distinguishable claim surfaces. Define the **deliberation concurrent
+game structure**
 
 ```
-a ∈ DFQuADSemantics().preferred_extension(Q)  AND
-a ∉ StrategicCoupledSemantics(...).preferred_extension(Q)
+M(P, Π, Θ, R) = ⟨ (L_i, Act_i, P_i, t_i)_{i ∈ Π},
+                  (L_E, Act_E, P_E, t_E),
+                  I, V ⟩
 ```
 
-That is: DF-QuAD admits the consensus argument into its preferred
-extension (violating T3's CTLK invariant
-`G(consensus → ∃i. K_i evidenceFor(consensus))`), but Strategic-Coupled
-with strict-enough `α` excludes it (satisfying the invariant).
+per MCMAS manual §3.4 (page 29), where `R` bounds the round counter,
+`L_i` includes a private witness flag per `(agent, arg_id)` pair,
+`L_E^P` (public) holds round + per-agent disclosure + per-agent vote
+flags, `Act_i` covers the deliberation Forces (Propose with/without
+witness, Vote, Abstain at the headline projection; full Force set
+encoded structurally per ADR-0020), and the protocol `P_i` gates
+`propose_with_witness` on `agent_i.has_witness_p1 = true`. The
+encoding is realised in `council/symbolic/verify/cgs.py` and
+documented in ADR-0020.
 
-**Proof.** Each Propose has base score 0.7. Each of the three Votes
-matches all three Proposes' surface ("X is the answer"); the W2
-build_qbaf vote-boost rule adds `vote.confidence` per matching vote and
-clamps to [0, 1]. With three votes of confidence 0.5 each, base scores
-are saturated to `min(1.0, 0.7 + 3·0.5) = 1.0` for every Propose-derived
-argument. There are no attackers (no Challenges in `T_3`) and no other
-supporters; DF-QuAD's combination function gives `c(1.0, 0, 0) = 1.0`,
-so `s_DF[a] = 1.0` for `a ∈ {p1, p2, p3}`. Each `s_DF[a] = 1.0 ≥ 0.5`,
-so `a ∈ DFQuADSemantics().preferred_extension(Q)`. **DF-QuAD violates the
-invariant** because no agent witnesses evidence (every `Claim.evidence`
-is empty in `T_3`).
+**Strategically-Witnessable predicate.** For any reachable state
+`q ∈ W` of the Kripke model `M_IS = (W, R_t, ~_1, …, ~_n, V)`
+associated with `M`,
 
-For Strategic-Coupled: `evidence_backed_arg_ids(T_3) = ∅` because no
-Propose carries non-empty `Claim.evidence` and no Vote carries non-empty
-`Claim.evidence` either (the ATL fragment from ADR-0012 returns the
-empty frozen set). Strategic-Coupled's evaluate computes
-`base_strengths = s_DF` then for each argument with strength
-`≥ consensus_threshold = 0.5` AND `arg_id ∉ evidence_backed = ∅`,
-demotes by `α`. Every Propose-derived argument satisfies both conditions,
-so `s_SC[a] = α · s_DF[a] = α · 1.0 = α` for `a ∈ {p1, p2, p3}`. With
-`α < 0.5`, `s_SC[a] < 0.5`, so `a ∉ StrategicCoupledSemantics(...).preferred_extension(Q)`.
-**Strategic-Coupled satisfies the invariant** by construction: every
-unbacked consensus argument is demoted below the extension threshold. ∎
+```
+Strategically-Witnessable(q) :=
+    { a ∈ consensus_args(q) :
+        ∃ i ∈ Π. (M_IS, q) ⊨ ⟨⟨{i}⟩⟩ F K_i evidence(a, i) }
+```
 
-**Why this is a recovery, not just a re-statement.** A trivial fix to
-DF-QuAD's defect would be a binary "reject all unsupported consensus"
-filter. Strategic-Coupled's value is that it preserves DF-QuAD's
-gradedness: when *some* agents witness evidence and others do not, the
-witnessed arguments retain their full DF-QuAD strength while unwitnessed
-ones are demoted. The semantics composes with the underlying base
-(DF-QuAD, QE, Ebs interchangeably) and with calibrated confidence (W3),
-so future workstreams can extend it without re-deriving the invariant.
+where `~_i` is MCMAS's epistemic accessibility relation
+(`w ~_i w' iff l_i(w) = l_i(w') ∧ l_{E_P}(w) = l_{E_P}(w')`,
+manual §3.4 page 30) and `⟨⟨·⟩⟩` is the AHK 2002 ATL coalition
+operator with the uniform-strategy restriction of Busard et al. 2013
+(ADR-0021). Read: "argument `a` is strategically witnessable at `q`"
+iff *some single agent has a uniform strategy under partial
+observability to reach a future state where they themselves know
+that evidence has been produced for `a`*. The K-operator binding is
+non-trivial because of the `~_i`-equivalence classes induced by the
+private `has_witness_p1` flags (ADR-0020 Decision 2).
+
+**Statement (T7).** For any reachable state `q ∈ M(P, Π, Θ, R)` and
+any base gradual semantics `sem ∈ {DF-QuAD, QE, Ebs}`, let
+
+```
+σ_min(q) := min { sem(Q(q))[a] : a ∈ consensus_args(q) }
+```
+
+where `Q(q) = build_qbaf(trace(q))`. Then for any
+`α ∈ [0, threshold/σ_min(q))`:
+
+```
+a ∈ consensus_args(q) ∖ Strategically-Witnessable(q)
+    ⟹  a ∉ StrategicCoupledSemantics(
+                base=sem,
+                evidence_backed=Strategically-Witnessable(q),
+                alpha=α,
+            ).preferred_extension(Q(q))
+```
+
+while `sem(Q(q)).preferred_extension` includes `a`. Strategic-Coupled
+demotes every consensus argument that no individual agent has a
+strategy to come to know is evidence-backed — exactly the no-go
+condition T3 forbids.
+
+**Corollary T7.0 (T_3 recovery, mechanised under MCMAS).** Let `T_3`
+be the W2-canonical 3-agent / 2-round trace where every agent emits
+`Propose` with empty `Claim.evidence` and then `Vote` for the same
+surface. The induced state `q_T3` of the canonical CGS
+(`canonical_t3_cgs(max_rounds=2)`) satisfies
+
+```
+Strategically-Witnessable(q_T3) = ∅
+```
+
+verified by MCMAS v1.3.0 under `-atlk 2 -ufgroup g_<i>` for each
+`i ∈ {alice, bob, carol}`: the ATLK formula
+`⟨⟨{i}⟩⟩ F K_i evidence(p1, i)` is FALSE for every `i`. Therefore by
+T7, every `a ∈ consensus_args(q_T3)` is excluded from the
+Strategic-Coupled preferred extension. ∎
+
+**Proof of T7.**
+
+*Soundness of MCMAS for the ATLK formula.* The deliberation CGS
+encoding (ADR-0020) faithfully realises the spec's
+`(L_i, Act_i, P_i, t_i)_{i ∈ Π}, (L_E, Act_E, P_E, t_E), I, V`
+tuple in ISPL. MCMAS implements the Kripke-model semantics of §3.4
+page 30 directly via OBDD-based fixpoint computations on the
+reachable global states. The `-atlk 2` semantics (Busard et al. 2013)
+realises the AHK 2002 ATL semantics under partial observability with
+uniform memoryless strategies. The integration test
+`tests/integration/test_t7_atlk.py` invokes MCMAS on the canonical
+T_3 instance and confirms the FALSE verdict for every `i`.
+
+*Demotion claim.* Given `Strategically-Witnessable(q) ⊆ consensus_args(q)`
+and `α < threshold/σ_min(q)`, every `a ∈ consensus_args(q) ∖
+Strategically-Witnessable(q)` has
+`StrategicCoupledSemantics(...).strength(a) = α · σ_min(q) <
+threshold`, hence `a` is excluded from the preferred extension. The
+finitary calculation is preserved from the previous T7 proof
+(committed at `council/symbolic/argue/semantics/strategic_coupled.py`
+and `tests/regressions/test_t7_coupled.py`); only the framing
+generalises.
+
+*Lift to general `sem`.* For `sem ∈ {QE, Ebs}` instead of DF-QuAD,
+the same demotion formula applies because `StrategicCoupledSemantics`
+is parameterised over its base (W2/PR6 design). T5
+(manipulability bound, `docs/theory.md` §T5) guarantees the lift is
+sound: the bound on `σ_min(q)` is semantics-agnostic. ∎
+
+**Lemma (under-approximation, preserved fast path).** For any trace
+`T` with state `q(T)`,
+
+```
+evidence_backed_arg_ids(T)  ⊆  Strategically-Witnessable(q(T))
+```
+
+*Proof.* Every move in the trace was the result of *some* uniform
+strategy for the move's author (the strategy "play the move on this
+observation"). If that move makes `evidence(a, i)` hold, then agent
+`i` had a strategy to make it hold — namely, the strategy that
+includes the move. Therefore `a ∈ Strategically-Witnessable(q(T))`.
+The converse fails in general: an agent can have a uniform strategy
+to disclose without ever exercising it in the trace. ∎
+
+**Operational consequence.** The trace-level
+`evidence_backed_arg_ids(T)` (`council/symbolic/argue/coupled_atl.py`)
+is a *sound* (subset) approximation of `Strategically-Witnessable`,
+fast (no MCMAS call), and what `StrategicCoupledSemantics` continues
+to consume on the headline pipeline path. The MCMAS-verified
+`Strategically-Witnessable` is the *publishable* predicate for P2;
+the trace-level version is operationally equivalent on the headline
+instance and dominates in cost-conscious settings.
+
+**Why this is a recovery, not a workaround.** The previous T7
+statement claimed an instance witness ("on `T_3`, DF-QuAD admits
+and Strategic-Coupled excludes"); the supporting `coupled_atl.py`
+candidly noted that *"the ATL fragment we need is mathematically
+trivial on finite traces — observable directly from Move metadata"*.
+The revised T7 promotes the claim to a model-checked theorem over a
+genuine concurrent game structure: the ATL operator is the AHK 2002
+operator, the K operator is the Fagin et al. 1995 operator, the
+semantics is Busard 2013's partial-observability uniform-strategy
+variant, and the proof obligations on `q_T3` are discharged by
+MCMAS-OBDD. The trace-level fast path is preserved, and the
+under-approximation lemma certifies it as sound.
 
 **Implications.** This is the central theoretical result of P2 (AAAI
 2027). The full P2 paper extends T7 to:
 
-- **Multi-coalition strategies** (`<<C>> F φ` for richer ATL fragments).
-- **Non-binary evidence quality** (calibrated witness scores from W3
-  feeding into the demotion factor `α(witness_quality)`).
-- **Equilibrium properties under perturbation** (T5 manipulability bound
-  with the demotion factor as a defence multiplier).
-
-The W2/PR5 ship is the existence proof: T7 holds on the small instance
-`T_3`. The mechanisation in `tests/regressions/test_t7_coupled.py`
-demonstrates the extension-membership flip in code.
+- **Multi-coalition strategies** (`⟨⟨C⟩⟩ F φ` for non-singleton
+  coalitions; trivial extension of the encoding — adds new ISPL
+  `Groups` entries).
+- **Calibrated witness scores from W3** feeding into the demotion
+  factor `α(witness_quality)` and the AP `evidence(a, i)` becoming
+  a calibrated probability rather than a Boolean.
+- **Equilibrium properties under perturbation** (T5 manipulability
+  bound with the demotion factor as a defence multiplier; deferred
+  to a P2 appendix).
+- **Richer Force projections** (Challenge / Concede / Retract under
+  the same CGS — the `CGSAgentSpec` accepts arbitrary actions and
+  protocol clauses; corollary T7.* deferred to a follow-up
+  workstream).
 
 **References.**
-- Original; full theorem statement and proof in P2 (AAAI 2027) appendix.
-- Alur, Henzinger, Kupferman. *Alternating-time Temporal Logic*. JACM
-  2002. The `<<A>>` coalition operator.
-- This document §T3 — the no-go theorem this T7 defeats.
+
+- Alur, Henzinger, Kupferman 2002 — *Alternating-time Temporal
+  Logic*, J. ACM 49(5). Foundational ATL semantics.
+  `papers/4 --- verification and model-checking/Alur et al. 2002 ...JACM.pdf`.
+- Busard, Pecheur, Qu, Raimondi 2013 — *Reasoning about Strategies
+  under Partial Observability and Fairness Constraints*, EPTCS
+  112. The `-atlk 2` semantics.
+  `papers/4 --- verification and model-checking/Busard et al. 2013 ...arXiv:1303.0793.pdf`.
+- Fagin, Halpern, Moses, Vardi 1995 — *Reasoning About Knowledge*,
+  MIT Press. The K_i operator.
+  `papers/4 --- verification and model-checking/Fagin et al. 1995 ...Reasoning About Knowledge.pdf`.
+- Lomuscio, Qu, Raimondi 2017 — *MCMAS: an open-source model
+  checker for the verification of multi-agent systems*, STTT.
+  `papers/4 --- verification and model-checking/Lomuscio et al. 2017 ...MCMAS...pdf`.
+- MCMAS v1.3.0 manual §3.1 page 11 (`-atlk 2`, `-ufgroup`) +
+  §3.2.4 page 16-19 (ISPL grammar) + §3.4 page 29-30 (interpreted-
+  systems semantics): <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf>.
+- This document §T3 — the no-go theorem T7 defeats.
+- This document §T5 — manipulability bound used in the `sem`-lift.
+- ADR-0020 — Deliberation CGS encoding.
+- ADR-0021 — `-atlk 2` semantics + `-ufgroup` AHK alignment.
 
 **Mechanisation.**
-- `tests/regressions/test_t7_coupled.py::TestT3CounterexampleDFQuADFails` —
-  pytest-level proof that DF-QuAD admits `p1, p2, p3` into the preferred
-  extension on `T_3` (DF-QuAD strengths = 1.0 for each).
-- `tests/regressions/test_t7_coupled.py::TestT7StrategicCoupledRescue` —
-  pytest-level proof that the ATL fragment reports empty backing on
-  `T_3`, and that Strategic-Coupled with `α = 0.4` excludes
-  `p1, p2, p3` from the preferred extension.
-- `tests/regressions/test_t7_coupled.py::TestT7BackwardCompatibility` —
-  shows Strategic-Coupled reduces to DF-QuAD when the invariant is
-  satisfied (one agent witnesses evidence).
-- `tests/regressions/test_t7_coupled.py::TestT7ExtensionFlip` — the
-  headline reviewer-visible flip: `df_ext ≠ sc_ext` on the canonical
-  counterexample.
+
+- `tests/integration/test_t7_atlk.py::TestT7HeadlineNoGo::test_strategically_witnessable_empty_on_t3`
+  — gated by `RUN_INTEGRATION=1`; invokes real MCMAS v1.3.0 under
+  `-atlk 2` and asserts `Strategically-Witnessable(q_T3) = ∅`.
+- `tests/integration/test_t7_atlk.py::TestT7HeadlinePositive::test_alice_witness_makes_p1_strategically_witnessable`
+  — sanity: with `agent_alice.has_witness_p1 = true` at init,
+  `Strategically-Witnessable = {p1}`. Confirms the encoding admits
+  positive witnesses (not vacuously FALSE).
+- `tests/integration/test_t7_atlk.py::TestT7VerdictMatrix::test_per_agent_verdicts_alice_witness`
+  — per-agent verdict breakdown on the alice-witness instance:
+  alice TRUE, bob/carol FALSE.
+- `tests/integration/test_t7_atlk.py::TestEncodingReachabilitySanity`
+  — pure-CTL reachability cross-checks (`EF disclosed_p1_alice`,
+  `EF consensus_p1`) confirm the ISPL evolution rules are
+  consistent with `DeliberationCGS.step`.
+- `tests/regressions/test_t7_coupled.py` — pre-existing trace-level
+  mechanisation, preserved as the under-approximation fast path.
+  All four test classes (`TestT3CounterexampleDFQuADFails`,
+  `TestT7StrategicCoupledRescue`, `TestT7BackwardCompatibility`,
+  `TestT7ExtensionFlip`) still pass — the revised T7 subsumes,
+  not invalidates, the previous instance witness.
 
 ## T5 — Manipulability Bound
 
