@@ -491,15 +491,11 @@ def _emit_environment(cgs: DeliberationCGS) -> str:
 
 def _emit_agent(agent: CGSAgentSpec) -> str:
     lines = [f"Agent {agent.agent_id}"]
-    # Lobsvars: the agent observes every public env var. The names are
-    # listed without prefix (per manual page 14 — Lobsvars take env var
-    # names directly).
-    # We list all obsvars by extracting names from the canonical env
-    # spec; for cleanliness we hard-list them here in the canonical_t3
-    # encoding. The general emitter would inspect cgs.environment.public_vars.
-    lines.append("  Lobsvars = { round, "
-                 "disclosed_p1_alice, disclosed_p1_bob, disclosed_p1_carol, "
-                 "voted_p1_alice, voted_p1_bob, voted_p1_carol };")
+    # No Lobsvars block: per MCMAS manual page 14, vars in
+    # Environment.Obsvars are observable by ALL agents automatically and
+    # MUST be removed from every agent's Lobsvars. Since canonical_t3_cgs
+    # puts everything observable in env.public_vars (→ Obsvars) and the
+    # environment has no private Vars, no Lobsvars block is needed.
     lines.append("  Vars:")
     for name, type_ in agent.private_vars.items():
         lines.append(f"    {name} : {type_};")

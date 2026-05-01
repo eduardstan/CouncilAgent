@@ -45,11 +45,17 @@ from council.symbolic.verify.ltlf import (
 class MCMASRunner(Protocol):
     """Callable that invokes MCMAS on an ISPL string and returns stdout.
 
-    The integration-test runner shells out to the ``mcmas`` binary;
-    unit tests use a stub returning canned output.
+    ``ufgroup`` (when not None) is passed as the ``-ufgroup`` flag —
+    only the named coalition's agents have uniform strategies; the
+    rest are full-information adversaries. This is a *semantic*
+    correction for the AHK 2002 ATL semantics (see ADR-0021): the
+    coalition's strategies are uniform, opponents are unrestricted.
+    Default ``-atlk 2`` without ``-ufgroup`` makes every agent
+    uniform, which is wrong for singleton-coalition formulas like
+    ``<<{i}>> F K_i ...``.
     """
 
-    def __call__(self, ispl: str, *, atlk: int) -> str: ...
+    def __call__(self, ispl: str, *, atlk: int, ufgroup: str | None = None) -> str: ...
 
 
 _VERDICT_RE = re.compile(
@@ -104,10 +110,11 @@ def evidence_backed_arg_ids_via_atl(
     """Return the arg_ids that are Strategically-Witnessable in the CGS.
 
     For each (arg_id, agent_id) pair, builds the ATLK formula
-    ``⟨⟨{i}⟩⟩ F K_i evidence(arg_id, i)``, emits ISPL via
-    ``cgs_to_ispl``, runs MCMAS through the injected ``runner`` under
-    ``-atlk 2``, and includes ``arg_id`` in the result iff the formula
-    evaluates TRUE for at least one agent.
+    ``⟨⟨{i}⟩⟩ F K_i evidence(arg_id, i)`` and invokes MCMAS once with
+    ``-atlk 2 -ufgroup g_<short_id>`` so that *only* agent `i` has
+    uniform strategies (per ADR-0021's AHK 2002 alignment). An
+    ``arg_id`` is included in the result iff the formula evaluates
+    TRUE for at least one agent.
 
     Empty ``arg_ids`` returns ``frozenset()`` without invoking the
     runner — short-circuit for test clarity.
@@ -115,28 +122,22 @@ def evidence_backed_arg_ids_via_atl(
     if not arg_ids:
         return frozenset()
 
-    # Build the full formula list in deterministic order: outer arg_id
-    # then inner agent_id. The verdict list will come back in the same
-    # order, allowing direct zip-style aggregation.
-    pairs: list[tuple[str, str]] = []
-    formulae: list[LTLf] = []
+    witnessed: set[str] = set()
     for arg_id in arg_ids:
         for agent in cgs.agents:
-            pairs.append((arg_id, agent.agent_id))
-            formulae.append(_build_witness_formula(arg_id, agent.agent_id))
-
-    ispl = cgs_to_ispl(cgs, formulae)
-    stdout = runner(ispl, atlk=2)
-    verdicts = parse_mcmas_verdicts(stdout)
-
-    if len(verdicts) != len(formulae):
-        raise ValueError(
-            f"verdict count mismatch: sent {len(formulae)} formulae, "
-            f"got {len(verdicts)} verdicts"
-        )
-
-    witnessed: set[str] = set()
-    for (arg_id, _agent_id), verdict in zip(pairs, verdicts, strict=True):
-        if verdict:
-            witnessed.add(arg_id)
+            short = _short_id(agent.agent_id)
+            formula = _build_witness_formula(arg_id, agent.agent_id)
+            ispl = cgs_to_ispl(cgs, [formula])
+            stdout = runner(ispl, atlk=2, ufgroup=f"g_{short}")
+            verdicts = parse_mcmas_verdicts(stdout)
+            if len(verdicts) != 1:
+                raise ValueError(
+                    f"verdict count mismatch for ({arg_id!r}, {agent.agent_id!r}): "
+                    f"sent 1 formula, got {len(verdicts)} verdicts"
+                )
+            if verdicts[0]:
+                witnessed.add(arg_id)
+                # Found a witness; no need to ask about other agents
+                # for this arg_id.
+                break
     return frozenset(witnessed)

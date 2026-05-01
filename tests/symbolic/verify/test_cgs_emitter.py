@@ -67,8 +67,10 @@ class TestISPLRequiredSections:
     def test_contains_per_agent_subsections(self) -> None:
         cgs = canonical_t3_cgs()
         out = cgs_to_ispl(cgs, [Atom("consensus_p1")])
-        # Per-agent subsections that ISPL grammar requires
-        for sub in ("Lobsvars", "Vars", "Actions", "Protocol", "Evolution"):
+        # Per-agent subsections required by the ISPL grammar (page 19).
+        # Lobsvars is OMITTED for canonical_t3_cgs because env.Obsvars is
+        # observable by all agents by default (manual page 14).
+        for sub in ("Vars", "Actions", "Protocol", "Evolution"):
             assert sub in out, f"missing per-agent subsection {sub!r}"
 
 

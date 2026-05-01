@@ -150,6 +150,39 @@ yield the same action choice (the *uniformity constraint*).
   "subsumes the option `-atlk`"). The integration test uses
   `-atlk 2` for explicitness.
 
+### Addendum (2026-05-02) — `-ufgroup` semantic correction (Stage 5.3 finding)
+
+The default behaviour of `-atlk 2` makes **every** agent's
+strategies uniform. For singleton-coalition formulas like
+`⟨⟨{i}⟩⟩ F φ`, the AHK 2002 ATL semantics demands only
+that the coalition's strategies be uniform — the opponents are
+treated as **full-information adversaries** (any strategy, not
+necessarily uniform). The two semantics differ on whether the
+opponents' strategy space is restricted; the default conflates
+them.
+
+The `-ufgroup <name>` flag (manual §3.1 page 11) restricts
+uniform-strategy generation to the named coalition only. For our
+T7 integration tests we pass `-ufgroup g_<short>` (one per agent)
+when checking each agent's `⟨⟨{i}⟩⟩` formula. This yields:
+
+- Faithful AHK 2002 semantics for the singleton-coalition formulas
+  (only the coalition's strategies are required to be uniform).
+- Significantly cheaper model-checking on the alice-witness
+  positive instance: without `-ufgroup` MCMAS times out after
+  180s on `max_rounds=2`; with `-ufgroup g_alice` it returns the
+  TRUE verdict in ~60s on `max_rounds=1` and ~100s on
+  `max_rounds=2`.
+
+The realization: the `MCMASRunner` Protocol takes
+`ufgroup: str | None = None`, and
+`evidence_backed_arg_ids_via_atl` invokes the runner once per
+(arg_id, agent_id), passing the agent's singleton-group name as
+`ufgroup`. This costs three MCMAS subprocess calls per arg_id
+(model rebuilt three times) but is the only way to obtain the
+correct AHK semantics for singleton-coalition formulas under the
+default MCMAS implementation.
+
 **Negative:**
 
 - Memorylessness limitation. MCMAS implements *positional* uniform
