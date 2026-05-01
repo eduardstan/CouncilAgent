@@ -148,6 +148,14 @@ Verified at branch creation:
 - One additional extra in `pyproject.toml` (10 → 11). Negligible
   inventory cost.
 
+## Realised by
+
+- `council/calibrate/jsd.py` — first concrete L3 calibrator landing under
+  the new extra (W3/PR1, `feature/ns-w3-jsd`).
+- `tests/calibrate/test_jsd.py`, `tests/calibrate/test_jsd_aggregator_integration.py` —
+  17 + 3 tests covering the helper, the calibrator, and the W2 build_qbaf
+  hook (Approved Exception #1).
+
 ## References
 
 - `pyproject.toml` lines 33-42 (`[benchmark]`) and 60-71 (`[calibrate]`) —
