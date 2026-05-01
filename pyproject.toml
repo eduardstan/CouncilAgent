@@ -167,6 +167,10 @@ module = [
     "mlflow.*",
     "hydra",
     "hydra.*",
+    "scipy",
+    "scipy.*",
+    "sklearn",
+    "sklearn.*",
 ]
 ignore_missing_imports = true
 
