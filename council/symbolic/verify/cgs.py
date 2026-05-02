@@ -24,7 +24,7 @@ Encoding decisions documented in ADR-0020 (Stage 4 of the T7 plan).
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -57,13 +57,25 @@ class CGSProtocolClause:
 
 @dataclass(frozen=True, slots=True)
 class CGSAgentSpec:
-    """Specification of one council agent in the CGS."""
+    """Specification of one council agent in the CGS.
+
+    ``lobsvars`` is the agent's per-agent observability opt-in into
+    *private* env vars (``Environment.Vars``). Public env vars
+    (``Environment.Obsvars``) are observable by every agent without
+    being listed here (MCMAS manual page 14). For the canonical
+    ``canonical_t3_cgs`` encoding ``lobsvars`` is empty, because every
+    relevant deliberation variable is in ``Environment.Obsvars``.
+    Future encodings that introduce moderator-private state (e.g.,
+    intervention-counter visible only to a subset of agents) populate
+    ``lobsvars`` per agent.
+    """
 
     agent_id: str
     actions: tuple[str, ...]
     private_vars: Mapping[str, str]  # var_name → ISPL type ("boolean", "0..3", ...)
     initial_values: Mapping[str, str]  # var_name → ISPL value
     protocol: tuple[CGSProtocolClause, ...]
+    lobsvars: tuple[str, ...] = ()
 
     def __hash__(self) -> int:
         return hash((
@@ -72,6 +84,7 @@ class CGSAgentSpec:
             tuple(sorted(self.private_vars.items())),
             tuple(sorted(self.initial_values.items())),
             self.protocol,
+            self.lobsvars,
         ))
 
 
@@ -264,44 +277,191 @@ def _eval_condition(
 ) -> bool:
     """Evaluate a small ISPL Boolean over the given variable bindings.
 
-    Supports the subset used by ``canonical_t3_cgs``: equality on
-    Boolean or enumerated values, ``and`` / ``or`` / ``!`` connectives,
-    parentheses, and qualified references like ``Environment.foo``
-    (looked up from ``full_state`` when present, else from
-    ``public_env``). Bare identifiers refer to ``local_vars``.
-    """
-    namespace: dict[str, Any] = {"True": True, "False": False}
-    for var, value in local_vars.items():
-        namespace[var] = _coerce(value)
-    for var, value in public_env.items():
-        namespace[f"Environment_{var}"] = _coerce(value)
-    if full_state is not None:
-        for scope, vars_ in full_state.items():
-            for var, value in vars_.items():
-                namespace[f"{scope}_{var}"] = _coerce(value)
+    Pure recursive-descent tokenizer + parser; no ``eval()``. Grammar
+    of the supported subset:
 
-    # ISPL → Python: ``=`` becomes ``==``; qualified names (``X.y``)
-    # become ``X_y``; ``true``/``false`` become Python literals; ``!``
-    # becomes ``not``.
-    py_expr = expression.replace(" = ", " == ").replace(".", "_")
-    py_expr = _replace_word(py_expr, "true", "True")
-    py_expr = _replace_word(py_expr, "false", "False")
-    py_expr = py_expr.replace("!", " not ")
+        expr           := or_expr
+        or_expr        := and_expr ('or' and_expr)*
+        and_expr       := unary_expr ('and' unary_expr)*
+        unary_expr     := ('!' | 'not') unary_expr | primary_expr
+        primary_expr   := comparison | '(' expr ')'
+        comparison     := qualified_name '=' (qualified_name | literal)
+        qualified_name := IDENT ('.' IDENT)?
+        literal        := 'true' | 'false' | NUMBER
+
+    Names resolve in this priority: ``Scope.var`` looks up
+    ``full_state[Scope][var]`` first, then ``public_env[var]`` for
+    ``Environment.var``; bare ``var`` looks up ``local_vars`` first,
+    then any scope in ``full_state``. Unknown names raise
+    ``ValueError``.
+    """
+
+    def lookup(name: str) -> Any:
+        if "." in name:
+            scope, var = name.split(".", 1)
+            if full_state is not None and scope in full_state and var in full_state[scope]:
+                return _coerce(full_state[scope][var])
+            if scope == "Environment" and var in public_env:
+                return _coerce(public_env[var])
+            raise ValueError(f"unknown qualified name {name!r}")
+        if name in local_vars:
+            return _coerce(local_vars[name])
+        if full_state is not None:
+            for scope_vars in full_state.values():
+                if name in scope_vars:
+                    return _coerce(scope_vars[name])
+        raise ValueError(f"unknown name {name!r}")
 
     try:
-        return bool(eval(py_expr, {"__builtins__": {}}, namespace))
-    except (NameError, SyntaxError) as exc:
+        tokens = _tokenize(expression)
+        result, consumed = _parse_or(tokens, 0, lookup)
+        if consumed != len(tokens):
+            raise ValueError(
+                f"unexpected trailing tokens after position {consumed}"
+            )
+        return bool(result)
+    except ValueError as exc:
         raise ValueError(
-            f"unable to evaluate ISPL condition {expression!r} "
-            f"(translated to {py_expr!r}): {exc}"
+            f"unable to evaluate ISPL condition {expression!r}: {exc}"
         ) from exc
 
 
-def _replace_word(text: str, word: str, replacement: str) -> str:
-    """Word-boundary replacement (does not match inside identifiers)."""
-    import re
+# ---------------------------------------------------------------------------
+# Tokenizer + recursive-descent parser for the ISPL Boolean subset
+# ---------------------------------------------------------------------------
 
-    return re.sub(rf"\b{re.escape(word)}\b", replacement, text)
+
+@dataclass(frozen=True, slots=True)
+class _Token:
+    kind: str  # see _tokenize for the kind enumeration
+    value: str
+
+
+def _tokenize(text: str) -> list[_Token]:
+    """ISPL Boolean tokenizer; raises ValueError on illegal characters."""
+    tokens: list[_Token] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c.isspace():
+            i += 1
+            continue
+        if c == "(":
+            tokens.append(_Token("LPAREN", c))
+            i += 1
+        elif c == ")":
+            tokens.append(_Token("RPAREN", c))
+            i += 1
+        elif c == "=":
+            tokens.append(_Token("EQ", c))
+            i += 1
+        elif c == "!":
+            tokens.append(_Token("NOT", c))
+            i += 1
+        elif c == ".":
+            tokens.append(_Token("DOT", c))
+            i += 1
+        elif c.isalpha() or c == "_":
+            j = i
+            while j < n and (text[j].isalnum() or text[j] == "_"):
+                j += 1
+            word = text[i:j]
+            keywords = {
+                "and": "AND",
+                "or": "OR",
+                "not": "NOT",
+                "true": "TRUE",
+                "false": "FALSE",
+            }
+            tokens.append(_Token(keywords.get(word, "IDENT"), word))
+            i = j
+        elif c.isdigit() or (c == "-" and i + 1 < n and text[i + 1].isdigit()):
+            j = i + 1
+            while j < n and text[j].isdigit():
+                j += 1
+            tokens.append(_Token("NUMBER", text[i:j]))
+            i = j
+        else:
+            raise ValueError(f"illegal character {c!r} at position {i}")
+    return tokens
+
+
+def _parse_or(tokens: list[_Token], pos: int, lookup: Callable[[str], Any]) -> tuple[bool, int]:
+    left, pos = _parse_and(tokens, pos, lookup)
+    while pos < len(tokens) and tokens[pos].kind == "OR":
+        right, pos = _parse_and(tokens, pos + 1, lookup)
+        left = left or right
+    return left, pos
+
+
+def _parse_and(tokens: list[_Token], pos: int, lookup: Callable[[str], Any]) -> tuple[bool, int]:
+    left, pos = _parse_unary(tokens, pos, lookup)
+    while pos < len(tokens) and tokens[pos].kind == "AND":
+        right, pos = _parse_unary(tokens, pos + 1, lookup)
+        left = left and right
+    return left, pos
+
+
+def _parse_unary(tokens: list[_Token], pos: int, lookup: Callable[[str], Any]) -> tuple[bool, int]:
+    if pos < len(tokens) and tokens[pos].kind == "NOT":
+        inner, pos = _parse_unary(tokens, pos + 1, lookup)
+        return (not inner), pos
+    return _parse_primary(tokens, pos, lookup)
+
+
+def _parse_primary(tokens: list[_Token], pos: int, lookup: Callable[[str], Any]) -> tuple[bool, int]:
+    if pos < len(tokens) and tokens[pos].kind == "LPAREN":
+        result, pos = _parse_or(tokens, pos + 1, lookup)
+        if pos >= len(tokens) or tokens[pos].kind != "RPAREN":
+            raise ValueError("expected ')' to close parenthesised expression")
+        return result, pos + 1
+    return _parse_comparison(tokens, pos, lookup)
+
+
+def _parse_comparison(tokens: list[_Token], pos: int, lookup: Callable[[str], Any]) -> tuple[bool, int]:
+    lhs, pos = _parse_qualified(tokens, pos)
+    if pos >= len(tokens) or tokens[pos].kind != "EQ":
+        raise ValueError(
+            f"expected '=' after {lhs!r} at position {pos}, "
+            f"got {tokens[pos] if pos < len(tokens) else 'EOF'}"
+        )
+    pos += 1
+    if pos >= len(tokens):
+        raise ValueError("unexpected end of expression after '='")
+    rhs_tok = tokens[pos]
+    if rhs_tok.kind == "TRUE":
+        rhs_val: Any = True
+        pos += 1
+    elif rhs_tok.kind == "FALSE":
+        rhs_val = False
+        pos += 1
+    elif rhs_tok.kind == "NUMBER":
+        rhs_val = int(rhs_tok.value)
+        pos += 1
+    elif rhs_tok.kind == "IDENT":
+        rhs_qualified, pos = _parse_qualified(tokens, pos)
+        rhs_val = lookup(rhs_qualified)
+    else:
+        raise ValueError(f"unexpected RHS token kind {rhs_tok.kind!r} ({rhs_tok.value!r})")
+    return lookup(lhs) == rhs_val, pos
+
+
+def _parse_qualified(tokens: list[_Token], pos: int) -> tuple[str, int]:
+    if pos >= len(tokens) or tokens[pos].kind != "IDENT":
+        raise ValueError(
+            f"expected identifier at position {pos}, "
+            f"got {tokens[pos] if pos < len(tokens) else 'EOF'}"
+        )
+    first = tokens[pos].value
+    pos += 1
+    if pos < len(tokens) and tokens[pos].kind == "DOT":
+        pos += 1
+        if pos >= len(tokens) or tokens[pos].kind != "IDENT":
+            raise ValueError(
+                f"expected identifier after '.' at position {pos}"
+            )
+        return f"{first}.{tokens[pos].value}", pos + 1
+    return first, pos
 
 
 def _coerce(value: str) -> Any:
@@ -437,7 +597,7 @@ def cgs_to_ispl(cgs: DeliberationCGS, formulae: Sequence[LTLf]) -> str:
     sections.append(_emit_environment(cgs))
     for agent in cgs.agents:
         sections.append("")
-        sections.append(_emit_agent(agent))
+        sections.append(_emit_agent(agent, cgs.environment))
     sections.append("")
     sections.append(_emit_evaluation(cgs.atomic_propositions))
     sections.append("")
@@ -489,13 +649,31 @@ def _emit_environment(cgs: DeliberationCGS) -> str:
     return "\n".join(lines)
 
 
-def _emit_agent(agent: CGSAgentSpec) -> str:
+def _emit_agent(agent: CGSAgentSpec, environment: CGSEnvironmentSpec) -> str:
+    # Lobsvars validation (MCMAS manual page 14): the section is the
+    # agent's per-agent opt-in into Environment.Vars (private env state).
+    # Public env state lives in Environment.Obsvars and is observable by
+    # all agents *without* being listed in any Lobsvars; MCMAS rejects
+    # such listings with "local observable variable X is not defined in
+    # the environment" (see the Stage 5.3 commit `5f178a4` that
+    # discovered this). The validation here turns a future silent bug
+    # ("env has private state but no Lobsvars wires it up") into a loud
+    # construction-time error.
+    for name in agent.lobsvars:
+        if name not in environment.private_vars:
+            raise ValueError(
+                f"agent {agent.agent_id!r} Lobsvars references "
+                f"{name!r}, which is not in Environment.private_vars "
+                f"(env.private_vars keys: "
+                f"{sorted(environment.private_vars)}). Public env vars "
+                f"in Environment.Obsvars are observable by every agent "
+                f"by default and must NOT appear in any agent's Lobsvars."
+            )
+
     lines = [f"Agent {agent.agent_id}"]
-    # No Lobsvars block: per MCMAS manual page 14, vars in
-    # Environment.Obsvars are observable by ALL agents automatically and
-    # MUST be removed from every agent's Lobsvars. Since canonical_t3_cgs
-    # puts everything observable in env.public_vars (→ Obsvars) and the
-    # environment has no private Vars, no Lobsvars block is needed.
+    if agent.lobsvars:
+        members = ", ".join(agent.lobsvars)
+        lines.append(f"  Lobsvars = {{ {members} }};")
     lines.append("  Vars:")
     for name, type_ in agent.private_vars.items():
         lines.append(f"    {name} : {type_};")

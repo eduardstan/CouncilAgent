@@ -348,3 +348,86 @@ class TestEvaluateAtomicPropositions:
         assert aps["evidence_p1_alice"] is True
         assert aps["evidence_p1_bob"] is False
         assert aps["evidence_p1_carol"] is False
+
+
+# ---------------------------------------------------------------------------
+# ISPL Boolean evaluator (recursive-descent, no eval() —
+# replaced post-constitution-reviewer's C1 finding)
+# ---------------------------------------------------------------------------
+
+
+class TestEvalCondition:
+    """Lock the recursive-descent parser/evaluator against eval()'s
+    permissiveness. The grammar is documented in the _eval_condition
+    docstring; this class pins it.
+    """
+
+    @staticmethod
+    def _eval(expression: str, **vars_: str) -> bool:
+        from council.symbolic.verify.cgs import _eval_condition
+
+        return _eval_condition(expression, vars_, {})
+
+    def test_simple_equality_true(self) -> None:
+        assert self._eval("x = true", x="true") is True
+
+    def test_simple_equality_false(self) -> None:
+        assert self._eval("x = true", x="false") is False
+
+    def test_inequality_via_negation(self) -> None:
+        assert self._eval("! x = true", x="false") is True
+        assert self._eval("not x = true", x="false") is True
+
+    def test_conjunction_short_form(self) -> None:
+        assert self._eval("x = true and y = true", x="true", y="true") is True
+        assert self._eval("x = true and y = true", x="true", y="false") is False
+
+    def test_disjunction(self) -> None:
+        assert self._eval("x = true or y = true", x="false", y="true") is True
+        assert self._eval("x = true or y = true", x="false", y="false") is False
+
+    def test_parentheses(self) -> None:
+        assert self._eval("(x = true)", x="true") is True
+        assert (
+            self._eval("! (x = true and y = true)", x="true", y="false") is True
+        )
+
+    def test_integer_comparison(self) -> None:
+        assert self._eval("round = 1", round="1") is True
+        assert self._eval("round = 1", round="2") is False
+
+    def test_qualified_environment_reference(self) -> None:
+        from council.symbolic.verify.cgs import _eval_condition
+
+        out = _eval_condition(
+            "Environment.round = 0", {}, {"round": "0"}
+        )
+        assert out is True
+
+    def test_rejects_illegal_character(self) -> None:
+        with pytest.raises(ValueError, match=r"illegal character"):
+            self._eval("x * y = 1", x="1", y="1")
+
+    def test_rejects_unbalanced_parens(self) -> None:
+        with pytest.raises(ValueError, match=r"expected '\)'"):
+            self._eval("(x = true", x="true")
+
+    def test_rejects_unknown_name(self) -> None:
+        with pytest.raises(ValueError, match=r"unknown name"):
+            self._eval("undefined_var = true")
+
+    def test_rejects_trailing_junk(self) -> None:
+        with pytest.raises(ValueError, match=r"trailing"):
+            self._eval("x = true x", x="true")
+
+    def test_rejects_attribute_chain(self) -> None:
+        # qualified name is at most one '.'; attribute chains are not in the grammar.
+        with pytest.raises(ValueError):
+            self._eval("a.b.c = true")
+
+    def test_rejects_malicious_function_call(self) -> None:
+        # The previous eval()-based implementation could in principle
+        # have parsed "len(x) = 0" if Python builtins leaked; the new
+        # parser has no concept of function calls and must raise.
+        with pytest.raises(ValueError):
+            self._eval("len(x) = 0", x="true")

@@ -284,3 +284,97 @@ class TestEmitterValidation:
         cgs = canonical_t3_cgs()
         with pytest.raises(ValueError, match=r"at least one formula"):
             cgs_to_ispl(cgs, [])
+
+
+class TestLobsvarsOptIn:
+    """Per-agent Lobsvars opt-in into Environment.private_vars.
+
+    Public env vars in Environment.Obsvars are observable by every
+    agent without any Lobsvars declaration (MCMAS manual page 14).
+    Lobsvars is the per-agent opt-in into Environment.Vars (the
+    private moderator state). The emitter should:
+      - omit the Lobsvars block when agent.lobsvars is empty;
+      - emit it when non-empty;
+      - reject any reference to a name not in env.private_vars
+        (because public Obsvars vars are already auto-observable
+        and listing them in Lobsvars triggers MCMAS errors).
+    """
+
+    def test_default_agent_has_no_lobsvars(self) -> None:
+        cgs = canonical_t3_cgs()
+        out = cgs_to_ispl(cgs, [Atom("consensus_p1")])
+        assert "Lobsvars" not in out
+
+    def test_lobsvars_emitted_when_agent_opts_in(self) -> None:
+        from council.symbolic.verify.cgs import (
+            CGSAgentSpec,
+            CGSEnvironmentSpec,
+            CGSGroup,
+            CGSProtocolClause,
+            DeliberationCGS,
+        )
+
+        env = CGSEnvironmentSpec(
+            public_vars={"round": "0..1"},
+            private_vars={"moderator_alert": "boolean"},
+            initial_values={"round": "0", "moderator_alert": "false"},
+        )
+        agent = CGSAgentSpec(
+            agent_id="agent_alice",
+            actions=("noop",),
+            private_vars={"x": "boolean"},
+            initial_values={"x": "false"},
+            protocol=(CGSProtocolClause(condition="Other", actions=("noop",)),),
+            lobsvars=("moderator_alert",),
+        )
+        from council.symbolic.verify.cgs import CGSAtomicProposition
+
+        cgs = DeliberationCGS(
+            agents=(agent,),
+            environment=env,
+            atomic_propositions=(
+                CGSAtomicProposition(name="ok", expression="x = true"),
+            ),
+            groups=(CGSGroup(name="g_alice", members=("agent_alice",)),),
+            max_rounds=1,
+        )
+        out = cgs_to_ispl(cgs, [Atom("ok")])
+        assert "Lobsvars = { moderator_alert };" in out
+
+    def test_lobsvars_referencing_public_var_raises(self) -> None:
+        # Manual page 14 forbids listing Obsvars members in any agent's
+        # Lobsvars; MCMAS would reject this with "not defined in the
+        # environment". The emitter must catch it earlier.
+        from council.symbolic.verify.cgs import (
+            CGSAgentSpec,
+            CGSAtomicProposition,
+            CGSEnvironmentSpec,
+            CGSGroup,
+            CGSProtocolClause,
+            DeliberationCGS,
+        )
+
+        env = CGSEnvironmentSpec(
+            public_vars={"round": "0..1", "tick_flag": "boolean"},
+            private_vars={},
+            initial_values={"round": "0", "tick_flag": "false"},
+        )
+        bad_agent = CGSAgentSpec(
+            agent_id="agent_alice",
+            actions=("noop",),
+            private_vars={"x": "boolean"},
+            initial_values={"x": "false"},
+            protocol=(CGSProtocolClause(condition="Other", actions=("noop",)),),
+            lobsvars=("tick_flag",),  # WRONG — public var, observable by default
+        )
+        cgs = DeliberationCGS(
+            agents=(bad_agent,),
+            environment=env,
+            atomic_propositions=(
+                CGSAtomicProposition(name="ok", expression="x = true"),
+            ),
+            groups=(CGSGroup(name="g_alice", members=("agent_alice",)),),
+            max_rounds=1,
+        )
+        with pytest.raises(ValueError, match=r"not in Environment\.private_vars"):
+            cgs_to_ispl(cgs, [Atom("ok")])

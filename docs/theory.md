@@ -174,10 +174,23 @@ QBAF structure (Challenges, Concedes, calibrated base scores).
 ## T7 — Strategically-Coupled Demotion under ATLK (revised 2026-05-02)
 
 **Status.** This statement supersedes the earlier instance-form witness
-claim (committed at `tests/regressions/test_t7_coupled.py` and
-preserved as a *sound under-approximation* — see §"Lemma" below). The
-revised T7 is mechanised by MCMAS v1.3.0 under the partial-observability
-+ uniform-strategies semantics (`-atlk 2`, ADR-0021).
+claim. T7 is now parameterised over a witness predicate; two
+predicates are shipped, each appropriate to a distinct phase of the
+L2 lifecycle:
+
+  - the **operational** predicate ``Witnessed(T)``
+    (`council/symbolic/argue/coupled_atl.py`) — pure-Python,
+    trace-direct, microseconds per call, used by
+    ``StrategicCoupledSemantics`` at deliberation time;
+  - the **verification** predicate ``Strategically-Witnessable(q)``
+    (`council/symbolic/verify/atl_witness.py`) — MCMAS-checked ATLK
+    fixpoint over the deliberation CGS, used at theorem time.
+
+The under-approximation lemma below certifies that the operational
+predicate is a sound subset of the verification predicate; both yield
+T7 under the demotion claim. The revised T7 is mechanised by MCMAS
+v1.3.0 under the partial-observability + uniform-strategies semantics
+(`-atlk 2`, ADR-0021).
 
 **Construction.** Let `P` be a `ProtocolAutomaton` over a finite set
 `Π = {1, …, n}` of council agents. Let `Θ` be a finite set of
@@ -290,29 +303,39 @@ is parameterised over its base (W2/PR6 design). T5
 (manipulability bound, `docs/theory.md` §T5) guarantees the lift is
 sound: the bound on `σ_min(q)` is semantics-agnostic. ∎
 
-**Lemma (under-approximation, preserved fast path).** For any trace
-`T` with state `q(T)`,
+**Lemma (operational ↔ verification under-approximation).** For any
+trace `T` with corresponding state `q(T)` in the CGS,
 
 ```
-evidence_backed_arg_ids(T)  ⊆  Strategically-Witnessable(q(T))
+Witnessed(T)  ⊆  Strategically-Witnessable(q(T))
 ```
+
+where `Witnessed(T)` is the operational predicate
+(`evidence_backed_arg_ids` in `council/symbolic/argue/coupled_atl.py`)
+and `Strategically-Witnessable(q)` is the verification predicate
+(`evidence_backed_arg_ids_via_atl` in
+`council/symbolic/verify/atl_witness.py`).
 
 *Proof.* Every move in the trace was the result of *some* uniform
-strategy for the move's author (the strategy "play the move on this
+strategy for the move's author (the strategy "play this move on this
 observation"). If that move makes `evidence(a, i)` hold, then agent
 `i` had a strategy to make it hold — namely, the strategy that
 includes the move. Therefore `a ∈ Strategically-Witnessable(q(T))`.
-The converse fails in general: an agent can have a uniform strategy
-to disclose without ever exercising it in the trace. ∎
+The converse fails: an agent can have a uniform strategy to disclose
+without ever exercising it in the trace. ∎
 
-**Operational consequence.** The trace-level
-`evidence_backed_arg_ids(T)` (`council/symbolic/argue/coupled_atl.py`)
-is a *sound* (subset) approximation of `Strategically-Witnessable`,
-fast (no MCMAS call), and what `StrategicCoupledSemantics` continues
-to consume on the headline pipeline path. The MCMAS-verified
-`Strategically-Witnessable` is the *publishable* predicate for P2;
-the trace-level version is operationally equivalent on the headline
-instance and dominates in cost-conscious settings.
+**Why two predicates, by design.** The operational predicate is
+deliberation-time-cheap and trace-direct;
+`StrategicCoupledSemantics` cannot afford a subprocess on the hot
+path. The verification predicate is theorem-time-exhaustive and
+CGS-direct; it is needed to certify T7 against the AHK 2002
+strategic semantics. Neither subsumes the other operationally —
+they live on opposite sides of the cost-vs-completeness axis. The
+under-approximation lemma is the certifying relationship between
+them, and T7 holds for either choice (with the verification
+predicate yielding a possibly larger demotion-immune set; the
+operational predicate yielding a possibly smaller one, never
+larger).
 
 **Why this is a recovery, not a workaround.** The previous T7
 statement claimed an instance witness ("on `T_3`, DF-QuAD admits
@@ -324,8 +347,12 @@ genuine concurrent game structure: the ATL operator is the AHK 2002
 operator, the K operator is the Fagin et al. 1995 operator, the
 semantics is Busard 2013's partial-observability uniform-strategy
 variant, and the proof obligations on `q_T3` are discharged by
-MCMAS-OBDD. The trace-level fast path is preserved, and the
-under-approximation lemma certifies it as sound.
+MCMAS-OBDD. The trace-direct check that previously *was* the
+"trivial ATL fragment" is now properly recast as the **operational
+predicate**, sitting next to the new **verification predicate** and
+related to it by the under-approximation lemma. Neither is a
+workaround for the other; they are the natural cost-vs-completeness
+endpoints of one design.
 
 **Implications.** This is the central theoretical result of P2 (AAAI
 2027). The full P2 paper extends T7 to:
@@ -387,12 +414,15 @@ under-approximation lemma certifies it as sound.
   — pure-CTL reachability cross-checks (`EF disclosed_p1_alice`,
   `EF consensus_p1`) confirm the ISPL evolution rules are
   consistent with `DeliberationCGS.step`.
-- `tests/regressions/test_t7_coupled.py` — pre-existing trace-level
-  mechanisation, preserved as the under-approximation fast path.
-  All four test classes (`TestT3CounterexampleDFQuADFails`,
-  `TestT7StrategicCoupledRescue`, `TestT7BackwardCompatibility`,
-  `TestT7ExtensionFlip`) still pass — the revised T7 subsumes,
-  not invalidates, the previous instance witness.
+- `tests/regressions/test_t7_coupled.py` — mechanises the
+  **operational predicate** branch of T7 (Witnessed(T) at the
+  Strategic-Coupled aggregation site). Four test classes
+  (`TestT3CounterexampleDFQuADFails`, `TestT7StrategicCoupledRescue`,
+  `TestT7BackwardCompatibility`, `TestT7ExtensionFlip`) cover the
+  trace-direct demotion calculation; all pass. The revised T7
+  subsumes the previous instance witness without invalidating any
+  of these tests — the operational predicate is one of two
+  endpoints in the design, and these tests pin its behaviour.
 
 ## T5 — Manipulability Bound
 
