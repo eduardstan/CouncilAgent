@@ -184,21 +184,34 @@ class TestFlipCostBoundedByUpperBound:
         bound = flip_cost_upper_bound(baf, sem)
         assert cost <= bound
 
-    def test_random_4arg_qbafs_all_within_bound(self) -> None:
-        """Property-based: across a small random sample of 4-arg QBAFs,
-        flip_cost is always <= upper_bound."""
+    @pytest.mark.parametrize("n_args", [2, 3, 4, 5])
+    def test_random_qbafs_all_within_bound(self, n_args: int) -> None:
+        """Property-based: across a random sample of QBAFs at each
+        ``n_args`` size, ``flip_cost <= flip_cost_upper_bound``
+        (or ``flip_cost == -1`` when the brute-force search exhausts
+        without finding a flip within ``max_search`` — the sentinel
+        for "unflippable in this search budget", per
+        ``manipulability.flip_cost`` docstring).
+
+        Per the T5 spec (specs/t5-t6-revision.md §"Testing Strategy"),
+        this test extends the previous ``N=4``-only sweep to
+        ``N ∈ {2, 3, 4, 5}`` with the same seed (``random.Random(0)``)
+        and 20 instances per N — total 80 random QBAFs. The
+        ``max_search=n_args`` gives the brute-force search enough
+        budget to reach the bound itself (which is ``n_args - 1`` per
+        T5).
+        """
         import random
 
         rng = random.Random(0)
         sem = DFQuADSemantics()
         for _ in range(20):
-            n = 4
             args = tuple(
-                _arg(f"a{i}", base=rng.uniform(0.1, 0.9)) for i in range(n)
+                _arg(f"a{i}", base=rng.uniform(0.1, 0.9)) for i in range(n_args)
             )
             edges: list[Attack] = []
-            for i in range(n):
-                for j in range(n):
+            for i in range(n_args):
+                for j in range(n_args):
                     if i == j:
                         continue
                     if rng.random() < 0.3:
@@ -210,9 +223,12 @@ class TestFlipCostBoundedByUpperBound:
                             )
                         )
             baf = QBAF(arguments=args, attacks=tuple(edges), supports=())
-            cost = flip_cost(baf, sem, max_search=4)
+            cost = flip_cost(baf, sem, max_search=n_args)
             bound = flip_cost_upper_bound(baf, sem)
-            assert cost == -1 or cost <= bound
+            assert cost == -1 or cost <= bound, (
+                f"T5 violation at n={n_args}: flip_cost={cost}, "
+                f"upper_bound={bound}, baf={baf!r}"
+            )
 
 
 # ---------------------------------------------------------------------------

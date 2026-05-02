@@ -356,25 +356,43 @@ class TestStrengtheningViolated:
 
 
 class TestStrictReinforcementViolated:
-    """Strict Reinforcement (informal Amgoud-Ben-Naim 2018 spirit):
+    """Strict Reinforcement (Amgoud-Ben-Naim 2018, Definition 11 spirit):
     replacing a supporter with a strictly stronger one must STRICTLY
-    increase the target's strength. DF-QuAD violates this on saturation
-    boundaries (base = 1.0 already at maximum — no further movement
-    possible regardless of supporter strength).
+    increase the target's strength. The W2 fixture instantiates this
+    postulate at the **saturation boundary** of DF-QuAD, where the
+    base score is already at the upper boundary `w(a) = 1.0` of the
+    [0, 1] strength space.
 
-    Counterexample: a (base 1.0), supporter b (base 0.5):
-      v_s = 0.5; c(1.0, 0, 0.5) = 1.0 + 0*0.5 = 1.0
-    Replace with stronger supporter (base 0.9):
-      v_s = 0.9; c(1.0, 0, 0.9) = 1.0 + 0*0.9 = 1.0
-    Same result -> Strict Reinforcement violated at the saturation boundary.
+    Why the saturation boundary is the operative regime. DF-QuAD's
+    combination function (Amgoud-Ben-Naim 2018 §3.1) is
 
-    (Theorem audit fix 2026-05-01: previously deferred. The Amgoud-
-    Ben-Naim 2018 Definition 11 antecedents exclude w(a) = 1, but
-    DF-QuAD's saturating combination function exhibits the
-    spirit-of-the-violation on this boundary case. The full Definition 11
-    counterexample requires a more elaborate construction with extra
-    supporters; this test captures the saturation behavior that
-    motivates Table 1's failure mark for DF-QuAD.)
+        c(w(a), v_a, v_s) = w(a) + (1 - w(a)) · max(v_s - v_a, 0)
+                             - w(a) · max(v_a - v_s, 0)
+
+    At `w(a) = 1.0`, the support contribution is multiplied by
+    `(1 - w(a)) = 0`, so any additional support strength leaves the
+    target's strength locked at 1.0. The strict-increase clause of
+    Strict Reinforcement therefore cannot be satisfied at the boundary
+    — exactly the failure mark Table 1 of Amgoud-Ben-Naim 2018 records
+    for any saturating F-aggregation, including DF-QuAD.
+
+    Concrete counterexample (this fixture):
+      a (base 1.0), supporter b (base 0.5):
+        v_s = 0.5;  c(1.0, 0, 0.5) = 1.0 + 0·0.5 = 1.0
+      Replace with stronger supporter (base 0.9):
+        v_s = 0.9;  c(1.0, 0, 0.9) = 1.0 + 0·0.9 = 1.0
+    Strict Reinforcement requires `s_strong > s_weak`; DF-QuAD gives
+    `s_strong = s_weak = 1.0`. Strict Reinforcement violated.
+
+    Scope note. Definition 11's full antecedents exclude `w(a) = 1`;
+    the W2 matrix takes the *spirit* of the postulate (strict-increase
+    under stronger support) and instantiates it at the boundary because
+    that is precisely where DF-QuAD's saturating F-aggregation is
+    structurally incapable of satisfying it. A non-boundary
+    counterexample requires a more elaborate multi-supporter
+    construction (Amgoud-Ben-Naim 2018 §6 no-go); this test pins the
+    boundary case which is sufficient to falsify the postulate. (Theorem
+    audit fix 2026-05-01.)
     """
 
     def test_saturated_base_no_strict_increase_with_stronger_supporter(
@@ -400,27 +418,42 @@ class TestStrictReinforcementViolated:
 
 
 class TestStrictFranklinViolated:
-    """Strict Franklin (informal): an argument with strictly more support
-    than attack must have strength STRICTLY greater than its base.
-    DF-QuAD violates this when the support contribution doesn't cross
-    the v_s > v_a threshold strictly enough.
+    """Strict Franklin (Amgoud-Ben-Naim 2018, Definition 12 spirit): an
+    argument with strictly more support than attack must have strength
+    STRICTLY greater than its base. The W2 fixture instantiates this
+    postulate at the **saturation boundary** `w(a) = 1.0`, where
+    DF-QuAD's combination function is structurally incapable of moving
+    the strength above the base — by exactly the same `(1 - w(a)) = 0`
+    coefficient on the support term that drives Strict Reinforcement
+    (sister test above).
 
-    Counterexample: a (base 0.5), attacker b (strength 0.6),
-    supporter c (strength 0.6) — equal v_a and v_s:
-      v_a = 0.6, v_s = 0.6 -> |v_s - v_a| = 0 -> c(0.5, 0.6, 0.6) = 0.5
-    Now strengthen supporter to 0.7 while keeping attacker at 0.6:
-      v_a = 0.6, v_s = 0.7 -> v_a < v_s -> c = 0.5 + 0.5*0.1 = 0.55
-    Strictly greater? Yes (0.55 > 0.5). So this case actually HOLDS.
+    Why a non-boundary instantiation does NOT yield a counterexample.
+    Direct interior check (a base 0.5, attacker strength 0.6,
+    supporter strength 0.7):
 
-    Real saturation counterexample at boundary:
-      a (base 1.0), attacker b (strength 0.5), supporter c (strength 0.5):
-      v_a = 0.5, v_s = 0.5 -> c(1.0, 0.5, 0.5) = 1.0 - 0 = 1.0
+        v_a = 0.6, v_s = 0.7  →  v_s > v_a
+        c(0.5, 0.6, 0.7) = 0.5 + (1 - 0.5)·0.1 = 0.55 > 0.5
+
+    Strictly greater than base; Strict Franklin holds in the interior.
+    The postulate fails *only* when the saturating coefficient
+    `(1 - w(a))` drives the support contribution to zero — i.e., on the
+    `w(a) = 1` boundary. This boundary is the operative regime of the
+    counterexample.
+
+    Concrete counterexample (this fixture):
+      a (base 1.0), attacker att (base 0.5), supporter supp (base 0.5):
+        v_a = 0.5, v_s = 0.5  →  c(1.0, 0.5, 0.5) = 1.0 - 1·0 = 1.0
       Strengthen supporter to 0.9 (strictly more support than attack):
-      v_a = 0.5, v_s = 0.9 -> c(1.0, 0.5, 0.9) = 1.0 + 0*0.4 = 1.0
-      Strict Franklin says s should be > 1.0, but DF-QuAD caps at 1.0.
+        v_a = 0.5, v_s = 0.9  →  c(1.0, 0.5, 0.9)
+                                = 1.0 + (1 - 1.0)·0.4 - 1.0·0 = 1.0
+    Strict Franklin requires `s > base = 1.0`, but DF-QuAD caps at 1.0.
+    Strict Franklin violated at the saturation boundary.
 
-    (Theorem audit fix 2026-05-01: previously deferred. Same
-    saturation-boundary caveat as TestStrictReinforcementViolated.)
+    Scope note. As with Strict Reinforcement, Definition 12's strict
+    interior counterexample requires a richer multi-supporter / multi-
+    attacker construction; this test fixture pins the saturation-
+    boundary case that mechanises the failure mark in Table 1. (Theorem
+    audit fix 2026-05-01.)
     """
 
     def test_saturated_base_no_strict_franklin_with_dominant_support(

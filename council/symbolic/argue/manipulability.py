@@ -56,31 +56,64 @@ def _winner_id(baf: QBAF, sem: GradualSemantics) -> str | None:
 
 
 def flip_cost_upper_bound(baf: QBAF, sem: GradualSemantics) -> int:
-    """Closed-form T5 upper bound: |non-withdrawn proposals| - 1, with the
-    -1 sentinel for unflippable BAFs.
+    """Closed-form T5 upper bound: ``(n - 1) + |out(w)|``, with the ``-1``
+    sentinel for unflippable BAFs.
 
     Returns:
-      n - 1   when n >= 2 (the headline T5 bound)
-      -1      when n < 2 (sentinel: no swap target -> unflippable)
+      ``(n - 1) + |out(w)|`` when ``n >= 2`` and the winner is
+                            well-defined under ``sem``;
+      ``-1``                when ``n < 2`` (no swap target) OR ``sem``
+                            cannot evaluate the BAF (e.g., a cycle for
+                            DF-QuAD).
 
-    The -1 sentinel matches `flip_cost`'s return for the same inputs, so
-    `flip_cost(baf, sem) <= flip_cost_upper_bound(baf, sem)` is well
-    defined uniformly over all inputs. (Theorem audit fix, 2026-05-01:
-    aligned with `flip_cost` after a sentinel inconsistency was found
-    where this returned 0 for n=1 while `flip_cost` returned -1.)
+    Here ``n`` is the number of non-withdrawn arguments (per ADR-0010 Q2),
+    ``w`` is the current winner under ``sem``, and ``|out(w)|`` is the
+    count of attack edges *from* ``w`` to other non-withdrawn arguments.
 
-    Proof sketch (docs/theory.md §T5): for any current winner under
-    DF-QuAD, setting the attack weight from every other non-withdrawn
-    argument toward the winner to 1.0 saturates v_a in the F-aggregation,
-    dropping the winner's strength to its lower bound c(w, 1, 0) =
-    w - w·1 = 0. The runner-up (with no attackers) retains its base
-    score. Thus n-1 perturbations always suffice when proposals >= 2.
+    The ``(n - 1) + |out(w)|`` form supersedes the earlier ``n - 1`` bound
+    after a 2026-05-02 finding (Slice T5.1 of specs/t5-t6-revision.md):
+    a randomly-generated 2-argument QBAF with the winner attacking the
+    runner-up admits no 1-perturbation flip (toggling the existing edge
+    fails to flip; toggling the reverse creates a cycle DF-QuAD rejects),
+    requiring 2 perturbations — exactly ``(2 - 1) + 1 = 2``. The added
+    ``|out(w)|`` term accounts for the perturbations needed to clear the
+    winner's outgoing edges before the standard ``n - 1`` perturbations
+    that add incoming attacks on ``w``.
+
+    The ``-1`` sentinel matches ``flip_cost``'s return for the same
+    inputs, so ``flip_cost(baf, sem) <= flip_cost_upper_bound(baf, sem)``
+    is well defined uniformly over all inputs.
+
+    Proof sketch (docs/theory.md §T5): for any current winner ``w`` under
+    DF-QuAD, (i) for each ``(w, a)`` attack with ``a`` non-withdrawn,
+    toggle it OFF — ``|out(w)|`` perturbations, none of which flip the
+    winner; (ii) for each ``a != w``, toggle ``(a, w)`` to weight 1.0 —
+    ``n - 1`` perturbations. Step (i) clears any cycle hazards step (ii)
+    might introduce. After both steps, ``w`` has ``n - 1`` incoming
+    attacks at weight 1 and no outgoing edges; under DF-QuAD's saturating
+    F-aggregation, ``strength(w) → 0`` while every ``a != w`` retains its
+    base score. The runner-up (the strongest such ``a``) is the new
+    winner. Total perturbations: ``|out(w)| + (n - 1)``.
     """
-    del sem  # currently semantics-independent (T5 holds uniformly)
     n = len(_proposals(baf))
     if n < 2:
         return -1
-    return n - 1
+    try:
+        winner = _winner_id(baf, sem)
+    except ValueError:
+        # Cyclic input that ``sem`` cannot evaluate; bound undefined.
+        return -1
+    if winner is None:
+        return -1
+    proposal_set = set(_proposals(baf))
+    out_winner = sum(
+        1
+        for att in baf.attacks
+        if att.source == winner
+        and att.target in proposal_set
+        and att.target != winner
+    )
+    return (n - 1) + out_winner
 
 
 def _toggle_attacks(

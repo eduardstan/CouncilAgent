@@ -424,84 +424,146 @@ endpoints of one design.
   of these tests — the operational predicate is one of two
   endpoints in the design, and these tests pin its behaviour.
 
-## T5 — Manipulability Bound
+## T5 — Manipulability Bound (DF-QuAD)
 
 **Statement.** Let `Q` be a QBAF with `proposals(Q)` denoting the set of
 non-withdrawn arguments (per ADR-0010 Q2), `n = |proposals(Q)|`, and
-`sem` a gradual semantics under which a unique winner is well-defined.
+`sem = DFQuADSemantics()` (Amgoud-Ben-Naim 2018, Definitions 4–6) under
+which the unique strongest non-withdrawn argument `w = winner(Q)` is
+well-defined. Let `out(w) = { (w, a) ∈ attacks(Q) : a ∈ proposals(Q),
+a ≠ w }` denote the winner's outgoing attacks against other proposals.
 Define the **flip cost** `flip_cost(Q, sem)` as the minimum number of
 binary attack-edge perturbations — each toggling an ordered pair `(s,
 t)` of distinct non-withdrawn arguments between weight 0 (absent) and
 weight 1 (full attack) — required to change the winner. Then:
 
 ```
-flip_cost(Q, sem)  ≤  max(0, n − 1)
+flip_cost(Q, sem)  ≤  (n − 1) + |out(w)|
 ```
 
-with the convention that `flip_cost = 0` when `n = 0` (vacuous) and
-`flip_cost = -1` (sentinel for "unflippable") when `n = 1` (no swap
-target).
+with the sentinel convention `flip_cost = -1` when `n < 2` (no swap
+target) or when `sem` cannot evaluate `Q` (e.g., a cyclic input that
+DF-QuAD rejects); in those cases `flip_cost_upper_bound` returns the
+same `-1` sentinel so the inequality holds vacuously.
 
-**Proof sketch.** Suppose the current winner is argument `w` (under
-`sem`). For each other non-withdrawn argument `a ≠ w`, perturb the
-attack edge `(a, w)` to weight 1.0 (adding it if absent, leaving it if
-present at weight 1). After these `n − 1` perturbations, the winner's
-in-edge set under `sem` includes attacks from every other argument
-with maximum weight. Under DF-QuAD's saturating
+**Why this statement narrows to DF-QuAD.** The previous (W2/PR9)
+formulation quantified over "any gradual semantics under which a unique
+winner is well-defined", but the proof depends materially on DF-QuAD's
+saturating ℱ-aggregation `v_a(w) = 1 − ∏_{a ≠ w} (1 − strength(a))` and
+on DF-QuAD's rejection of cyclic graphs. Generalising to QE / Ebs /
+Strategic-Coupled requires a separate proof per semantics; the honest
+move is to narrow rather than over-claim. (See *Tightness and
+refinements* below for which generalisations are reachable.)
+
+**Why the `+ |out(w)|` term is required.** A property-based search at
+`n = 2` over 20 random QBAFs (seed `random.Random(0)`,
+`tests/regressions/test_t5_manipulability.py::test_random_qbafs_all_within_bound[2]`)
+exposed the following counterexample to the previous `n − 1` bound:
+
+```
+arguments:  a0 (base 0.567),  a1 (base 0.826)
+attacks:    a1 → a0  weight 0.78
+winner:     a1
+```
+
+Here `n − 1 = 1` but `flip_cost = 2`. Toggling `(a1, a0)` *off* leaves
+both base scores intact — `a1` still wins. Toggling `(a0, a1)` *on*
+creates a 2-cycle that DF-QuAD's `evaluate(Q)` rejects (raises
+`ValueError`), so this perturbation does not produce a valid new
+winner. Any single-perturbation choice either fails to flip or creates
+an unevaluable graph. The minimum flip in this instance is two
+perturbations: first toggle `(a1, a0)` *off* (clearing the cycle
+hazard), then toggle `(a0, a1)` *on* — exactly `(n − 1) + |out(w)| =
+1 + 1 = 2`.
+
+**Proof sketch.** Suppose `w = winner(Q)` is the current strongest
+non-withdrawn argument under DF-QuAD. We construct an explicit
+perturbation sequence in two stages:
+
+*Stage 1 (clear the winner's outgoing attacks — `|out(w)|`
+perturbations).* For each `(w, a) ∈ out(w)`, toggle the edge OFF
+(weight `1 → 0`). None of these changes flips the winner: removing an
+attack *from* `w` can only *increase* the strengths of attacked targets
+(possibly raising them, never lowering `w`'s own strength). After
+Stage 1, `out(w) = ∅` in the perturbed graph.
+
+*Stage 2 (saturate the winner's incoming attacks — `n − 1`
+perturbations).* For each `a ∈ proposals(Q) \ {w}`, toggle the edge
+`(a, w)` ON to weight 1 (adding it if absent, leaving it if present at
+weight 1). Because Stage 1 removed every `(w, a)`, no Stage-2 edge
+addition can create a 2-cycle through `w`; DF-QuAD's evaluate succeeds.
+After Stage 2, `w`'s in-edge set under DF-QuAD includes attacks from
+every other proposal at maximum weight. Under DF-QuAD's saturating
 ℱ-aggregation:
 
 ```
 v_a(w) = ℱ([1.0 · strength(a) for a ≠ w])
-       = 1 - ∏_{a ≠ w} (1 - strength(a))
+       = 1 − ∏_{a ≠ w} (1 − strength(a))
 ```
 
-If at least one `a ≠ w` has positive strength, `v_a(w) > 0`, so
-`strength(w) < base(w)`. As `v_a(w) → 1`, `strength(w) → 0`. Since the
-perturbations only modify edges *into* `w` (not edges out of `w` or
-edges among the others), the strengths of `a ≠ w` are unchanged. The
-runner-up — a non-`w` argument with the next-highest strength — now
-strictly exceeds `w`'s reduced strength, flipping the winner. Total
-perturbations: `n − 1`. ∎
+If at least one `a ≠ w` has positive strength (which holds since each
+`a ≠ w` retains its base score, the perturbations not having modified
+edges among the others), `v_a(w) > 0`, so `strength(w) < base(w)`. As
+the product approaches 0, `strength(w) → 0`. The runner-up — the
+non-`w` argument with the next-highest strength — strictly exceeds
+`w`'s reduced strength, flipping the winner.
 
-**Tightness and refinements.** The `n − 1` bound is loose for
-specific structures: graphs with isolated unattackable runners-up may
-flip in a single perturbation (one new attack on the winner from any
-positive-strength runner-up). Tighter bounds parameterised by
-in-degree, out-degree, and the attack/support ratio (Baroni-Rago-Toni
-2019) are proper refinements; the W2/PR9 ship is the simpler closed
-form, sufficient as an upper bound for adversarial-robustness analysis.
+Total perturbations: `|out(w)| + (n − 1)`. ∎
+
+**Tightness and refinements (honest future work).** The bound is tight
+for the `n = 2` boundary case shown above. For `n ≥ 3` it is generally
+loose: graphs with isolated unattackable runners-up may flip in a
+single perturbation. Tighter bounds parameterised by in-degree,
+out-degree, and the attack/support ratio are reachable in principle —
+Baroni-Rago-Toni 2019 IJAR §4.2 develops the closed-form sensitivity
+of strength to attack additions under (strict) monotonicity, which is
+*the* technical machinery a refined manipulability bound would build
+on. We do not attempt that derivation here; the `(n − 1) + |out(w)|`
+bound is the simplest form sufficient for adversarial-robustness
+analysis on small councils and is what the property test verifies.
 
 **Why this is non-trivial.** Without the bound, an adversary could in
 principle need exponentially many perturbations to flip a winner.
-T5 says: bounded by the linear quantity `n − 1`. This is the
-manipulability budget for a "flip-cost-aware" attacker — see the
-related discussion in P4 (IJCAI 2027 co-evolutionary red/blue teaming
-plan).
+T5 says: bounded by the linear quantity `(n − 1) + |out(w)|`, computable
+in `O(|args| + |attacks|)`. This is the manipulability budget for a
+"flip-cost-aware" attacker — see the related discussion in P4 (IJCAI
+2027 co-evolutionary red/blue teaming plan).
 
 **References.**
+- Amgoud, Ben-Naim. *Evaluation of arguments in weighted bipolar
+  graphs*. International Journal of Approximate Reasoning 2018.
+  (Definitions 4–6 fix the DF-QuAD ℱ-aggregation we use.) `papers/3 ---
+  argumentation/Amgoud and Ben-Naim 2018 ... (IJAR).pdf`.
 - Baroni, Rago, Toni. *From fine-grained properties to broad principles
   for gradual argumentation: A principled spectrum*. International
-  Journal of Approximate Reasoning 2019. (Specifically: §4.3 on
-  manipulability quantification.) `papers/3 ---
+  Journal of Approximate Reasoning 2019. (§4.2 — strict monotonicity
+  principles — would underpin a refined in-degree-parameterised bound;
+  see *Tightness and refinements* above.) `papers/3 ---
   argumentation/Baroni et al. 2019 ... (IJAR).pdf`.
-- Original: this T5 is W2's specialisation to the discrete-flip cost
-  metric for DF-QuAD. The closed-form `n − 1` upper bound is W2 work.
+- Original: T5 is W2's specialisation to the discrete-flip cost metric
+  for DF-QuAD. The `(n − 1) + |out(w)|` upper bound is W2 work; the
+  `+ |out(w)|` correction (over the previous `n − 1` claim) was
+  discovered in the property-based sweep at `n = 2` during the
+  feature/theorem-t5-t6-revision branch (2026-05-02).
 
 **Mechanisation.**
 - `council/symbolic/argue/manipulability.py::flip_cost` —
   brute-force minimum-flip search (exponential in `max_search`,
   default 8); intended for graphs ≤ 6 arguments.
 - `council/symbolic/argue/manipulability.py::flip_cost_upper_bound` —
-  closed-form `max(0, n − 1)`; computed in `O(|args|)`.
+  closed-form `(n − 1) + |out(w)|` with the `-1` sentinel for
+  unflippable inputs; computed in `O(|args| + |attacks|)`.
 - `tests/regressions/test_t5_manipulability.py::TestFlipCostUpperBound`
-  — pins the closed-form bound across `n ∈ {0, 1, 2, 5}` plus the
-  withdrawn-exclusion case.
+  — pins the closed-form bound across attack-free QBAFs at
+  `n ∈ {0, 1, 2, 5}` plus the withdrawn-exclusion case (where
+  `|out(w)| = 0` reduces the bound to `n − 1`).
 - `tests/regressions/test_t5_manipulability.py::TestFlipCostExact`
   — small examples (2-arg, 3-arg) where the brute-force search
   finds the actual flip cost and confirms `flip_cost ≤ upper_bound`.
 - `tests/regressions/test_t5_manipulability.py::TestFlipCostBoundedByUpperBound`
-  — property-based test across 20 random 4-argument QBAFs (seed=0)
-  asserting `flip_cost ≤ upper_bound` on every instance.
+  — property-based test across `N ∈ {2, 3, 4, 5}` (`pytest.mark.parametrize`)
+  with 20 random QBAFs per `N` (seed `random.Random(0)`), asserting
+  `flip_cost ≤ upper_bound` on every one of the 80 instances.
 
 ## T6 — Caminada-Amgoud Rationality Postulate Matrix
 
@@ -552,12 +614,15 @@ matrix appears in P2's appendix table.
 - Baroni, Rago, Toni. *From fine-grained properties to broad
   principles for gradual argumentation*. IJAR 2019. (Specifically:
   Tables 4–5 cross-referencing DF-QuAD's principle satisfaction.)
-- Caminada, Amgoud. *On the issue of contamination in abstract
-  argumentation frameworks*. ECSQARU 2007 — original rationality
-  postulates (closure, direct/indirect consistency, non-interference)
-  for *extension* semantics. The W2 matrix uses the gradual-semantics
-  analogues (Amgoud-Ben-Naim 2018) which adapt these for weighted
-  bipolar graphs.
+- Caminada, Amgoud. *On the evaluation of argumentation formalisms*.
+  Artificial Intelligence 171(5–6), 286–310, 2007 — the canonical
+  rationality-postulates source for *extension* semantics (closure,
+  direct/indirect consistency, non-interference). The W2 matrix tests
+  the *gradual-semantics analogues* of these postulates (Amgoud-Ben-Naim
+  2018, Definitions 8–14), which adapt the extension-semantics
+  formulations for weighted bipolar graphs. `papers/3 ---
+  argumentation/Caminada and Amgoud 2007 "On the evaluation of
+  argumentation formalisms" (Artificial Intelligence).pdf`.
 
 **Mechanisation.**
 - `tests/regressions/test_t6_postulates.py` — 16 test classes pinning
