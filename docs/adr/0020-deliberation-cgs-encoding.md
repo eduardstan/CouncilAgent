@@ -74,14 +74,27 @@ MCMAS manual §3.4 page 30 defines
 agent `i`'s knowledge is determined by (its own local state) AND
 (the public part of the environment).
 
-The encoding splits state across four ISPL sections:
+The encoding splits state across three ISPL sections:
 
 | Section | Contents | Visible to |
 |---|---|---|
 | `agent_i.Vars` | `has_witness_p1` (boolean) | Only agent `i` |
-| `agent_i.Lobsvars` | round, all `disclosed_p1_*`, all `voted_p1_*` | Agent `i` (lifted from Environment.Obsvars) |
 | `Environment.Obsvars` | round, per-agent disclosed/voted flags | All agents (the public component `L_E^P`) |
 | `Environment.Vars` | empty for the headline | None |
+
+`agent_i.Lobsvars` is **not emitted** by `cgs_to_ispl`. Per MCMAS
+manual page 14: *"if a variable in the environment can be observed
+by all agents, there is a way to obtain compact ISPL code: define
+the variable in a special section Obsvars, instead of Vars, in the
+environment and then removed from all agents' Lobsvars section."*
+Since every public deliberation variable belongs in `Obsvars` (every
+agent observes it), `Lobsvars` is the empty subset and the section
+is omitted entirely. `_emit_agent` in `council/symbolic/verify/cgs.py`
+explicitly skips this block (see also the comment at the
+function header). This was discovered as a parse-error during Stage
+5.3 — the original emitter listed Obsvars in Lobsvars and MCMAS
+rejected it with *"local observable variable disclosed_p1_alice is
+not defined in the environment"*. Fix landed in commit `5f178a4`.
 
 `Environment.Vars` is omitted entirely from the emitted ISPL when
 empty — the grammar at §3.2.4 page 19 makes `envvardef?` optional
@@ -304,8 +317,12 @@ MCMAS's BDD capacity.
   "Alternating-time Temporal Logic" (Journal of ACM).pdf`
 - `papers/4 --- verification and model-checking/Fagin et al. 1995
   "Reasoning About Knowledge" (MIT Press).pdf`
-- MCMAS v1.3.0 manual §3.2.4 page 16-19 (ISPL grammar) + §3.4
-  page 29-30 (semantics of interpreted systems): <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf>
+- MCMAS user manual (cover labelled v1.2.2; grammar matches the
+  installed v1.3.0 binary), §3.2.4 page 16-19 (ISPL grammar) +
+  §3.4 page 29-30 (semantics of interpreted systems). Vendored at
+  `papers/4 --- verification and model-checking/Lomuscio et al. n.d.
+  "MCMAS v1.2.2 User Manual" (vendored from sail.doc.ic.ac.uk).pdf`;
+  upstream: <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf>
 - `specs/t7-atlk-revision.md` §"The math (precise statement)" and
   §"Open Questions" OQ-1, OQ-2, OQ-3, OQ-4, OQ-6
 - `docs/adr/0017-privileged-knowledge-calibrator-interface.md` —

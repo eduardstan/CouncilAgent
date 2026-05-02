@@ -359,9 +359,13 @@ under-approximation lemma certifies it as sound.
 - Lomuscio, Qu, Raimondi 2017 — *MCMAS: an open-source model
   checker for the verification of multi-agent systems*, STTT.
   `papers/4 --- verification and model-checking/Lomuscio et al. 2017 ...MCMAS...pdf`.
-- MCMAS v1.3.0 manual §3.1 page 11 (`-atlk 2`, `-ufgroup`) +
-  §3.2.4 page 16-19 (ISPL grammar) + §3.4 page 29-30 (interpreted-
-  systems semantics): <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf>.
+- MCMAS user manual (cover labelled v1.2.2; grammar + flags match
+  the installed v1.3.0 binary) §3.1 page 11 (`-atlk 2`,
+  `-ufgroup`) + §3.2.4 page 16-19 (ISPL grammar) + §3.4 page 29-30
+  (interpreted-systems semantics). Vendored at
+  `papers/4 --- verification and model-checking/Lomuscio et al. n.d.
+  "MCMAS v1.2.2 User Manual" (vendored from sail.doc.ic.ac.uk).pdf`;
+  upstream: <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf>.
 - This document §T3 — the no-go theorem T7 defeats.
 - This document §T5 — manipulability bound used in the `sem`-lift.
 - ADR-0020 — Deliberation CGS encoding.

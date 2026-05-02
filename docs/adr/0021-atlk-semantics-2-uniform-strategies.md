@@ -257,10 +257,14 @@ default MCMAS implementation.
   2014 "MCMAS-SLK: a model checker for the verification of
   strategy logic specifications" (CAV).pdf` — the SLK extension
   flagged for future work; strictly more expressive than ATLK.
-- MCMAS v1.3.0 manual §3.1 page 11 (the `-atlk` flag) + §3.4
-  page 30 (`~_i` definition) + §3.4 page 32 (Figure 3.12,
-  verification algorithm for `⟨⟨Γ⟩⟩X φ`):
-  <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf>
+- MCMAS user manual (cover labelled v1.2.2; grammar + flag set
+  match the installed v1.3.0 binary), §3.1 page 11 (the
+  `-atlk` flag, `-uniform`, `-ufgroup`) + §3.4 page 30 (`~_i`
+  definition) + §3.4 page 32 (Figure 3.12, verification algorithm
+  for `⟨⟨Γ⟩⟩X φ`). Vendored at
+  `papers/4 --- verification and model-checking/Lomuscio et al. n.d.
+  "MCMAS v1.2.2 User Manual" (vendored from sail.doc.ic.ac.uk).pdf`;
+  upstream: <https://sail.doc.ic.ac.uk/software/mcmas/manual.pdf>
 - `specs/t7-atlk-revision.md` §"Resolved decisions" Q1
   (`-atlk 2`) and Q2 (ATLK headline).
 - `docs/adr/0020-deliberation-cgs-encoding.md` — the encoding
